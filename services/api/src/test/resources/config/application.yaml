@@ -1,0 +1,14 @@
+# Loaded on top of src/main/resources/application.yaml (config/ wins). Tests never export telemetry.
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false

@@ -10,7 +10,7 @@ It is also a learning project. The three backend services I write contain real t
 load tests and crash tests prove that code holds up. Observability, CI/CD and infrastructure as code are part of
 the project from the start.
 
-> **Status:** Phase 0 (toolchain + data coverage count). Nothing runs end-to-end yet.
+> **Status:** Phase 1 (walking skeleton): a map of nearby places sorted by straight-line distance, with monitoring.
 
 ## How it fits together
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
@@ -24,8 +24,29 @@ the project from the start.
 
 The reasoning behind every design choice is in [docs/adr](docs/adr/).
 
-## Building (Phase 0)
-Requires JDK 25 (Temurin) and Maven 3.9.6 or newer.
+## Running locally (Phase 1)
+Development is hybrid: the Java services run on your machine, while the database (Neon), monitoring (Grafana
+Cloud), and later routing and search use free cloud tiers (see [ADR 0033](docs/adr/0033-hybrid-development-setup.md)).
+
+Before you start: copy `.env.example` to `.env` and fill in the Neon and Grafana Cloud values.
+
+**One-off setup:**
+```bash
+tools/dev.sh migrate && tools/dev.sh seed && tools/dev.sh tiles
+```
+- `migrate` applies the database migrations to Neon.
+- `seed` loads about 7,100 temporary Overture places.
+- `tiles` builds the Boston basemap file.
+
+**Then use two terminals:**
+```bash
+tools/dev.sh api    # http://localhost:8080
+tools/dev.sh web    # http://localhost:5173  ← open this
+```
+
+## Building
+Requires JDK 25 (Temurin) and Maven 3.9.6 or newer. Docker Desktop must be running for the database
+integration tests; without Docker they are skipped.
 ```bash
 ./mvnw verify                                                         # unit + Lincheck tests
 ./mvnw -pl libs/concurrent-jcstress -am verify -Pjcstress -DskipTests # JCStress (quick mode)

@@ -33,3 +33,6 @@ photon_data/
 
 # k6 / load-test output
 load/results/
+
+# Generated basemap (tools/build-pmtiles.sh)
+frontend/public/tiles/

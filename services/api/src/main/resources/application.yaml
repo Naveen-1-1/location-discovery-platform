@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: api              # becomes OpenTelemetry service.name
+  threads:
+    virtual:
+      enabled: true        # Tomcat request handling on virtual threads (ADR 0013)
+  datasource:
+    # Neon direct (non-pooled) endpoint from .env (ADR 0033). verify-full checks the certificate and host name
+    # against the JVM trust store.
+    url: jdbc:postgresql://${PGHOST}/${PGDATABASE}?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory&ApplicationName=api
+    username: ${PGUSER}
+    password: ${PGPASSWORD}
+    hikari:                    # bound straight onto HikariCP setters, so times are plain milliseconds
+      maximum-pool-size: 10
+      minimum-idle: 0            # idle connections are closed so Neon can scale to zero and save free compute hours
+      idle-timeout: 60000        # 60 s
+      max-lifetime: 300000       # 5 min
+      connection-timeout: 10000  # 10 s: covers Neon's wake-up from zero (a few hundred ms)
+  mvc:
+    problemdetails:
+      enabled: true          # errors as application/problem+json
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  tracing:
+    sampling:
+      probability: 1.0       # development: keep every trace (Grafana Cloud free: 50 GB/month)
+  opentelemetry:
+    resource-attributes:
+      "[service.namespace]": placemap
+      "[deployment.environment]": ${PLACEMAP_ENV:dev}
+  otlp:
+    metrics:
+      export:
+        step: 30s
+        base-time-unit: seconds   # Prometheus convention: *_seconds
+        # One exponential histogram series instead of ~70 bucket series per label set: keeps us far under
+        # Grafana Cloud's free 10k-series limit while still giving p95/p99.
+        histogram-flavor: base2_exponential_bucket_histogram
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  # OTLP endpoints and auth come from OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL in .env, which Spring Boot
+  # maps onto its own properties for traces, metrics and logs.
+
+placemap:
+  drills:
+    enabled: ${PLACEMAP_DRILLS:false}

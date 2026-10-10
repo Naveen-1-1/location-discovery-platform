@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.naveen-1-1.placemap</groupId>
+    <artifactId>placemap-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>db</artifactId>
+  <name>placemap :: db</name>
+  <description>Flyway migrations shared by all services and by integration tests.
+    Apply to Neon: tools/dev.sh migrate  (reads PGHOST/PGDATABASE/PGUSER/PGPASSWORD from .env)</description>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.flywaydb</groupId>
+        <artifactId>flyway-maven-plugin</artifactId>
+        <version>${flyway.version}</version>
+        <configuration>
+          <!-- verify-full + the JVM trust store: TLS with certificate and host-name checks. -->
+          <url>jdbc:postgresql://${env.PGHOST}/${env.PGDATABASE}?sslmode=verify-full&amp;sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory&amp;ApplicationName=flyway</url>
+          <user>${env.PGUSER}</user>
+          <password>${env.PGPASSWORD}</password>
+          <locations>
+            <location>filesystem:${project.basedir}/src/main/resources/db/migration</location>
+          </locations>
+          <failOnMissingLocations>true</failOnMissingLocations>
+        </configuration>
+        <dependencies>
+          <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <version>${flyway.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+    </plugins>
+  </build>
+</project>
