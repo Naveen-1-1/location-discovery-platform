@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build + unit + Lincheck + JCStress (sanity)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B -ntp verify
+
+      - name: JCStress (sanity mode; full suite runs nightly)
+        run: ./mvnw -B -ntp -pl libs/concurrent-jcstress -am verify -Pjcstress -Djcstress.mode=sanity -DskipTests
+
+      - name: JMH smoke (one short iteration, proves the harness runs)
+        run: java -jar libs/concurrent-jmh/target/benchmarks.jar -f 1 -wi 0 -i 1 -r 1s -t 2
+
+      - name: Upload JCStress report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jcstress-report
+          path: libs/concurrent-jcstress/target/results/
+          if-no-files-found: ignore

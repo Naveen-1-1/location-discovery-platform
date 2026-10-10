@@ -1,0 +1,792 @@
+# data/sources.yaml - data-source registry for the Boston place-discovery map
+#
+# NOT LEGAL ADVICE. This is a factual licence audit compiled on 2026-10-10 from
+# each publisher's own licence / terms-of-use pages and catalogue metadata. It
+# records what those pages say and how we read them for one purpose: deciding
+# whether a source may be REDISTRIBUTED inside our open place-data release
+# (OSM + Overture + official data merged into one place table published under
+# ODbL-1.0 with attribution). Have counsel review before the first release, and
+# re-check terms whenever `verified` is more than ~6 months old.
+#
+# redistribution values (always quoted, because YAML 1.1 parsers read a bare
+# yes as boolean true):
+#   "yes"          - terms permit including the data in the ODbL release,
+#                    subject to the attribution / notice duties listed.
+#   "display-only" - may be shown in the app but must not be redistributed.
+#   "unknown"      - terms are unclear or may conflict with ODbL. Keep the data
+#                    out of the release until the publisher clarifies.
+#                    Notes say whether in-app display is clearly allowed.
+#
+# Fields added by owner decisions (2026-10-10):
+#   decision     - ADR that settled how this source is used.
+#   enabled      - false = not imported at all (default true).
+#   drop_fields  - personal fields the importer discards before storing anything (ADR 0031).
+# CI rule: every enabled source must be "yes" or "display-only".
+#
+# Quotations in licence_notes are short excerpts (<= 25 words per source).
+# Fetch caveats on 2026-10-10: mass.gov and fns.usda.gov pages returned HTTP 403
+# to automated fetches. MassGIS terms were read from MassGIS-owned ArcGIS Online
+# item metadata (fetched directly) and a search-index copy of the MassGIS FAQ.
+# WIC/HIP terms were read from search-index copies only. Re-check those manually.
+
+sources:
+
+  # ---------------------------------------------------------------- base layers
+  - id: osm_geofabrik_massachusetts
+    name: OpenStreetMap - Massachusetts extract
+    publisher: OpenStreetMap contributors (extract by Geofabrik GmbH)
+    category_scope: [all]
+    role: existence
+    access:
+      method: osm_pbf
+      url: https://download.geofabrik.de/north-america/us/massachusetts-latest.osm.pbf
+      api_key_env: null
+      rate_limit: null          # none documented; file ~296 MB, so fetch at most once a day
+    cadence: daily              # file on 2026-10-10 held data up to 2026-10-08T20:21Z
+    crs: EPSG:4326
+    join_keys: [osm_type, osm_id]
+    licence: ODbL-1.0
+    licence_url: https://www.openstreetmap.org/copyright
+    redistribution: "yes"
+    attribution: "© OpenStreetMap contributors"
+    licence_notes: >-
+      openstreetmap.org/copyright: "you may distribute the result only under the
+      same license". Share-alike is met because the merged table is itself
+      ODbL-1.0. Geofabrik's footer labels the extract ODbL 1.0. The OSMF
+      Attribution Guidelines treat "© OpenStreetMap contributors" as an
+      acceptable historical form; the preferred form is "OpenStreetMap" linked
+      to openstreetmap.org/copyright. For a database release, put the
+      attribution plus the ODbL text or a link to it in the README/metadata.
+    verified: 2026-10-10
+
+  - id: overture_places
+    name: Overture Maps Places (release 2026-09-23.1)
+    publisher: Overture Maps Foundation
+    category_scope: [all]
+    role: existence
+    access:
+      method: geoparquet_s3
+      url: s3://overturemaps-us-west-2/release/2026-09-23.1/theme=places/type=place/
+      api_key_env: null         # public bucket, anonymous (unsigned) reads
+      rate_limit: null
+    cadence: monthly
+    crs: EPSG:4326
+    join_keys: [id, sources.record_id]   # id = GERS id; sources[].dataset gives the per-record upstream
+    licence: [CDLA-Permissive-2.0, Apache-2.0, CC0-1.0]   # varies per record, see sources[].dataset
+    licence_url: https://docs.overturemaps.org/attribution/
+    redistribution: "yes"
+    attribution: |-
+      Overture Maps Foundation, overturemaps.org
+      Data from Meta. Data from Microsoft. Data from PinMeTo. Data from Krick. Data from RenderSEO. Data from DAC. Data from BrightQuery. (CDLA Permissive 2.0)
+      Data from Foursquare. Copyright 2024 Foursquare Labs, Inc. All rights reserved. Available under Apache 2.0. Foursquare data was transformed to the Overture schema. Changed: 2026-03-18. [plus the full Foursquare NOTICE.txt]
+      Data from AllThePlaces. (CC0 1.0)
+    licence_notes: >-
+      The attribution page lists licences per Places provider: CDLA-Permissive-2.0
+      (Meta, Microsoft, PinMeTo, Krick, RenderSEO, DAC, BrightQuery), Apache-2.0
+      (Foursquare) and CC0-1.0 (AllThePlaces). CDLA-P-2.0 §2.1 allows sharing "so
+      long as the Data Recipient makes available the text of this agreement with
+      the shared Data", so ship the CDLA text. Apache-2.0 for Foursquare: ship the
+      LICENSE file, the full NOTICE.txt (https://opensource.foursquare.com/places-notice-txt/)
+      and a notice of our own changes. NOTICE.txt currently reads "© 2026" but
+      the Overture page says "Copyright 2024", so reproduce NOTICE.txt word for
+      word. All three licences are permissive enough to include in an ODbL
+      database. Drop attribution lines for providers absent from our extract.
+      Overture presents its own citation line as optional.
+    verified: 2026-10-10
+
+  # ------------------------------------------- City of Boston (Analyze Boston, CKAN)
+  # CKAN filestore URLs for the inspection/licensing resources use a temp
+  # filename (tmpXXXX.csv) that changes on every refresh. We use the stable
+  # datastore dump URL instead; the filestore URL seen today is in a comment.
+  - id: boston_food_inspections
+    name: Food Establishment Inspections
+    publisher: City of Boston (Analyze Boston) - Inspectional Services Department
+    category_scope: [food]
+    role: enrich
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/datastore/dump/4582bec6-2b4f-4f9e-bc55-cbaa73117f4c
+      # filestore today: https://data.boston.gov/dataset/03693648-2c62-4a2c-a4ec-48de2ee14e18/resource/4582bec6-2b4f-4f9e-bc55-cbaa73117f4c/download/tmpi6l8pkp7.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: daily              # CKAN accrual_periodicity R/P1D
+    crs: EPSG:4326              # `location` column holds "(lat, lon)"
+    join_keys: [licenseno, property_id]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    drop_fields: [legalowner, namefirst, namelast]   # ADR 0031: never stored
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl (Open Data Commons Public Domain
+      Dedication and License). PDDL §3.1 "dedicates the Work to the public domain
+      for the benefit of the public", so no attribution is required. A courtesy
+      credit "City of Boston, Analyze Boston" is suggested. Separate from the
+      licence, for privacy: drop the person-name fields (legalowner, namefirst,
+      namelast) from the release.
+    verified: 2026-10-10
+
+  - id: boston_active_food_licenses
+    name: Active Food Establishment Licenses
+    publisher: City of Boston (Analyze Boston) - Inspectional Services Department
+    category_scope: [food]
+    role: existence
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/datastore/dump/f1e13724-284d-478c-b8bc-ef042aa5b70b
+      # filestore today: https://data.boston.gov/dataset/5e4182e3-ba1e-4511-88f8-08a70383e1b6/resource/f1e13724-284d-478c-b8bc-ef042aa5b70b/download/tmptsfmgi2g.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: daily              # accrual_periodicity R/P1D
+    crs: EPSG:4326              # latitude / longitude columns
+    join_keys: [property_id]    # no licenseno column here; match inspections on property_id + businessname
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    drop_fields: [dayphn_cleaned]   # ADR 0031: never stored
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required (courtesy credit
+      suggested). The dayphn_cleaned column holds business phone numbers; keep or
+      drop it as a product choice.
+    verified: 2026-10-10
+
+  - id: boston_licensing_board_licenses
+    name: Licensing Board Licenses
+    publisher: City of Boston (Analyze Boston) - Boston Licensing Board
+    category_scope: [food, alcohol, nightlife]
+    role: existence             # common victualler and alcohol licensed premises
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/datastore/dump/04dc653b-1789-4374-9669-b07df7233344
+      # filestore today: https://data.boston.gov/dataset/1b020058-038a-43fd-888b-529e76dec04a/resource/04dc653b-1789-4374-9669-b07df7233344/download/tmp0mff7gtl.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: daily              # no accrual_periodicity set; metadata modified 2026-10-10 (observed daily refresh)
+    crs: EPSG:2249              # gpsx / gpsy, MA State Plane Mainland (ftUS)
+    join_keys: [license_num]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    drop_fields: [applicant, manager, day_phone, evening_phone]   # ADR 0031: never stored
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required. For privacy, drop the
+      applicant, manager, day_phone and evening_phone fields from the release.
+    verified: 2026-10-10
+
+  - id: boston_liquor_licenses
+    name: Section 12 Licenses (Alcohol)   # CKAN slug: liquor-licenses
+    publisher: City of Boston (Analyze Boston) - Boston Licensing Board
+    category_scope: [alcohol, food]
+    role: enrich
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/datastore/dump/aab353c1-c797-4053-a3fc-e893f5ccf547
+      # filestore today: https://data.boston.gov/dataset/47d501bf-8bfa-4076-944f-da0aedb60c8a/resource/aab353c1-c797-4053-a3fc-e893f5ccf547/download/tmpvmzl95ux.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: daily              # observed: metadata modified 2026-10-10
+    crs: EPSG:2249              # gpsx / gpsy
+    join_keys: [license_num]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    drop_fields: [applicant, manager, day_phone, evening_phone]   # ADR 0031: never stored
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required. For privacy, drop the
+      applicant, manager and phone fields.
+    verified: 2026-10-10
+
+  - id: boston_entertainment_licenses
+    name: Annual Entertainment Licenses   # CKAN slug: entertainment-licenses-legacy
+    publisher: City of Boston (Analyze Boston) - Consumer Affairs and Licensing
+    category_scope: [nightlife, entertainment]
+    role: enrich
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/datastore/dump/ed8efbc1-067c-4da6-9551-a8b2eaea4a24
+      # filestore today: https://data.boston.gov/dataset/0d93d762-da11-4cea-9bf0-77aaa5d25c36/resource/ed8efbc1-067c-4da6-9551-a8b2eaea4a24/download/tmp2xzyxdmy.csv
+      # sibling resource "With Detail": eb683641-e358-4c2c-95de-c84f32c09147
+      api_key_env: null
+      rate_limit: null
+    cadence: daily              # observed: metadata modified 2026-10-10
+    crs: EPSG:2249              # gpsx / gpsy
+    join_keys: [license_num]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    drop_fields: [applicant, manager]   # ADR 0031: never stored
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required. For privacy, drop the
+      applicant and manager fields.
+    verified: 2026-10-10
+
+  - id: boston_open_space
+    name: Open Space
+    publisher: City of Boston (Analyze Boston) - Boston Maps
+    category_scope: [park]
+    role: existence
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/dataset/66a3324e-066f-4caf-897b-a2b4dcb8bc42/resource/61c0239f-c8fd-47de-8375-2405382ef37c/download/open_space.csv
+      # shape_wkt is empty in this CSV. For polygons use the GeoJSON resource
+      # ccc038ce-5602-42d0-b4c6-87f60c116ea3:
+      # https://data.boston.gov/dataset/66a3324e-066f-4caf-897b-a2b4dcb8bc42/resource/ccc038ce-5602-42d0-b4c6-87f60c116ea3/download/open_space.geojson
+      api_key_env: null
+      rate_limit: null
+    cadence: weekly             # harvested from Boston's ArcGIS Online; last refresh 2026-10-04
+    crs: EPSG:4326
+    join_keys: [OS_ID, PARK_ID, ParcelNumber]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl, harvested from the City's ArcGIS
+      Online. PDDL §3.1 "dedicates the Work to the public domain", so no
+      attribution is required.
+    verified: 2026-10-10
+
+  - id: boston_park_features
+    name: Park Features
+    publisher: City of Boston (Analyze Boston) - Boston Maps
+    category_scope: [park, playground, sports]
+    role: enrich
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/dataset/0ab7eb75-f3f3-4aea-8bf1-ae11dbfe1e32/resource/4d28fc98-c503-4065-987f-9fbc41947fc4/download/park_features.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04
+    crs: EPSG:4326              # POINT_X = lon, POINT_Y = lat
+    join_keys: [OS_ID]          # links to boston_open_space.OS_ID
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required.
+    verified: 2026-10-10
+
+  - id: boston_wicked_free_wifi
+    name: Wicked Free WiFi Locations
+    publisher: City of Boston (Analyze Boston) - Boston Maps
+    category_scope: [wifi]
+    role: enrich
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/dataset/8507af6d-9cea-4e6c-a9ef-9b7848907cbc/resource/9a338635-4013-46ef-90b7-42836299e2de/download/wicked_free_wifi_locations.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04
+    crs: EPSG:4326              # device_lat / device_long (null for mobile kits)
+    join_keys: [device_serial]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required.
+    verified: 2026-10-10
+
+  - id: boston_public_libraries
+    name: Public Libraries
+    publisher: City of Boston (Analyze Boston) - Boston Maps
+    category_scope: [library]
+    role: existence
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/dataset/552df2e4-0db0-4fd6-b20f-4535695f17a4/resource/b48474af-b5b8-42d3-8205-a5f110a0ade8/download/public_libraries.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04 (26 rows)
+    crs: EPSG:4326              # POINT_X / POINT_Y
+    join_keys: [BRANCH]         # OBJECTID_1 is null
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required.
+    verified: 2026-10-10
+
+  - id: boston_bcyf_community_centers
+    name: Community Centers (BCYF)
+    publisher: City of Boston (Analyze Boston) - Boston Maps
+    category_scope: [community_centre]
+    role: existence
+    access:
+      method: ckan_csv
+      url: https://data.boston.gov/dataset/33f63508-d3d0-4cea-a6bf-94c487ad745e/resource/002b5f37-b10c-419d-ab77-1542f75f7cd2/download/community_centers.csv
+      api_key_env: null
+      rate_limit: null
+    cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04 (35 rows)
+    crs: EPSG:4326              # POINT_X / POINT_Y
+    join_keys: [SITE]
+    licence: PDDL-1.0
+    licence_url: https://opendatacommons.org/licenses/pddl/1-0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The dataset's CKAN license_id is odc-pddl. PDDL §3.1 "dedicates the Work to
+      the public domain", so no attribution is required. Related PDDL dataset not
+      registered here: community-center-pools.
+    verified: 2026-10-10
+
+  # ------------------------------------------------ City of Cambridge (Socrata)
+  - id: cambridge_sanitary_inspections
+    name: Sanitary Inspections
+    publisher: City of Cambridge (Open Data) - Inspectional Services Department
+    category_scope: [food]
+    role: enrich
+    access:
+      method: socrata
+      url: https://data.cambridgema.gov/resource/ryb9-qzmw.json
+      api_key_env: SOCRATA_APP_TOKEN   # optional; raises throttling limits
+      rate_limit: "no numeric limit published; Socrata throttles requests sent without an app token"
+    cadence: weekly             # metadata "Estimated Update Frequency: Weekly"
+    crs: EPSG:4326              # latitude / longitude
+    join_keys: [mbl, viewpoint_id, business_name]
+    licence: PDDL-1.0
+    licence_url: http://opendatacommons.org/licenses/pddl/1.0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The Socrata view metadata gives the licence as "Open Data Commons Public
+      Domain Dedication and License" (licenseId PDDL). The City adopted PDDL for
+      its open data in February 2024. The attribution field ("City of Cambridge
+      Inspectional Services Department") records provenance; PDDL does not
+      require it, but use it as a courtesy credit.
+    verified: 2026-10-10
+
+  - id: cambridge_food_establishment_permits
+    name: Food Establishment Permits
+    publisher: City of Cambridge (Open Data) - Inspectional Services Department
+    category_scope: [food]
+    role: existence
+    access:
+      method: socrata
+      url: https://data.cambridgema.gov/resource/iect-ma2e.json
+      api_key_env: SOCRATA_APP_TOKEN   # optional
+      rate_limit: "no numeric limit published; Socrata throttles requests sent without an app token"
+    cadence: daily              # metadata "Estimated Update Frequency: Daily"
+    crs: EPSG:4326              # latitude / longitude
+    join_keys: [id, mbl, viewpoint_id]
+    licence: PDDL-1.0
+    licence_url: http://opendatacommons.org/licenses/pddl/1.0/
+    redistribution: "yes"
+    drop_fields: [applicant_name]   # ADR 0031: never stored
+    attribution: null
+    licence_notes: >-
+      The Socrata view metadata gives the licence as "Open Data Commons Public
+      Domain Dedication and License" (licenseId PDDL), with an attribution link
+      to cambridgema.gov/inspection. No attribution is required. The table has
+      more than 200 operational columns; select only place attributes.
+    verified: 2026-10-10
+
+  # ------------------------------------------------------------ federal sources
+  - id: usda_snap_retailers
+    name: SNAP Retailer Locations
+    publisher: USDA Food and Nutrition Service (ArcGIS owner FNS_SNAP_RPMD)
+    category_scope: [grocery, convenience, farmers_market]
+    role: enrich
+    access:
+      method: arcgis_rest
+      url: https://services1.arcgis.com/RLQu0rK7h4kbsBq5/arcgis/rest/services/snap_retailer_location_data/FeatureServer/0
+      api_key_env: null
+      rate_limit: "no rate limit documented; maxRecordCount 1000 per page"
+    cadence: weekly             # the item description says "updated every 2 weeks"; poll weekly
+    crs: EPSG:4326              # use the Latitude/Longitude attributes or outSR=4326 (layer geometry is EPSG:3857)
+    join_keys: [Record_ID]
+    licence: CC-BY-4.0
+    licence_url: https://catalog.data.gov/dataset/snap-retail-locator
+    redistribution: "yes"
+    attribution: "Source: USDA Food and Nutrition Service, SNAP Retailer Locator data, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified"
+    licence_notes: >-
+      The data.gov record "SNAP Retail Locator" (USDA-FNS-000011) has License
+      https://creativecommons.org/licenses/by/4.0. The ArcGIS item's licenseInfo
+      is empty, and the FNS data page blocked automated fetch (403), so we found
+      no other FNS terms. CC BY 4.0 lets us share adapted data under our own ODbL
+      licence if we keep the attribution, link the licence and note our changes.
+      Federal works are usually public domain (17 USC 105), so treating the data
+      as CC BY is the cautious choice. The Incentive_Program field does not mark
+      MA HIP vendors (only 8 MA rows, all "Waiver").
+    verified: 2026-10-10
+
+  - id: nppes_npi_pharmacies
+    name: NPPES NPI Registry API - community/retail pharmacies
+    publisher: Centers for Medicare & Medicaid Services (HHS)
+    category_scope: [pharmacy]
+    role: enrich
+    access:
+      method: rest_api
+      url: https://npiregistry.cms.hhs.gov/api/?version=2.1
+      # e.g. &taxonomy_description=Community/Retail Pharmacy&state=MA&postal_code=021*
+      # then keep taxonomies[].code == 3336C0003X and addresses[].address_purpose == LOCATION
+      # (city/state filters also match MAILING addresses)
+      api_key_env: null
+      rate_limit: "no rate limit documented; max 200 results per request and skip <= 1000 (1,200 records per query), so partition by postal_code"
+    cadence: daily              # registry: "Information associated with NPIs is updated daily"
+    crs: none (needs geocoding)
+    join_keys: [number]         # the NPI
+    licence: US-Gov-Public-Domain
+    licence_url: https://www.cms.gov/medicare/regulations-guidance/administrative-simplification/data-dissemination
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      There is no dataset licence. Under notice CMS-6060-N (72 FR 30011, 2007)
+      the published fields are "required to be disclosed under the FOIA", and
+      we found no reuse restriction. CMS says of cms.gov: "It is a public domain
+      web site." Reading these as redistributable federal FOIA records is our
+      inference, not an explicit grant. Use NPI-2 (organisation) records only.
+      CMS suggests showing only the NPI and deactivation date for deactivated NPIs.
+    verified: 2026-10-10
+
+  - id: fdic_bank_locations
+    name: FDIC BankFind Suite - Locations
+    publisher: Federal Deposit Insurance Corporation
+    category_scope: [bank]
+    role: existence
+    access:
+      method: rest_api
+      url: https://api.fdic.gov/banks/locations   # e.g. ?filters=STALP:MA&format=json
+      api_key_env: null         # docs: users "currently not required to register" for a key
+      rate_limit: "not documented; response header x-ratelimit-limit: 20 observed (window unstated)"
+    cadence: daily              # API index rebuilt daily (meta.index.name locations_20261009...)
+    crs: EPSG:4326              # LATITUDE / LONGITUDE
+    join_keys: [UNINUM, CERT]
+    licence: US-Gov-Public-Domain
+    licence_url: https://www.usa.gov/publicdomain/label/1.0/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      The data.gov record "FDIC Bank Locations" gives the licence as
+      usa.gov/publicdomain/label/1.0 and lists this API plus a bulk CSV. FDIC
+      Website Policies: the FDIC "makes all non-sensitive agency information
+      available to the public". The API docs set no attribution or reuse terms;
+      the site disclaims warranty only.
+    verified: 2026-10-10
+
+  - id: afdc_alt_fuel_stations
+    name: Alternative Fuel Stations API (AFDC)
+    publisher: U.S. DOE Alternative Fuels Data Center / National Laboratory of the Rockies (NLR, formerly NREL)
+    category_scope: [ev_charging, fuel]
+    role: existence
+    access:
+      method: rest_api
+      url: https://developer.nlr.gov/api/alt-fuel-stations/v1.json   # e.g. ?state=MA&api_key=$NLR_API_KEY (csv/geojson also offered)
+      api_key_env: NLR_API_KEY
+      rate_limit: "1,000 requests/hour per key (default, rolling); DEMO_KEY 30/hour and 50/day per IP"
+    cadence: daily              # data.gov NTAD record lists daily updates
+    crs: EPSG:4326
+    join_keys: [id]
+    licence: custom
+    licence_url: https://developer.nlr.gov/terms/
+    redistribution: "yes"
+    attribution: null
+    licence_notes: >-
+      NLR Developer Network Terms: the Data "may be used for any purpose
+      whatsoever". No attribution is required. The DOE/NLR/Alliance names must
+      not be used to endorse or promote anyone using the data. The user must
+      indemnify DOE/NLR against claims arising from "use and distribution of the
+      Data", which assumes we will distribute it; flag that clause for legal
+      review. Optional courtesy credit: "U.S. DOE Alternative Fuels Data Center".
+    verified: 2026-10-10
+
+  # ---------------------------------------------------------- MassGIS (state)
+  - id: massgis_hospitals
+    name: MassGIS Hospitals (HOSPITALS_PT)
+    publisher: MassGIS (Bureau of Geographic Information, EOTSS), with data from Mass. DPH / CHIA
+    category_scope: [hospital]
+    role: existence             # DPH-licensed hospitals; 103 features on 2026-10-10
+    access:
+      method: arcgis_rest
+      url: https://arcgisserver.digital.mass.gov/arcgisserver/rest/services/AGOL/Hospitals/FeatureServer/0
+      # shapefile: https://s3.us-east-1.amazonaws.com/download.massgis.digital.mass.gov/shapefiles/state/hospitals.zip (Last-Modified 2026-08-21)
+      # the older acute_care_hospitals.zip (2024-09) layer is deprecated
+      api_key_env: null
+      rate_limit: "no rate limit documented; maxRecordCount 2000"
+    cadence: quarterly          # updated irregularly when DPH sends changes; poll quarterly
+    crs: EPSG:26986
+    join_keys: [DPH_FACILITY_ID, MAD_ID]
+    licence: custom
+    licence_url: https://www.mass.gov/info-details/massgis-frequently-asked-questions
+    redistribution: "yes"
+    attribution: "MassGIS (Bureau of Geographic Information), Commonwealth of Massachusetts EOTSS"
+    licence_notes: >-
+      The licenseInfo on MassGIS's ArcGIS item 023af07d0458402b8de15fe733759a2f
+      says the service "may be used by anyone for their purposes" and the data
+      are public records. It asks that source credit "should be stated" in the
+      form above, and disclaims liability. The MassGIS FAQ calls MassGIS data
+      public domain because it is tax-funded; we read it via a search-index copy
+      because mass.gov returned 403. Credit is a request, not a condition, but
+      include it.
+    verified: 2026-10-10
+
+  - id: massgis_municipalities
+    name: MassGIS Municipalities (TOWNSSURVEY_POLYM)
+    publisher: MassGIS (Bureau of Geographic Information, EOTSS)
+    category_scope: [boundary]
+    role: enrich                # study-area / town polygons for clipping and admin tags; not a place source
+    access:
+      method: arcgis_rest
+      url: https://services1.arcgis.com/hGdibHYSPO59RG1h/arcgis/rest/services/Massachusetts_Municipalities/FeatureServer/1
+      # layer 1 "Massachusetts Municipalities Areas": 351 multipart polygons (one per city/town)
+      # shapefile: https://s3.us-east-1.amazonaws.com/download.massgis.digital.mass.gov/shapefiles/state/townssurvey_shp.zip
+      api_key_env: null
+      rate_limit: "no rate limit documented; maxRecordCount 2000"
+    cadence: quarterly          # changes rarely (data last edited 2026-05); poll quarterly
+    crs: EPSG:26986
+    join_keys: [TOWN_ID]
+    licence: custom
+    licence_url: https://www.mass.gov/info-details/massgis-frequently-asked-questions
+    redistribution: "yes"
+    attribution: "MassGIS (Bureau of Geographic Information), Commonwealth of Massachusetts EOTSS"
+    licence_notes: >-
+      The licenseInfo on MassGIS's ArcGIS item 379e355b00244170a067eedde1f90417
+      says "These data are public records." It adds that only a licensed land
+      surveyor can authoritatively locate boundaries. The MassGIS FAQ calls the
+      data public domain (read via a search-index copy; mass.gov returned 403).
+      MassGIS asks for the credit line above.
+    verified: 2026-10-10
+
+  # ------------------------------------------------------------- MBTA / MassDOT
+  - id: mbta_gtfs
+    name: MBTA GTFS (static schedule, stops, stations)
+    publisher: Massachusetts Bay Transportation Authority (MassDOT)
+    category_scope: [transit]
+    role: existence
+    access:
+      method: gtfs
+      url: https://cdn.mbta.com/MBTA_GTFS.zip
+      api_key_env: null
+      rate_limit: null
+    cadence: weekly             # MBTA: "updated several times per month"
+    crs: EPSG:4326
+    join_keys: [stop_id, parent_station]
+    licence: custom
+    licence_url: https://cdn.mbta.com/sites/default/files/2023-08/mbta-massdot-develop-license-agreement.pdf
+    redistribution: "display-only"
+    decision: "ADR 0029: shown in the app, excluded from the ODbL download"
+    attribution: "Data provided by MassDOT / MBTA"   # our wording; the licence only requires clear acknowledgement
+    licence_notes: >-
+      MassDOT Developers License Agreement (updated 2009-11-13) §3.1 grants
+      "non-exclusive, limited, and revocable rights to use, reproduce, and
+      redistribute the Data". §4.1: acknowledge MassDOT, never claim ownership,
+      no logos. §4.2 allows combining with other data. §5.1 allows changing the
+      terms without notice. The grant is revocable, says nothing on
+      sublicensing, and binds each user directly, so it is unclear whether stops
+      can be relicensed under ODbL's perpetual terms. In-app display with
+      acknowledgement is clearly allowed. Keep out of the ODbL release until
+      MassDOT confirms.
+    verified: 2026-10-10
+
+  - id: mbta_gtfs_rt
+    name: MBTA GTFS-Realtime feeds
+    publisher: Massachusetts Bay Transportation Authority (MassDOT)
+    category_scope: [transit]
+    role: live
+    access:
+      method: gtfs_rt
+      url: https://cdn.mbta.com/realtime/
+      # feeds: VehiclePositions.pb, TripUpdates.pb, Alerts.pb (all HTTP 200 on 2026-10-10)
+      api_key_env: null
+      rate_limit: null
+    cadence: realtime
+    crs: EPSG:4326
+    join_keys: [trip_id, route_id, stop_id, vehicle_id]
+    licence: custom
+    licence_url: https://cdn.mbta.com/sites/default/files/2023-08/mbta-massdot-develop-license-agreement.pdf
+    redistribution: "display-only"
+    decision: "ADR 0029: shown in the app, excluded from the ODbL download"
+    attribution: "Data provided by MassDOT / MBTA"   # our wording
+    licence_notes: >-
+      Same MassDOT Developers License Agreement as mbta_gtfs: a revocable right
+      to "use, reproduce, and redistribute" with acknowledgement of MassDOT.
+      Live data is shown in the app only and is never part of the static ODbL
+      release. The ODbL question is as unclear as for mbta_gtfs.
+    verified: 2026-10-10
+
+  - id: mbta_v3_api
+    name: MBTA V3 API (JSON:API + SSE streaming)
+    publisher: Massachusetts Bay Transportation Authority (MassDOT)
+    category_scope: [transit]
+    role: live
+    access:
+      method: sse               # same host also serves REST JSON:API; streaming uses Accept: text/event-stream
+      url: https://api-v3.mbta.com
+      api_key_env: MBTA_API_KEY
+      rate_limit: "1,000 requests/min with key (documented); 20/min without key (x-ratelimit-limit: 20 observed); streaming requires a key"
+    cadence: realtime
+    crs: EPSG:4326
+    join_keys: [stop_id, route_id, trip_id]
+    licence: custom
+    licence_url: https://cdn.mbta.com/sites/default/files/2023-08/mbta-massdot-develop-license-agreement.pdf
+    redistribution: "display-only"
+    decision: "ADR 0029: shown in the app, excluded from the ODbL download"
+    attribution: "Data provided by MassDOT / MBTA"   # our wording
+    licence_notes: >-
+      The V3 API page says data use is governed by the MassDOT Developers
+      License Agreement, the same terms as mbta_gtfs. mbta.com's general Terms
+      of Use bar redistributing "Platform Content", but the developer licence is
+      the specific grant for this data. In-app display is allowed; the ODbL
+      release question is unclear.
+    verified: 2026-10-10
+
+  # ------------------------------------------------------------------ Bluebikes
+  - id: bluebikes_station_information
+    name: Bluebikes GBFS - station_information
+    publisher: Lyft Bikes and Scooters, LLC (operator); data owned by Boston, Cambridge, Brookline, Everett and Somerville
+    category_scope: [bike_share]
+    role: existence
+    access:
+      method: gbfs
+      url: https://gbfs.bluebikes.com/gbfs/en/station_information.json
+      # discovery: https://gbfs.bluebikes.com/gbfs/gbfs.json (GBFS 1.1; also lists gbfs.lyft.com/gbfs/1.1/bos/... URLs)
+      api_key_env: null
+      rate_limit: null          # ttl 60 s; no limit documented
+    cadence: daily              # station list changes rarely; poll daily (626 stations on 2026-10-10)
+    crs: EPSG:4326
+    join_keys: [station_id, short_name, legacy_id]
+    licence: custom
+    licence_url: https://bluebikes.com/data-license-agreement
+    redistribution: "display-only"
+    decision: "ADR 0029: shown in the app, excluded from the ODbL download"
+    attribution: null
+    licence_notes: >-
+      Data License Agreement (2021-01-22) §1 grants a perpetual licence to
+      "distribute in your product or service". §2(b) bars any user from
+      "Host, stream, publish, distribute, sublicense, or sell the Data as a
+      stand-alone dataset", except in non-commercial analyses. §2(g)-(h): no
+      implied endorsement, no Bluebikes marks without permission. §7: Lyft can
+      terminate at any time. In-app display is allowed. An ODbL release would
+      let others extract and re-share stations on their own, so compatibility
+      is unclear; ask bike-data@lyft.com. The feed has no license_url; the
+      system-data page links this agreement. Possible PDDL alternative for
+      Boston only: Analyze Boston "blue-bike-stations" (not audited).
+    verified: 2026-10-10
+
+  - id: bluebikes_station_status
+    name: Bluebikes GBFS - station_status
+    publisher: Lyft Bikes and Scooters, LLC (operator); data owned by Boston, Cambridge, Brookline, Everett and Somerville
+    category_scope: [bike_share]
+    role: live
+    access:
+      method: gbfs
+      url: https://gbfs.bluebikes.com/gbfs/en/station_status.json
+      api_key_env: null
+      rate_limit: null          # ttl 60 s
+    cadence: realtime
+    crs: none (needs geocoding)   # status has no coordinates; join to station_information
+    join_keys: [station_id]
+    licence: custom
+    licence_url: https://bluebikes.com/data-license-agreement
+    redistribution: "display-only"
+    decision: "ADR 0029: shown in the app, excluded from the ODbL download"
+    attribution: null
+    licence_notes: >-
+      Same Data License Agreement as bluebikes_station_information. §2(b) also
+      bars re-streaming the Data as a stand-alone dataset. Showing live
+      availability in the app is allowed ("distribute in your product or
+      service"). Live data is never in the static release.
+    verified: 2026-10-10
+
+  # --------------------------------------------- optional: food-assistance vendors
+  - id: ma_wic_vendors
+    name: Massachusetts WIC approved stores
+    publisher: Massachusetts Department of Public Health - WIC Nutrition Program
+    category_scope: [grocery, pharmacy]
+    role: enrich
+    access:
+      method: xlsx_download     # not in the core enum: spreadsheets "Vendor listing by city (A-L)" and "(M-W)" linked from the page below; per-letter HTML pages also exist
+      url: https://www.mass.gov/info-details/find-wic-approved-stores
+      api_key_env: null
+      rate_limit: null
+    cadence: monthly            # update schedule not stated; poll monthly
+    crs: none (needs geocoding)
+    join_keys: []               # name + address only
+    licence: custom
+    licence_url: https://www.mass.gov/massgov-terms-of-use
+    redistribution: "unknown"
+    enabled: false
+    decision: "ADR 0030: not imported for now; SNAP covers benefit acceptance"
+    attribution: null
+    licence_notes: >-
+      We found no dataset licence. The Mass.gov Terms of Use (read via a
+      search-index copy; mass.gov returned 403) say most public records on
+      Commonwealth sites may be copied and used, but some site content is
+      copyrighted. It is not clear which applies to the vendor spreadsheet, so
+      ask the DPH WIC program for confirmation before releasing.
+    verified: 2026-10-10
+
+  - id: ma_hip_vendors
+    name: Massachusetts Healthy Incentives Program (HIP) vendors
+    publisher: Massachusetts Department of Transitional Assistance (DTA)
+    category_scope: [farmers_market, farm_stand, csa]
+    role: enrich
+    access:
+      method: web_app           # not in the core enum: DTA Finder map (www.dtafinder.com redirects here), a JS app with no documented export or API
+      url: https://dtafinder.dtadash.ehs.mass.gov/
+      # partial HTML table of new vendors: https://www.mass.gov/info-details/healthy-incentives-program-hip-new-vendor-status-list
+      api_key_env: null
+      rate_limit: null
+    cadence: monthly            # not stated
+    crs: none (needs geocoding)
+    join_keys: []
+    licence: custom
+    licence_url: https://www.mass.gov/massgov-terms-of-use
+    redistribution: "unknown"
+    enabled: false
+    decision: "ADR 0030: not imported for now; SNAP covers benefit acceptance"
+    attribution: null
+    licence_notes: >-
+      DTA Finder shows no licence or terms, and we found no bulk download. The
+      Mass.gov site terms do not clearly cover this list. Ask DTA for a
+      spreadsheet and reuse terms; do not scrape. USDA SNAP data cannot stand
+      in, because its Incentive_Program field does not mark HIP vendors.
+    verified: 2026-10-10
+
+# ---------------------------------------------------------------------- summary
+# MBTA and Bluebikes are display-only (ADR 0029): their licences clearly allow
+# in-app display with acknowledgement, but not relicensing under ODbL.
+summary:
+  "yes":
+    - osm_geofabrik_massachusetts
+    - overture_places
+    - boston_food_inspections
+    - boston_active_food_licenses
+    - boston_licensing_board_licenses
+    - boston_liquor_licenses
+    - boston_entertainment_licenses
+    - boston_open_space
+    - boston_park_features
+    - boston_wicked_free_wifi
+    - boston_public_libraries
+    - boston_bcyf_community_centers
+    - cambridge_sanitary_inspections
+    - cambridge_food_establishment_permits
+    - usda_snap_retailers
+    - nppes_npi_pharmacies
+    - fdic_bank_locations
+    - afdc_alt_fuel_stations
+    - massgis_hospitals
+    - massgis_municipalities
+  "display-only":
+    - mbta_gtfs
+    - mbta_gtfs_rt
+    - mbta_v3_api
+    - bluebikes_station_information
+    - bluebikes_station_status
+  "unknown":            # enabled: false, so CI's "no unknown" rule does not apply
+    - ma_wic_vendors
+    - ma_hip_vendors

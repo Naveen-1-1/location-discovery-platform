@@ -1,0 +1,16 @@
+# Coverage area (ADR 0005). Add a town here and re-run tools/fetch-area.sh to extend coverage.
+# Boundaries: MassGIS "Massachusetts Municipalities" (survey-based polygons, include water/harbor islands).
+boundary_source:
+  publisher: MassGIS (Bureau of Geographic Information)
+  layer: https://services1.arcgis.com/hGdibHYSPO59RG1h/arcgis/rest/services/Massachusetts_Municipalities/FeatureServer/1
+  name_field: TOWN
+  native_crs: EPSG:26986
+towns:
+  - BOSTON
+  - CAMBRIDGE
+  - SOMERVILLE
+  - BROOKLINE
+# Buffer used when cutting extracts (OSM, Overture) so places just across a boundary can still be routed to.
+extract_buffer_m: 500
+generated:
+  polygons: data/area/area.geojson   # EPSG:4326, one feature per town, written by tools/fetch-area.sh

@@ -1,0 +1,35 @@
+# OS / editors
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Claude Code local-only settings
+.claude/settings.local.json
+
+# Java / Maven
+target/
+*.class
+hs_err_pid*.log
+*.jfr
+
+# Node / frontend
+node_modules/
+dist/
+
+# Secrets (copy infra/compose/.env.example → .env)
+.env
+*.env.local
+
+# Large or generated data (built in CI or by tools/*.sh; never committed)
+data/raw/
+data/cache/
+spikes/phase0/work/
+*.osm.pbf
+*.pmtiles
+*.parquet
+valhalla_tiles/
+photon_data/
+
+# k6 / load-test output
+load/results/

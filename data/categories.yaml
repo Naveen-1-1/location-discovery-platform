@@ -1,0 +1,63 @@
+# App categories and how each source's own classification maps onto them (ADR 0032).
+# Started from the Phase 0 spike mapping (spikes/phase0/sql/40_overlap.sql); extend as categories are added.
+categories:
+  food:
+    label: Food & drink
+    overture: { basic_category: [restaurant, casual_eatery, fast_food_restaurant, cafe, coffee_shop, bar] }
+    osm: { amenity: [restaurant, fast_food, cafe, bar, pub] }
+  grocery:
+    label: Groceries
+    overture:
+      basic_category: [convenience_store]
+      taxonomy_primary: [grocery_store, asian_grocery_store, international_grocery_store, organic_grocery_store,
+                         mexican_grocery_store, produce_store]
+    osm: { shop: [supermarket, convenience, greengrocer] }
+    official:
+      boston_food_inspections: { descript: ["Retail Food"], licstatus: [Active] }
+      usda_snap_retailers: { Store_Type: [Convenience Store, Grocery Store, Supermarket, Super Store, Farmers and Markets] }
+  pharmacy:
+    label: Pharmacies
+    overture: { basic_category: [pharmacy_and_drug_store] }
+    osm: { amenity: [pharmacy], healthcare: [pharmacy] }
+    official:
+      nppes_npi_pharmacies: { taxonomy_code: [3336C0003X, 333600000X] }   # community/retail + generic pharmacy
+  gym:
+    label: Gyms & fitness
+    overture: { basic_category: [gym, fitness_studio] }
+    osm: { leisure: [fitness_centre] }
+  park:
+    label: Parks
+    overture: { basic_category: [park] }
+    osm: { leisure: [park] }
+    official: { boston_open_space: {} }
+  bank:
+    label: Banks & credit unions
+    overture: { basic_category: [bank_or_credit_union] }
+    osm: { amenity: [bank] }
+    official: { fdic_bank_locations: { SERVTYPE_DESC_prefix: ["FULL SERVICE"] } }
+  atm:
+    label: ATMs
+    overture: { basic_category: [atm] }
+    osm: { amenity: [atm] }
+  ev_charging:
+    label: EV charging
+    official: { afdc_alt_fuel_stations: { fuel_type: [ELEC], access_code: [public], status_code: [E] } }
+  bike_share:
+    label: Bike share
+    official: { bluebikes_station_information: {} }
+  transit:
+    label: Transit stops
+    official: { mbta_gtfs: { location_type: [0, 1] } }
+  library:
+    label: Libraries
+    overture: { basic_category: [library] }
+    osm: { amenity: [library] }
+    official: { boston_public_libraries: {} }
+  hospital:
+    label: Hospitals
+    official: { massgis_hospitals: {} }
+  community_centre:
+    label: Community centres
+    overture: { basic_category: [community_center] }
+    osm: { amenity: [community_centre] }
+    official: { boston_bcyf_community_centers: {} }

@@ -1,0 +1,30 @@
+# Gate G1, decided with the project owner 2026-10-10 (ADR 0032), from docs/data/phase0-coverage.md.
+# existence: sources allowed to create a place (subject to the rules below).
+# enrich:    sources that only attach details (licence, inspection, SNAP, hours…) to a matched place.
+
+overture_rule:
+  exclude_operating_status: [permanently_closed]
+  min_confidence_alone: 0.9             # at or above: may create a place on its own
+  below_threshold_needs_corroboration:  # below: needs a nearby same-category record from another existence source
+    radius_m: 100
+    min_name_similarity: 0.85           # Jaro-Winkler on normalised names (the real matcher, ADR 0022, may refine)
+
+categories:
+  food:             { existence: [overture, osm],
+                      enrich: [boston_active_food_licenses, boston_food_inspections, boston_licensing_board_licenses,
+                               cambridge_food_establishment_permits, cambridge_sanitary_inspections] }
+  grocery:          { existence: [overture, osm, boston_food_inspections, usda_snap_retailers],
+                      enrich: [usda_snap_retailers] }   # SNAP acceptance flag
+  pharmacy:         { existence: [osm, overture], enrich: [nppes_npi_pharmacies],
+                      overture_requires_corroboration_by: [osm, nppes_npi_pharmacies] }   # ~20% of Overture "pharmacies" are drug companies
+  gym:              { existence: [overture, osm] }
+  atm:              { existence: [overture, osm] }
+  park:             { existence: [osm, boston_open_space], enrich: [overture] }   # polygons decide
+  bank:             { existence: [fdic_bank_locations, overture, osm],
+                      note: "FDIC is authoritative for bank branches; Overture/OSM add credit unions" }
+  ev_charging:      { existence: [afdc_alt_fuel_stations] }        # 1,320 public vs OSM 49 / Overture 38
+  bike_share:       { existence: [bluebikes_station_information] } # display-only (ADR 0029)
+  transit:          { existence: [mbta_gtfs] }                     # display-only (ADR 0029)
+  library:          { existence: [overture, osm], enrich: [boston_public_libraries] }
+  hospital:         { existence: [massgis_hospitals], enrich: [osm, overture] }   # Overture "hospital" = departments
+  community_centre: { existence: [overture, osm, boston_bcyf_community_centers] }
