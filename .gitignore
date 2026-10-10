@@ -36,3 +36,7 @@ load/results/
 
 # Generated basemap (tools/build-pmtiles.sh)
 frontend/public/tiles/
+
+# Python bytecode
+__pycache__/
+*.pyc
