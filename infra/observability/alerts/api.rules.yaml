@@ -1,0 +1,23 @@
+# Alert rules for the api service, in Prometheus rule-file format.
+# Development (ADR 0033): recreate these as Grafana-managed rules in Grafana Cloud (docs/runbooks/alert-drill.md).
+# Deployment: loaded by the self-hosted Prometheus and routed by Alertmanager.
+groups:
+  - name: placemap-api
+    rules:
+      - alert: ApiServerErrors
+        # More than 6 server errors per minute, sustained for a minute.
+        expr: sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", status=~"5.."}[2m]))) > 0.1
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "api is returning 5xx errors"
+          description: "{{ $value | humanize }} errors/s over the last 2 minutes. Check the API RED dashboard, then the traces for status=500."
+      - alert: VirtualThreadPinning
+        expr: sum(increase(jvm_threads_virtual_pinned_seconds_count{job=~"placemap/.*"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "virtual threads are being pinned"
+          description: "A virtual thread blocked while pinned to its carrier thread. Find the stack in JFR (jdk.VirtualThreadPinned)."

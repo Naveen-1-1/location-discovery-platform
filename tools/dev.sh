@@ -21,6 +21,26 @@ load_env() {
   set +a
 }
 
+# If our own service (matched by its jar path) is already listening on the port, e.g. still running in another
+# terminal tab, stop it so the new build can start. Anything else on the port is left alone.
+stop_previous() {
+  local port=$1 jar=$2 pid
+  pid=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -1 || true)
+  [[ -z $pid ]] && return 0
+  if ps -o command= -p "$pid" | grep -q -- "$jar"; then
+    echo "Stopping the previous instance on :$port (pid $pid)..."
+    kill "$pid"
+    for _ in $(seq 1 30); do
+      lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 || return 0
+      sleep 0.5
+    done
+    echo "pid $pid did not exit; stop it yourself (kill $pid)" >&2
+    exit 1
+  fi
+  echo "Port $port is used by another program (pid $pid): $(ps -o command= -p "$pid")" >&2
+  exit 1
+}
+
 case "${1:-help}" in
   migrate)
     load_env
@@ -36,11 +56,13 @@ case "${1:-help}" in
   api)
     load_env
     ./mvnw -q -B -pl services/api -am package -DskipTests
+    stop_previous 8080 services/api/target/api.jar
     exec java -jar services/api/target/api.jar
     ;;
   drill)
     # Needs the api started with: PLACEMAP_DRILLS=true tools/dev.sh api
-    for i in $(seq 1 "${2:-30}"); do
+    # Default: one failing request per second for 2 minutes, enough to hold the 5xx alert's 1-minute pending period.
+    for i in $(seq 1 "${2:-120}"); do
       curl -s -o /dev/null -w "%{http_code} " http://localhost:8080/api/_drills/error
       sleep 1
     done

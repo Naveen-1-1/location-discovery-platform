@@ -41,10 +41,19 @@
       <groupId>io.opentelemetry.instrumentation</groupId>
       <artifactId>opentelemetry-logback-appender-1.0</artifactId>
     </dependency>
+    <!-- JDBC spans (connection, query) in traces; the approach Spring Boot's docs point to. -->
+    <dependency>
+      <groupId>net.ttddyy.observation</groupId>
+      <artifactId>datasource-micrometer-spring-boot</artifactId>
+    </dependency>
     <!-- jvm.threads.virtual.pinned / submit.failed, read from JFR. -->
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-java21</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>

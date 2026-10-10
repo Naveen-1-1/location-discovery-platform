@@ -46,9 +46,16 @@ management:
   metrics:
     distribution:
       percentiles-histogram:
-        http.server.requests: true
+        "[http.server.requests]": true
+        # The in-flight (long-task) timer only needs its count: without this it inherits the prefix above and
+        # exports ~30 classic bucket series.
+        "[http.server.requests.active]": false
   # OTLP endpoints and auth come from OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL in .env, which Spring Boot
   # maps onto its own properties for traces, metrics and logs.
+
+jdbc:
+  datasource-proxy:
+    include-parameter-values: false   # keep coordinates out of trace attributes
 
 placemap:
   drills:

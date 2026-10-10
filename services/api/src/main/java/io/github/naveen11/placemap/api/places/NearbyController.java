@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,10 +23,14 @@ public class NearbyController {
     /** Phase 1 sorts by straight-line distance only; Phase 3 adds routed travel times (ADR 0026). */
     static final String TRAVEL_TIME_SOURCE = "straight_line";
 
-    private final PlaceRepository places;
+    private static final Logger log = LoggerFactory.getLogger(NearbyController.class);
 
-    public NearbyController(PlaceRepository places) {
+    private final PlaceRepository places;
+    private final CategoryCatalog catalog;
+
+    public NearbyController(PlaceRepository places, CategoryCatalog catalog) {
         this.places = places;
+        this.catalog = catalog;
     }
 
     public record NearbyResponse(
@@ -38,16 +44,22 @@ public class NearbyController {
             @RequestParam(name = "category", required = false) List<String> categories,
             @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
         var wanted = categories == null ? List.<String>of() : categories.stream().distinct().toList();
-        var known = places.categories().stream().map(Category::code).collect(Collectors.toSet());
-        var unknown = wanted.stream().filter(c -> !known.contains(c)).collect(Collectors.toCollection(TreeSet::new));
+        var unknown = wanted.stream().filter(c -> !catalog.isKnown(c)).collect(Collectors.toCollection(TreeSet::new));
         if (!unknown.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown category: " + String.join(", ", unknown));
         }
-        return new NearbyResponse(lat, lon, radius, TRAVEL_TIME_SOURCE, places.nearby(lat, lon, radius, wanted, limit));
+        var found = places.nearby(lat, lon, radius, wanted, limit);
+        // Never log coordinates (privacy): the trace id on this line is what links it to the request's trace.
+        log.atInfo()
+                .addKeyValue("radius_m", radius)
+                .addKeyValue("categories", wanted.isEmpty() ? "all" : String.join(",", wanted))
+                .addKeyValue("results", found.size())
+                .log("nearby search");
+        return new NearbyResponse(lat, lon, radius, TRAVEL_TIME_SOURCE, found);
     }
 
     @GetMapping("/categories")
     public List<Category> categories() {
-        return places.categories();
+        return catalog.all();
     }
 }
