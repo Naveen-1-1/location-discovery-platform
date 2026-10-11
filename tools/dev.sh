@@ -9,6 +9,7 @@
 #   tools/dev.sh ingest    start the importer: imports each source on its cadence, resumes unfinished runs
 #   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
 #   tools/dev.sh sizes     show the size of every table in the database (ADR 0034 asks to measure it)
+#   tools/dev.sh proofs c1|c2|backpressure   crash tests / backpressure benchmark on a throwaway local database
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -100,12 +101,16 @@ case "${1:-help}" in
       ORDER BY pg_total_relation_size(c.oid) DESC;" \
       -c "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;"
     ;;
+  proofs)
+    shift
+    exec python3 -I tools/ingest-proofs.py "$@"
+    ;;
   web)
     cd frontend
     [[ -d node_modules ]] || npm ci
     exec npm run dev
     ;;
   *)
-    sed -n '2,11p' "$0"
+    sed -n '2,12p' "$0"
     ;;
 esac

@@ -67,6 +67,14 @@ integration tests; without Docker they are skipped.
 ./mvnw -pl libs/concurrent-jcstress -am verify -Pjcstress -DskipTests # JCStress (quick mode)
 java -jar libs/concurrent-jmh/target/benchmarks.jar                   # JMH benchmarks
 ```
+The importer's crash tests and backpressure benchmark run the real jar against a throwaway local database and need
+Docker Desktop, Toxiproxy (`brew install toxiproxy`) and the snapshots in `data/raw`
+([ADR 0039](docs/adr/0039-crash-and-backpressure-proofs.md), results in [docs/benchmarks](docs/benchmarks)):
+```bash
+tools/dev.sh proofs c1             # kill -9 at random moments, 20 trials
+tools/dev.sh proofs c2             # connection cuts during commits, 5 trials
+tools/dev.sh proofs backpressure   # the same import with and without 200 ms of database latency
+```
 
 ## Licences
 - **Code:** MIT ([LICENSE](LICENSE)).
