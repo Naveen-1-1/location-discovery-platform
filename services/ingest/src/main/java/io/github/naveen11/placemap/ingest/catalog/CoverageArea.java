@@ -50,6 +50,12 @@ public final class CoverageArea {
         return new Checker(PreparedGeometryFactory.prepare(union));
     }
 
+    /** The bounding box {minLon, minLat, maxLon, maxLat}, for pushing a coarse filter down to a data source. */
+    public double[] bounds() {
+        var envelope = union.getEnvelopeInternal();
+        return new double[] {envelope.getMinX(), envelope.getMinY(), envelope.getMaxX(), envelope.getMaxY()};
+    }
+
     /** Fast point-in-area checks for one thread. */
     public static final class Checker {
         private final PreparedGeometry area;

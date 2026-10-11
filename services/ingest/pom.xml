@@ -45,6 +45,12 @@
       <groupId>org.locationtech.jts</groupId>
       <artifactId>jts-core</artifactId>
     </dependency>
+    <!-- Reads Overture's GeoParquet from S3 with bbox pushdown (plan: "Read Overture with DuckDB"). Native code: called
+         only from platform threads. -->
+    <dependency>
+      <groupId>org.duckdb</groupId>
+      <artifactId>duckdb_jdbc</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>

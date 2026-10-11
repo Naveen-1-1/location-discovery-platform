@@ -49,7 +49,8 @@ final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
             ON CONFLICT DO NOTHING
             """;
     private static final String INSERT_BATCH_DONE = """
-            INSERT INTO ingest.batch_done (run_id, seq, rows, rejected, checksum, keys) VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO ingest.batch_done (run_id, seq, rows, rejected, skipped, checksum, keys)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (run_id, seq) DO NOTHING
             """;
 
@@ -131,8 +132,9 @@ final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
                 done.setInt(2, batch.seq());
                 done.setInt(3, batch.rows());
                 done.setInt(4, batch.rejects().size());
-                done.setString(5, batch.checksum());
-                done.setArray(6, c.createArrayOf("text", records.stream().map(SourceRow::key).toArray()));
+                done.setInt(5, batch.skipped());
+                done.setString(6, batch.checksum());
+                done.setArray(7, c.createArrayOf("text", records.stream().map(SourceRow::key).toArray()));
                 done.executeUpdate();
             }
             c.commit();

@@ -36,6 +36,7 @@ public class IngestMetrics {
         private final String source;
         private final Counter accepted;
         private final Counter rejected;
+        private final Counter skipped;
         private final Counter batches;
         private final Counter retries;
         private final List<Gauge> gauges = new ArrayList<>();
@@ -44,6 +45,7 @@ public class IngestMetrics {
             this.source = source;
             this.accepted = registry.counter("placemap.ingest.rows", "source", source, "outcome", "accepted");
             this.rejected = registry.counter("placemap.ingest.rows", "source", source, "outcome", "rejected");
+            this.skipped = registry.counter("placemap.ingest.rows", "source", source, "outcome", "skipped");
             this.batches = registry.counter("placemap.ingest.batches", "source", source);
             this.retries = registry.counter("placemap.ingest.batch.retries", "source", source);
         }
@@ -51,6 +53,7 @@ public class IngestMetrics {
         void committed(ParsedBatch batch) {
             accepted.increment(batch.records().size());
             rejected.increment(batch.rejects().size());
+            skipped.increment(batch.skipped());
             batches.increment();
         }
 

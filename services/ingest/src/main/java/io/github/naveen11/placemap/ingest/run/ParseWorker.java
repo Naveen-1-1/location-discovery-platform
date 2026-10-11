@@ -28,6 +28,7 @@ final class ParseWorker implements Stage.Worker<RawBatch, ParsedBatch> {
     public ParsedBatch process(RawBatch batch) {
         var records = new ArrayList<SourceRow>(batch.rows().size());
         var rejects = new ArrayList<ParsedBatch.Reject>();
+        int skipped = 0;
         MessageDigest digest = sha256();
         for (int i = 0; i < batch.rows().size(); i++) {
             CsvRow row = batch.rows().get(i);
@@ -51,9 +52,10 @@ final class ParseWorker implements Stage.Worker<RawBatch, ParsedBatch> {
             switch (result) {
                 case RowResult.Accepted accepted -> records.add(accepted.row());
                 case RowResult.Rejected rejected -> rejects.add(new ParsedBatch.Reject(i, rejected.reason(), row.asMap()));
+                case RowResult.Skipped ignored -> skipped++;
             }
         }
-        return new ParsedBatch(batch.seq(), batch.rows().size(), records, rejects,
+        return new ParsedBatch(batch.seq(), batch.rows().size(), records, rejects, skipped,
                 HexFormat.of().formatHex(digest.digest()));
     }
 

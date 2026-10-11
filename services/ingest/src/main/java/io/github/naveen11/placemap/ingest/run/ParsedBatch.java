@@ -7,10 +7,12 @@ import java.util.Map;
 /**
  * A parsed batch, ready to commit in one transaction.
  *
- * @param rows rows in the raw batch (accepted + rejected)
+ * @param rows rows in the raw batch (accepted + rejected + skipped)
+ * @param skipped valid rows that are out of scope (see {@code RowResult.Skipped})
  * @param checksum sha-256 of the raw rows, stored with the checkpoint
  */
-public record ParsedBatch(int seq, int rows, List<SourceRow> records, List<Reject> rejects, String checksum) {
+public record ParsedBatch(int seq, int rows, List<SourceRow> records, List<Reject> rejects, int skipped,
+        String checksum) {
 
     /** @param rowNo position within the batch */
     public record Reject(int rowNo, String reason, Map<String, String> record) {

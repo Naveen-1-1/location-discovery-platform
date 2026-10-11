@@ -53,6 +53,7 @@
     <commons-csv.version>1.14.1</commons-csv.version>
     <jts.version>1.20.0</jts.version>
     <archunit.version>1.5.1</archunit.version>
+    <duckdb.version>1.5.5.1</duckdb.version>
 
     <!-- Plugins -->
     <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
@@ -131,6 +132,11 @@
         <groupId>com.tngtech.archunit</groupId>
         <artifactId>archunit-junit5</artifactId>
         <version>${archunit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.duckdb</groupId>
+        <artifactId>duckdb_jdbc</artifactId>
+        <version>${duckdb.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

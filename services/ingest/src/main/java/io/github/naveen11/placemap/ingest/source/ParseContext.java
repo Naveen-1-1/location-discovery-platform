@@ -10,6 +10,9 @@ import java.util.Optional;
  */
 public final class ParseContext {
 
+    /** The {@link #pointProblem} reason for a valid point outside the four towns. */
+    public static final String OUTSIDE_AREA = "outside the coverage area";
+
     private final CategoryRules categories;
     private final CoverageArea.Checker area;
 
@@ -39,6 +42,6 @@ public final class ParseContext {
         if (Math.abs(lon) <= 90 && area.covers(lat, lon)) {
             return Optional.of("latitude and longitude swapped");
         }
-        return Optional.of("outside the coverage area");
+        return Optional.of(OUTSIDE_AREA);
     }
 }

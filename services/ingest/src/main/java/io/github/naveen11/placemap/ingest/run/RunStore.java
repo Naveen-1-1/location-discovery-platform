@@ -121,8 +121,9 @@ public class RunStore {
             c.setAutoCommit(false);
             try {
                 var tx = JdbcClient.create(new SingleConnectionDataSource(c, true));
+                // Skipped rows (out of scope by design, e.g. Overture places in Newton) are not part of the share.
                 var totals = tx.sql("""
-                                SELECT coalesce(sum(rows), 0) AS rows, coalesce(sum(rejected), 0) AS rejected
+                                SELECT coalesce(sum(rows - skipped), 0) AS rows, coalesce(sum(rejected), 0) AS rejected
                                 FROM ingest.batch_done WHERE run_id = ?
                                 """)
                         .param(runId)

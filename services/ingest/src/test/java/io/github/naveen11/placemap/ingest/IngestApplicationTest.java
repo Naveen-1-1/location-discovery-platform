@@ -29,7 +29,8 @@ class IngestApplicationTest {
 
     @Test
     void startsWithTheImplementedSourcesAndTheDefaults() {
-        assertThat(adapters.all()).extracting(SourceAdapter::sourceId).containsExactly("boston_active_food_licenses");
+        assertThat(adapters.all()).extracting(SourceAdapter::sourceId)
+                .containsExactlyInAnyOrder("boston_active_food_licenses", "overture_places");
         assertThat(properties.batchSize()).isEqualTo(1000);
         assertThat(properties.upsertWorkers()).isEqualTo(4);
         assertThat(properties.shutdownGrace()).hasSeconds(20);
