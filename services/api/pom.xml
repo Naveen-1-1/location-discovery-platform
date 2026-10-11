@@ -64,6 +64,11 @@
       <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-micrometer</artifactId>
     </dependency>
+    <!-- Per-client rate limits (ADR 0026). -->
+    <dependency>
+      <groupId>com.bucket4j</groupId>
+      <artifactId>bucket4j_jdk17-core</artifactId>
+    </dependency>
     <!-- Snapping the search origin to an H3 cell (ADR 0025). Native code: each call takes microseconds. -->
     <dependency>
       <groupId>com.uber</groupId>

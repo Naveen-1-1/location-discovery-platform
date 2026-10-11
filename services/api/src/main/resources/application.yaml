@@ -22,6 +22,9 @@ spring:
 
 server:
   port: 8080
+  # Trust X-Forwarded-For only from proxies on loopback or private networks (Caddy in front, ADR 0028), so rate
+  # limits see each client instead of the proxy. A client on the internet cannot set it for itself.
+  forward-headers-strategy: native
 
 management:
   endpoints:
@@ -66,6 +69,9 @@ jdbc:
 placemap:
   drills:
     enabled: ${PLACEMAP_DRILLS:false}
+  rate-limit:                    # ADR 0026: per client, over the limit means 429
+    per-second: 10
+    burst: 20
   nearby:
     deadline: 1500ms             # ADR 0026
     # The plan's 800 ms is for a local Valhalla; openrouteservice is across the internet (ADR 0033).
