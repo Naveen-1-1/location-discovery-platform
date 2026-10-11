@@ -40,3 +40,6 @@ frontend/public/tiles/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local session handoff notes (never committed)
+/HANDOFF*.md
