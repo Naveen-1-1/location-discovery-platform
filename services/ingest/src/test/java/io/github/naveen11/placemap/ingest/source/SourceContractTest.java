@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +31,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Schema contract with each publisher: fetches today's real data through the real adapter and checks that the
@@ -37,17 +40,25 @@ import org.junit.jupiter.params.provider.MethodSource;
  * 2% limit a run enforces. A publisher that renames or drops a field fails here before it fails an import.
  *
  * <p>Talks to the publishers, so it runs only on request ({@code -Dplacemap.contract=true}), and nightly in CI.
- * Sources needing a key are skipped while the key is missing.
+ * Sources needing a key are skipped while the key is missing. Boston's food inspections (900,000 rows) are checked by
+ * their column list only; OSM (a 300 MB extract read by osmium) and Overture (a pinned release read by DuckDB) are
+ * covered by their importers' own tests instead.
  */
 @EnabledIfSystemProperty(named = "placemap.contract", matches = "true")
 class SourceContractTest {
 
     private static final double MAX_REJECT_SHARE = 0.02;
     private static final int SAMPLE = 40;
+    private static final JsonMapper JSON = new JsonMapper();
     private static final HttpDownloader HTTP = LiveHttp.create();
 
     static Stream<SourceAdapter> adapters() {
         return Stream.of(
+                new BostonActiveFoodLicenses(),
+                new CambridgeFoodPermits(),
+                new CambridgeSanitaryInspections(),
+                new BluebikesStations(),
+                new MbtaGtfsStops(),
                 new MassgisHospitals(TestData.area()),
                 new FdicBankLocations(),
                 new AfdcFuelStations(name -> Optional.ofNullable(System.getenv(name)).orElse("")),
@@ -123,5 +134,19 @@ class SourceContractTest {
         }
         System.out.printf("photon: %d of %d pharmacies placed %s%n", placed, records.size(), reasons);
         assertThat(placed).as("pharmacies placed").isGreaterThanOrEqualTo(records.size() / 2);
+    }
+
+    @Test
+    void bostonFoodInspectionsStillHaveTheColumnsTheImporterReads() throws Exception {
+        var adapter = new BostonFoodInspections();
+        URI dump = URI.create(TestData.catalog().get(BostonFoodInspections.ID).access().url());
+        String resource = Path.of(dump.getPath()).getFileName().toString();
+        JsonNode fields = JSON.readTree(HTTP.getText(URI.create(
+                "https://data.boston.gov/api/3/action/datastore_search?limit=0&resource_id=" + resource)))
+                .required("result").required("fields");
+        var published = new HashSet<String>();
+        fields.values().forEach(f -> published.add(f.required("id").asString()));
+
+        assertThat(published).as("Boston's food inspection columns").containsAll(adapter.columns());
     }
 }

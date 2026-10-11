@@ -1,0 +1,39 @@
+name: source contracts (nightly)
+
+# Fetches every source's real data through its importer and fails when a publisher renames or drops a column the
+# importer reads, or starts sending rows it rejects (Phase 5: "schema-contract test per source; drift fails CI").
+on:
+  schedule:
+    - cron: '17 7 * * *'   # 07:17 UTC daily, after most publishers' overnight refresh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-nightly
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    name: publishers still send what the importers read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Contract tests
+        env:
+          # Optional: without it the EV charger source is skipped, as on a laptop without the key.
+          NLR_API_KEY: ${{ secrets.NLR_API_KEY }}
+        run: >-
+          ./mvnw -B -ntp -pl services/ingest -am test
+          -Dtest=SourceContractTest -Dsurefire.failIfNoSpecifiedTests=false -Dplacemap.contract=true
