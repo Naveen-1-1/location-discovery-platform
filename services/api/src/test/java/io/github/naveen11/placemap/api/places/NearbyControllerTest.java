@@ -6,10 +6,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.naveen11.placemap.api.live.LiveData;
+import io.github.naveen11.placemap.api.live.LiveHubClient;
 import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,10 +29,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import tools.jackson.databind.json.JsonMapper;
 
 @WebMvcTest(NearbyController.class)
 @Import({CategoryCatalog.class, OriginSnapper.class, NearbyControllerTest.Properties.class})
 class NearbyControllerTest {
+
+    private static final JsonMapper JSON = new JsonMapper();
 
     @TestConfiguration
     @EnableConfigurationProperties(NearbyProperties.class)
@@ -43,6 +50,9 @@ class NearbyControllerTest {
 
     @MockitoBean
     NearbyService nearby;
+
+    @MockitoBean
+    LiveHubClient live;
 
     @BeforeEach
     void knownCategories() {
@@ -159,6 +169,58 @@ class NearbyControllerTest {
     }
 
     /** Makes the service answer with these places, whatever the query; {@link #askedQuery()} shows the query. */
+    @Test
+    void docksGetTheirLiveCountsFreshForEachAnswer() {
+        answer("straight_line", null,
+                dock(11, "bikes:st-1"),
+                new NearbyPlace(12, "Tatte", "food", null, 42.356, -71.066, 140, null, null),
+                dock(13, "bikes:st-2"));
+        when(live.fetch(any(), any())).thenReturn(new LiveData("ok",
+                Map.of("bikes", JSON.readTree("{\"stale\":false,\"updated\":1700}")),
+                Map.of("bikes:st-1", JSON.readTree("{\"id\":\"st-1\",\"bikes\":4,\"docks\":11}"))));
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656").exchange();
+
+        assertThat(result).hasStatusOk();
+        assertThat(result).bodyJson().extractingPath("$.live.status").isEqualTo("ok");
+        assertThat(result).bodyJson().extractingPath("$.live.topics.bikes.stale").isEqualTo(false);
+        assertThat(result).bodyJson().extractingPath("$.places[0].liveKey").isEqualTo("bikes:st-1");
+        assertThat(result).bodyJson().extractingPath("$.places[0].live.bikes").isEqualTo(4);
+        assertThat(result).bodyJson().extractingPath("$.places[1].live").isNull();
+        assertThat(result).bodyJson().extractingPath("$.places[2].live").as("live-hub had nothing for st-2").isNull();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<String>> keys = ArgumentCaptor.forClass(Collection.class);
+        verify(live).fetch(keys.capture(), any());
+        assertThat(keys.getValue()).containsExactly("bikes:st-1", "bikes:st-2");
+    }
+
+    @Test
+    void whenLiveHubDoesNotAnswerThePlacesComeWithoutBadges() {
+        answer("straight_line", null, dock(11, "bikes:st-1"));
+        when(live.fetch(any(), any())).thenReturn(LiveData.unavailable());
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656").exchange();
+
+        assertThat(result).hasStatusOk();
+        assertThat(result).bodyJson().extractingPath("$.live.status").isEqualTo("unavailable");
+        assertThat(result).bodyJson().extractingPath("$.places[0].liveKey").isEqualTo("bikes:st-1");
+        assertThat(result).bodyJson().extractingPath("$.places[0].live").isNull();
+    }
+
+    @Test
+    void placesWithoutLiveDataNeverCallLiveHub() {
+        answer("straight_line", null, new NearbyPlace(12, "Tatte", "food", null, 42.356, -71.066, 140, null, null));
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656").exchange();
+
+        assertThat(result).bodyJson().extractingPath("$.live").isNull();
+        verify(live, never()).fetch(any(), any());
+    }
+
+    private static NearbyPlace dock(long id, String liveKey) {
+        return new NearbyPlace(id, "Dock " + id, "bike_share", null, 42.356, -71.066, 100 + id, null, null, liveKey, null);
+    }
+
     private void answer(String source, String fallback, NearbyPlace... found) {
         when(nearby.nearby(any(), any())).thenAnswer(invocation -> CompletableFuture.completedFuture(
                 new NearbyResult(invocation.getArgument(0), source, fallback, List.of(found))));

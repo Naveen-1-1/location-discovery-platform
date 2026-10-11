@@ -43,6 +43,8 @@ button.link:disabled { color: var(--muted); cursor: default; }
 .results .name { font-weight: 600; }
 .results .dist { color: var(--muted); font-size: 0.875rem; }
 .results .addr { grid-column: 2 / 4; color: var(--muted); font-size: 0.8125rem; }
+.live { grid-column: 2 / 4; font-size: 0.8125rem; color: #047857; }
+.badge { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 0.75rem; }
 
 /* Phones: map on top, list below. */
 @media (max-width: 720px) {

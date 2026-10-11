@@ -1,5 +1,5 @@
 # Loaded on top of src/main/resources/application.yaml (config/ wins). Tests never export telemetry and never
-# call the real routing engine.
+# call the real routing engine or live-hub.
 management:
   otlp:
     metrics:
@@ -15,6 +15,8 @@ management:
         enabled: false
 
 placemap:
+  live:
+    url: ""
   routing:
     ors:
       api-key: ""

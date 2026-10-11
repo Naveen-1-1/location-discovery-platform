@@ -1,6 +1,8 @@
 package io.github.naveen11.placemap.api.places;
 
 import io.github.naveen11.placemap.api.Deadline;
+import io.github.naveen11.placemap.api.live.LiveData;
+import io.github.naveen11.placemap.api.live.LiveHubClient;
 import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import jakarta.validation.constraints.DecimalMax;
@@ -8,6 +10,8 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.JsonNode;
 
 @RestController
 @RequestMapping("/api")
@@ -37,14 +42,24 @@ public class NearbyController {
     private final OriginSnapper snapper;
     private final CategoryCatalog catalog;
     private final NearbyProperties properties;
+    private final LiveHubClient live;
 
     public NearbyController(NearbyService nearby, OriginSnapper snapper, CategoryCatalog catalog,
-            NearbyProperties properties) {
+            NearbyProperties properties, LiveHubClient live) {
         this.nearby = nearby;
         this.snapper = snapper;
         this.catalog = catalog;
         this.properties = properties;
+        this.live = live;
     }
+
+    /**
+     * How the answer's live data went (ADR 0024).
+     *
+     * @param status {@code ok}, or {@code unavailable} when live-hub was slow or down and badges are missing
+     * @param topics per live topic, whether its feed is stale and when it last answered
+     */
+    public record LiveSummary(String status, Map<String, JsonNode> topics) {}
 
     /**
      * @param lat the snapped origin: the centre of the search's H3 cell, not the position the client sent
@@ -53,6 +68,7 @@ public class NearbyController {
      * @param travelTimeSource the routing engine that gave the travel times, or {@code straight_line}
      * @param fallback why a search with a mode has no travel times; null otherwise
      * @param driveWithoutTraffic drive times assume empty roads (ADR 0006)
+     * @param live how the live data went; null when no place shown has any
      */
     public record NearbyResponse(
             String snappedCell,
@@ -64,7 +80,8 @@ public class NearbyController {
             String travelTimeSource,
             String fallback,
             boolean driveWithoutTraffic,
-            List<NearbyPlace> places) {}
+            List<NearbyPlace> places,
+            LiveSummary live) {}
 
     /**
      * Places near a point. Without {@code mode}: the nearest within {@code radius}, by straight-line distance. With
@@ -94,6 +111,16 @@ public class NearbyController {
         NearbyResult result = await(nearby.nearby(query, deadline));
 
         List<NearbyPlace> shown = result.places().subList(0, Math.min(limit, result.places().size()));
+        LiveSummary liveSummary = null;
+        List<String> liveKeys = shown.stream().map(NearbyPlace::liveKey).filter(Objects::nonNull).distinct().toList();
+        if (!liveKeys.isEmpty()) {
+            // Fresh for every answer, never from the shared result: live counts change by the minute.
+            LiveData data = live.fetch(liveKeys, deadline);
+            shown = shown.stream()
+                    .map(p -> p.liveKey() == null ? p : p.withLive(data.items().get(p.liveKey())))
+                    .toList();
+            liveSummary = new LiveSummary(data.status(), data.topics());
+        }
         // Never log coordinates or the cell (privacy): the trace id on this line links it to the request's trace.
         log.atInfo()
                 .addKeyValue("mode", travelMode == null ? "straight_line" : travelMode.param())
@@ -102,11 +129,12 @@ public class NearbyController {
                 .addKeyValue("travel_time_source", result.travelTimeSource())
                 .addKeyValue("fallback", result.fallback() == null ? "none" : result.fallback())
                 .addKeyValue("results", shown.size())
+                .addKeyValue("live", liveSummary == null ? "none" : liveSummary.status())
                 .log("nearby search");
         SnappedOrigin origin = query.origin();
         return new NearbyResponse(origin.cell(), origin.lat(), origin.lon(), origin.maxErrorMeters(),
                 travelMode == null ? null : travelMode.param(), searchRadius, result.travelTimeSource(),
-                result.fallback(), travelMode == TravelMode.DRIVE, shown);
+                result.fallback(), travelMode == TravelMode.DRIVE, shown, liveSummary);
     }
 
     @GetMapping("/categories")

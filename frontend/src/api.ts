@@ -1,5 +1,6 @@
 // Typed client for the api service. In development Vite proxies /api to localhost:8080.
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from "geojson";
+import type { DockStatus, TopicHealth } from "./live";
 
 export type Category = { code: string; label: string };
 
@@ -17,6 +18,17 @@ export type NearbyPlace = {
   /** Null for a straight-line search, a fallback, or a place the routing engine cannot reach. */
   travelSeconds: number | null;
   travelMeters: number | null;
+  /** Set for places with live data, e.g. "bikes:<station_id>"; the same key as in the live stream. */
+  liveKey: string | null;
+  /** The live data at the time of the search; the live stream keeps it current after that. */
+  live: DockStatus | null;
+};
+
+/** How the search's live data went. */
+export type LiveSummary = {
+  /** "unavailable" when live-hub was slow or down: the places came without live counts. */
+  status: "ok" | "unavailable";
+  topics: Record<string, TopicHealth>;
 };
 
 export type NearbyResponse = {
@@ -33,6 +45,8 @@ export type NearbyResponse = {
   fallback: string | null;
   driveWithoutTraffic: boolean;
   places: NearbyPlace[];
+  /** Null when no place in the answer has live data. */
+  live: LiveSummary | null;
 };
 
 export type NearbyQuery = {

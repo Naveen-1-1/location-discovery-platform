@@ -82,6 +82,9 @@ placemap:
   directions:                    # routes and isochrones: asked for on purpose, so they may take a few seconds
     deadline: 6s
     timeout: 5s
+  live:                          # live-hub (ADR 0024): nearby answers without live data after 150 ms
+    url: ${PLACEMAP_LIVE_URL:http://localhost:8081}
+    timeout: 150ms
   routing:
     concurrency: 8               # the routing bulkhead, shared by nearby, routes and isochrones (ADR 0026)
     ors:

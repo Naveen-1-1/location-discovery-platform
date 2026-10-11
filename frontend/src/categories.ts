@@ -39,3 +39,7 @@ export const ISOCHRONE_MINUTES = [5, 10, 15] as const;
 export const ISOCHRONE_COLORS: Record<number, string> = { 5: "#1c5cab", 10: "#3987e5", 15: "#86b6ef" };
 
 export const ROUTING_CREDIT = 'Routing © <a href="https://openrouteservice.org">openrouteservice.org</a>';
+
+/** Credits for display-only sources (ADR 0029), shown while their places are on screen. */
+export const BIKE_SHARE_CREDIT = 'Bike share data © <a href="https://bluebikes.com/system-data">Bluebikes</a>';
+export const TRANSIT_CREDIT = 'Data provided by <a href="https://www.mbta.com/developers">MassDOT / MBTA</a>';

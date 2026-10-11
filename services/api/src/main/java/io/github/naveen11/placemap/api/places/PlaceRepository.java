@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.api.places;
 
+import io.github.naveen11.placemap.api.live.LiveSources;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -12,9 +13,10 @@ public class PlaceRepository {
     // index-ordered KNN scan only while the origin is written out in full (not via a CTE), and "retired_at IS NULL"
     // must match the partial index predicate. KNN orders by distance on a sphere, while the distance we show is the
     // accurate spheroid one; the two can disagree by a few metres. The outer query re-sorts those few hundred rows
-    // by the displayed distance, so the list can never show 1,122 m above 1,120 m.
+    // by the displayed distance, so the list can never show 1,122 m above 1,120 m. The live-data link is looked up
+    // out there too, for those few hundred rows only, so it cannot get in the way of the index scan.
     private static final String NEARBY_SQL = """
-            SELECT * FROM (
+            SELECT nearest.*, live.source AS live_source, live.source_key AS live_source_key FROM (
                 SELECT p.place_id, p.name, p.category, p.address,
                        ST_Y(p.geom::geometry) AS lat, ST_X(p.geom::geometry) AS lon,
                        ST_Distance(p.geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS distance_m
@@ -25,6 +27,12 @@ public class PlaceRepository {
                 ORDER BY p.geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
                 LIMIT :limit
             ) nearest
+            LEFT JOIN LATERAL (
+                SELECT l.source, l.source_key FROM place.place_source_link l
+                WHERE l.place_id = nearest.place_id AND l.source IN (:liveSources)
+                ORDER BY l.source, l.source_key
+                LIMIT 1
+            ) live ON true
             ORDER BY distance_m, place_id
             """;
 
@@ -43,7 +51,8 @@ public class PlaceRepository {
                 .param("lat", lat)
                 .param("lon", lon)
                 .param("radius", radiusMeters)
-                .param("limit", limit);
+                .param("limit", limit)
+                .param("liveSources", List.copyOf(LiveSources.TOPICS.keySet()));
         if (!categories.isEmpty()) {
             spec = spec.param("categories", categories);
         }
@@ -56,6 +65,8 @@ public class PlaceRepository {
                         rs.getDouble("lon"),
                         Math.round(rs.getDouble("distance_m")),
                         null,
+                        null,
+                        LiveSources.key(rs.getString("live_source"), rs.getString("live_source_key")).orElse(null),
                         null))
                 .list();
     }

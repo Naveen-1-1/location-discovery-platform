@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { fetchCategories, fetchIsochrones, fetchNearby, fetchRoute, type TravelMode } from "./api";
+import { fetchCategories, fetchIsochrones, fetchNearby, fetchRoute, type NearbyPlace, type TravelMode } from "./api";
 import {
+  BIKE_SHARE_CREDIT,
   CATEGORY_COLORS,
   FALLBACK_COLOR,
   formatDistance,
@@ -9,7 +10,10 @@ import {
   ISOCHRONE_MINUTES,
   MODE_LABELS,
   MODE_VERBS,
+  TRANSIT_CREDIT,
 } from "./categories";
+import { useLive } from "./live";
+import { LiveLine, liveFor } from "./LiveLine";
 import { MapView } from "./MapView";
 
 const BOSTON_COMMON = { lat: 42.355, lon: -71.0656 };
@@ -44,10 +48,16 @@ export function App() {
     enabled: showArea && mode !== null,
   });
 
+  const live = useLive();
   const result = nearby.data;
   const places = result?.places ?? [];
   const selected = places.find((p) => p.id === selectedId) ?? null;
   const routed = result?.mode != null && result.fallback === null;
+  const credits = [
+    ...(places.some((p) => p.category === "bike_share") ? [BIKE_SHARE_CREDIT] : []),
+    ...(places.some((p) => p.category === "transit") ? [TRANSIT_CREDIT] : []),
+  ];
+  const liveOf = (p: NearbyPlace) => liveFor(p, live, result);
 
   function toggle(code: string) {
     setChosen((cur) => (cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code]));
@@ -130,6 +140,9 @@ export function App() {
         <SearchSummary searching={nearby.isFetching} count={places.length} mode={result?.mode ?? null}
           routed={routed} fallback={result?.fallback ?? null} snapMeters={result?.maxSnapErrorMeters}
           withoutTraffic={result?.driveWithoutTraffic ?? false} />
+        {result?.live?.status === "unavailable" && !live.connected && (
+          <p className="muted warn">Live bike counts are unavailable right now.</p>
+        )}
 
         <ol className="results">
           {places.map((p) => (
@@ -146,6 +159,7 @@ export function App() {
                     .join(" · ")}
                 </span>
               )}
+              <LiveLine live={liveOf(p)} />
             </li>
           ))}
         </ol>
@@ -163,6 +177,8 @@ export function App() {
           routeState={route.isFetching ? "loading" : route.isError ? (route.error as Error).message : null}
           isochrones={showArea && mode !== null ? area.data : undefined}
           routingCredit={routed || (showArea && area.data !== undefined) || route.data !== undefined}
+          credits={credits}
+          selectedLive={selected ? liveOf(selected) : null}
           onPickOrigin={moveTo}
           onSelect={(p) => {
             setSelectedId(p?.id ?? null);

@@ -13,6 +13,7 @@ import Map, {
   type MapRef,
 } from "react-map-gl/maplibre";
 import type { IsochroneCollection, NearbyPlace, RouteFeature, TravelMode } from "./api";
+import { LiveLine, type PlaceLive } from "./LiveLine";
 import {
   CATEGORY_COLORS,
   FALLBACK_COLOR,
@@ -62,6 +63,10 @@ type Props = {
   isochrones: IsochroneCollection | undefined;
   /** Whether anything on screen came from the routing engine, which then needs its credit. */
   routingCredit: boolean;
+  /** Credits for display-only sources whose places are on screen (ADR 0029). */
+  credits: string[];
+  /** The selected place's live data, if it has any. */
+  selectedLive: PlaceLive | null;
   onPickOrigin: (lat: number, lon: number) => void;
   onSelect: (place: NearbyPlace | null) => void;
   onShowRoute: (place: NearbyPlace) => void;
@@ -162,6 +167,11 @@ export function MapView(props: Props) {
           <Layer id="routing-credit" type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
         </Source>
       )}
+      {props.credits.map((credit, i) => (
+        <Source key={credit} id={`credit-${i}`} type="geojson" data={EMPTY} attribution={credit}>
+          <Layer id={`credit-${i}`} type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
+        </Source>
+      ))}
       <Marker latitude={origin.lat} longitude={origin.lon} color="#111827" />
       {selected && (
         <Popup
@@ -173,6 +183,11 @@ export function MapView(props: Props) {
         >
           <strong>{selected.name}</strong>
           {selected.address && <div>{selected.address}</div>}
+          {props.selectedLive && (
+            <div>
+              <LiveLine live={props.selectedLive} />
+            </div>
+          )}
           <div className="muted">
             {selected.travelSeconds !== null && resultMode
               ? `${formatDuration(selected.travelSeconds)} ${MODE_VERBS[resultMode]}, `

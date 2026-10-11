@@ -2,6 +2,7 @@ package io.github.naveen11.placemap.api.places;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.naveen11.placemap.api.live.LiveSources;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
@@ -140,6 +141,7 @@ class PlaceRepositoryContainerTest {
                     .param("lon", BOSTON_COMMON_LON)
                     .param("radius", RADIUS_M)
                     .param("limit", 50)
+                    .param("liveSources", List.copyOf(LiveSources.TOPICS.keySet()))
                     .query(String.class)
                     .list();
 
@@ -147,5 +149,28 @@ class PlaceRepositoryContainerTest {
         } finally {
             single.destroy();
         }
+    }
+
+    @Test
+    void aBluebikesDockCarriesItsLiveKey() {
+        // A dock out at Jamaica Pond, far from the 600 places above, with its Bluebikes link.
+        long dock = jdbc.sql("""
+                        INSERT INTO place.place (name, category, geom)
+                        VALUES ('Jamaica Pond dock', 'bike_share', ST_SetSRID(ST_MakePoint(-71.1162, 42.3165), 4326)::geography)
+                        RETURNING place_id
+                        """).query(Long.class).single();
+        jdbc.sql("INSERT INTO place.place_source_link (source, source_key, place_id, method) VALUES (:s, :k, :p, 'created')")
+                .param("s", "bluebikes_station_information").param("k", "st-pond").param("p", dock).update();
+        jdbc.sql("INSERT INTO place.place_source_link (source, source_key, place_id, method) VALUES (:s, :k, :p, 'created')")
+                .param("s", "osm_geofabrik_massachusetts").param("k", "node/1").param("p", dock).update();
+
+        var result = repository.nearby(42.3165, -71.1162, 200, List.of(), 10);
+
+        assertThat(result).singleElement().satisfies(place -> {
+            assertThat(place.id()).isEqualTo(dock);
+            assertThat(place.liveKey()).isEqualTo("bikes:st-pond");
+        });
+        assertThat(repository.nearby(BOSTON_COMMON_LAT, BOSTON_COMMON_LON, RADIUS_M, List.of(), 200))
+                .allSatisfy(place -> assertThat(place.liveKey()).isNull());
     }
 }
