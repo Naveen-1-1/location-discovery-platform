@@ -8,6 +8,7 @@ public record RunRecord(
         String source,
         String status,
         String snapshotSha256,
+        String sourceVersion,
         Integer totalRows,
         Integer totalBatches,
         int attempts,
@@ -20,7 +21,7 @@ public record RunRecord(
     public static final String UNCHANGED = "UNCHANGED";
     public static final String FAILED = "FAILED";
 
-    RunRecord running(String sha256, int rows, int batches) {
-        return new RunRecord(runId, source, RUNNING, sha256, rows, batches, attempts, startedAt, finishedAt);
+    RunRecord running(String sha256, String version, int rows, int batches) {
+        return new RunRecord(runId, source, RUNNING, sha256, version, rows, batches, attempts, startedAt, finishedAt);
     }
 }

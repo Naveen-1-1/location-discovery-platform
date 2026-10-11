@@ -3,6 +3,7 @@ package io.github.naveen11.placemap.ingest.run;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.naveen11.placemap.ingest.OfflineHttp;
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
@@ -273,7 +274,7 @@ class PlaceMatchingContainerTest {
     }
 
     private HttpDownloader http() {
-        return new HttpDownloader() {
+        return new OfflineHttp() {
             @Override
             public void download(URI uri, Path target) throws IOException {
                 Path file = "data.boston.gov".equals(uri.getHost()) ? licenceFile : osmFile;

@@ -36,6 +36,11 @@ public class SnapshotStore {
         this.http = http;
     }
 
+    /** The client snapshots are downloaded with; also used to read publishers' version markers. */
+    public HttpDownloader http() {
+        return http;
+    }
+
     /** Downloads a fresh snapshot for the run, replacing any partial one, and checks its columns. */
     public Snapshot fetch(SourceAdapter adapter, SourceDefinition source, long runId)
             throws IOException, InterruptedException {

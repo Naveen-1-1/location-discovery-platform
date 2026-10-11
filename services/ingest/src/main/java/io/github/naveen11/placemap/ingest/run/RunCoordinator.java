@@ -14,6 +14,7 @@ import io.github.naveen11.placemap.ingest.pipeline.Pipeline;
 import io.github.naveen11.placemap.ingest.pipeline.PlatformThreads;
 import io.github.naveen11.placemap.ingest.pipeline.StageFailedException;
 import io.github.naveen11.placemap.ingest.snapshot.BatchReader;
+import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import io.github.naveen11.placemap.ingest.snapshot.RawBatch;
 import io.github.naveen11.placemap.ingest.snapshot.Snapshot;
 import io.github.naveen11.placemap.ingest.snapshot.SnapshotException;
@@ -22,7 +23,12 @@ import io.github.naveen11.placemap.ingest.snapshot.SnapshotStore;
 import io.github.naveen11.placemap.ingest.source.ParseContext;
 import io.github.naveen11.placemap.ingest.source.SourceAdapter;
 import io.github.naveen11.placemap.ingest.source.SourceAdapters;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -152,11 +158,20 @@ public class RunCoordinator {
             if (control.stopRequested()) {
                 return Outcome.STOPPED;
             }
-            snapshot = snapshots.fetch(adapter, source, run.runId());
             Optional<RunRecord> last = runs.lastSuccessful(sourceId);
-            if (!force && last.isPresent() && snapshot.sha256().equals(last.get().snapshotSha256())
-                    && !runs.placesChangedSince(last.get().runId())) {
-                runs.markUnchanged(run.runId(), snapshot.sha256());
+            // A changed place set means the records may now match differently, so it also forces a full run.
+            boolean placesUnchanged = last.isPresent() && !runs.placesChangedSince(last.get().runId());
+            String version = sourceVersion(adapter, source, snapshots.http());
+            if (!force && placesUnchanged && version != null && version.equals(last.get().sourceVersion())) {
+                runs.markUnchanged(run.runId(), last.get().snapshotSha256(), version);
+                snapshots.keepOnly(sourceId, run.runId());
+                log.info("ingest {}: run {} unchanged since the last import (publisher version {}); nothing downloaded",
+                        sourceId, run.runId(), version);
+                return Outcome.UNCHANGED;
+            }
+            snapshot = snapshots.fetch(adapter, source, run.runId());
+            if (!force && placesUnchanged && snapshot.sha256().equals(last.get().snapshotSha256())) {
+                runs.markUnchanged(run.runId(), snapshot.sha256(), version);
                 snapshots.keepOnly(sourceId, run.runId());
                 log.info("ingest {}: run {} unchanged since the last import", sourceId, run.runId());
                 return Outcome.UNCHANGED;
@@ -165,8 +180,8 @@ public class RunCoordinator {
             if (scan.rows() == 0) {
                 throw new SnapshotException("the download has no rows; refusing to retire every record");
             }
-            runs.markRunning(run.runId(), snapshot.sha256(), scan.rows(), scan.batches(batchSize));
-            run = run.running(snapshot.sha256(), scan.rows(), scan.batches(batchSize));
+            runs.markRunning(run.runId(), snapshot.sha256(), version, scan.rows(), scan.batches(batchSize));
+            run = run.running(snapshot.sha256(), version, scan.rows(), scan.batches(batchSize));
         } else {
             String expected = run.snapshotSha256();
             long runId = run.runId();
@@ -209,6 +224,37 @@ public class RunCoordinator {
         log.info("ingest {}: run {} complete: {} rows, {} rejected, {} retired, checksum {}", sourceId, run.runId(),
                 scan.rows(), completion.rejected(), completion.retired(), completion.checksum());
         return Outcome.COMPLETE;
+    }
+
+    /**
+     * The publisher's version marker plus a fingerprint of what this importer asks for (its class and columns), so a
+     * code change that requests different data never counts as "unchanged". Null when the source has no marker or it
+     * could not be read; the run then downloads and compares the file instead.
+     */
+    private static String sourceVersion(SourceAdapter adapter, SourceDefinition source, HttpDownloader http) {
+        try {
+            String remote = adapter.remoteVersion(source, http);
+            if (remote == null) {
+                return null;
+            }
+            String request = adapter.getClass().getName() + ":" + String.join(",", adapter.columns());
+            return remote + "|" + HexFormat.of().formatHex(sha256(request), 0, 6);
+        } catch (IOException | RuntimeException e) {
+            log.warn("ingest {}: could not read the publisher's version ({}); downloading to compare", source.id(),
+                    e.toString());
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private static byte[] sha256(String text) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("every JDK ships SHA-256", e);
+        }
     }
 
     private void runPipeline(RunRecord run, SourceAdapter adapter, Snapshot snapshot, SnapshotScan scan,

@@ -8,6 +8,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * A City of Boston dataset downloaded from its CKAN datastore dump (Analyze Boston). The dump API can return chosen
@@ -15,6 +17,8 @@ import java.util.List;
  * and sort by the natural key, so unchanged data gives a byte-identical snapshot and the run is skipped.
  */
 public abstract class CkanCsvSource implements SourceAdapter {
+
+    private static final JsonMapper JSON = new JsonMapper();
 
     /** Columns that order rows uniquely; never CKAN's {@code _id}, which changes when the dataset is reloaded. */
     protected abstract List<String> sortColumns();
@@ -28,6 +32,18 @@ public abstract class CkanCsvSource implements SourceAdapter {
                 + "?fields=" + encode(String.join(",", columns()))
                 + "&sort=" + encode(String.join(",", sortColumns()));
         http.download(URI.create(url), target);
+    }
+
+    /** The resource's last-modified time from CKAN's metadata API: a few hundred bytes instead of the whole file. */
+    @Override
+    public String remoteVersion(SourceDefinition source, HttpDownloader http) throws IOException, InterruptedException {
+        URI dump = URI.create(source.access().url());
+        String resource = Path.of(dump.getPath()).getFileName().toString();
+        URI metadata = URI.create(dump.getScheme() + "://" + dump.getHost() + "/api/3/action/resource_show?id="
+                + encode(resource));
+        JsonNode result = JSON.readTree(http.getText(metadata)).required("result");
+        String modified = result.path("last_modified").asString(null);
+        return "ckan:" + (modified != null ? modified : result.required("metadata_modified").asString());
     }
 
     private static String encode(String value) {

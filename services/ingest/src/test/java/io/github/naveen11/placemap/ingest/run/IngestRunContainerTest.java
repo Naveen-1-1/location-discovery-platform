@@ -2,6 +2,7 @@ package io.github.naveen11.placemap.ingest.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.naveen11.placemap.ingest.OfflineHttp;
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
@@ -107,6 +108,36 @@ class IngestRunContainerTest {
         assertThat(run()).isEqualTo(Outcome.UNCHANGED);
         assertThat(latestRun()).containsEntry("status", "UNCHANGED");
         assertThat(jdbc.sql("SELECT count(DISTINCT run_id) FROM ingest.batch_done").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    /** The publisher's version marker (Boston's resource last-modified time) lets a run skip the download entirely. */
+    @Test
+    void anUnchangedPublisherVersionSkipsTheDownload() {
+        var downloads = new AtomicInteger();
+        var modified = new AtomicReference<>("2026-10-10T14:46:26.705686");
+        var http = new HttpDownloader() {
+            @Override
+            public String getText(URI uri) {
+                return "{\"result\": {\"last_modified\": \"" + modified.get() + "\"}}";
+            }
+
+            @Override
+            public void download(URI uri, Path target) throws IOException {
+                downloads.incrementAndGet();
+                Files.copy(published.get(), target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        };
+        RunCoordinator coordinator = TestIngest.coordinator(dataSource, tmp.resolve("raw"), BATCH_SIZE, http,
+                new BostonActiveFoodLicenses());
+
+        assertThat(coordinator.run(SOURCE, new RunControl(), false)).isEqualTo(Outcome.COMPLETE);
+        assertThat(coordinator.run(SOURCE, new RunControl(), false)).isEqualTo(Outcome.UNCHANGED);
+        assertThat(downloads).as("second run read only the metadata").hasValue(1);
+        assertThat((String) latestRun().get("source_version")).startsWith("ckan:2026-10-10T14:46:26.705686|");
+
+        modified.set("2026-10-11T09:00:00"); // republished with the same content: downloaded, compared, unchanged
+        assertThat(coordinator.run(SOURCE, new RunControl(), false)).isEqualTo(Outcome.UNCHANGED);
+        assertThat(downloads).hasValue(2);
     }
 
     /** Idempotency: running the same input again must give the same checksum and rewrite nothing. */
@@ -247,7 +278,7 @@ class IngestRunContainerTest {
     }
 
     private RunCoordinator coordinator(DataSource ds) {
-        var http = new HttpDownloader() {
+        var http = new OfflineHttp() {
             @Override
             public void download(URI uri, Path target) throws IOException {
                 Files.copy(published.get(), target, StandardCopyOption.REPLACE_EXISTING);

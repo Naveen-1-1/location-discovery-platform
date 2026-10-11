@@ -15,7 +15,8 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 public class RunStore {
 
     private static final String RUN_COLUMNS = """
-            run_id, source, status, snapshot_sha256, total_rows, total_batches, attempts, started_at, finished_at
+            run_id, source, status, snapshot_sha256, source_version, total_rows, total_batches, attempts, started_at,
+            finished_at
             """;
 
     /** What completing a run did. {@code error} is set when a safety limit failed the run instead. */
@@ -88,21 +89,23 @@ public class RunStore {
                 .single();
     }
 
-    public void markRunning(long runId, String sha256, int rows, int batches) {
+    public void markRunning(long runId, String sha256, String sourceVersion, int rows, int batches) {
         jdbc.sql("""
-                        UPDATE ingest.run SET status = 'RUNNING', snapshot_sha256 = ?, total_rows = ?, total_batches = ?
+                        UPDATE ingest.run
+                        SET status = 'RUNNING', snapshot_sha256 = ?, source_version = ?, total_rows = ?, total_batches = ?
                         WHERE run_id = ?
                         """)
-                .params(sha256, rows, batches, runId)
+                .params(sha256, sourceVersion, rows, batches, runId)
                 .update();
     }
 
-    public void markUnchanged(long runId, String sha256) {
+    public void markUnchanged(long runId, String sha256, String sourceVersion) {
         jdbc.sql("""
-                        UPDATE ingest.run SET status = 'UNCHANGED', snapshot_sha256 = ?, error = NULL, finished_at = now()
+                        UPDATE ingest.run
+                        SET status = 'UNCHANGED', snapshot_sha256 = ?, source_version = ?, error = NULL, finished_at = now()
                         WHERE run_id = ?
                         """)
-                .params(sha256, runId)
+                .params(sha256, sourceVersion, runId)
                 .update();
     }
 

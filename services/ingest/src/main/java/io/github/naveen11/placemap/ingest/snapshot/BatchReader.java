@@ -51,11 +51,11 @@ public final class BatchReader {
                 if (alreadyDone.contains(seq)) {
                     continue;
                 }
-                var duplicate = new boolean[rows.size()];
-                for (int i = 0; i < duplicate.length; i++) {
-                    duplicate[i] = scan.duplicates().get(firstRow + i);
+                var roles = new RowRole[rows.size()];
+                for (int i = 0; i < roles.length; i++) {
+                    roles[i] = scan.role(firstRow + i);
                 }
-                out.put(new RawBatch(seq, firstRow, List.copyOf(rows), duplicate));
+                out.put(new RawBatch(seq, firstRow, List.copyOf(rows), roles));
             }
             if (row != scan.rows()) {
                 throw new SnapshotException("snapshot " + file + " changed while being read: " + row + " rows, scan saw "

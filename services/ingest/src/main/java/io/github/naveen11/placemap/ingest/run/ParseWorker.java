@@ -2,7 +2,9 @@ package io.github.naveen11.placemap.ingest.run;
 
 import io.github.naveen11.placemap.ingest.pipeline.Stage;
 import io.github.naveen11.placemap.ingest.snapshot.RawBatch;
+import io.github.naveen11.placemap.ingest.snapshot.RowRole;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
+import io.github.naveen11.placemap.ingest.source.InspectionLine;
 import io.github.naveen11.placemap.ingest.source.ParseContext;
 import io.github.naveen11.placemap.ingest.source.RowResult;
 import io.github.naveen11.placemap.ingest.source.SourceAdapter;
@@ -28,6 +30,7 @@ final class ParseWorker implements Stage.Worker<RawBatch, ParsedBatch> {
     public ParsedBatch process(RawBatch batch) {
         var records = new ArrayList<SourceRow>(batch.rows().size());
         var rejects = new ArrayList<ParsedBatch.Reject>();
+        var inspections = new ArrayList<InspectionLine>();
         int skipped = 0;
         MessageDigest digest = sha256();
         for (int i = 0; i < batch.rows().size(); i++) {
@@ -38,24 +41,38 @@ final class ParseWorker implements Stage.Worker<RawBatch, ParsedBatch> {
             }
             digest.update((byte) 0x1e);
 
-            if (batch.duplicate()[i]) {
+            RowRole role = batch.roles()[i];
+            if (role == RowRole.DUPLICATE) {
                 rejects.add(new ParsedBatch.Reject(i, "repeated source key (the first row wins)", row.asMap()));
                 continue;
             }
-            RowResult result;
+            // Each row yields at most one reject: a broken history line, or failing that a broken record. A row that
+            // throws unexpectedly must not stop the run either; it is quarantined like any other bad row.
+            RowResult result = null;
             try {
-                result = adapter.parse(row, context);
+                adapter.inspection(row).ifPresent(inspections::add);
+            } catch (IllegalArgumentException e) {
+                result = new RowResult.Rejected(e.getMessage()); // the adapter's way of saying "unusable line"
             } catch (RuntimeException e) {
-                // One odd row must not stop the run; it is quarantined like any other bad row.
                 result = new RowResult.Rejected("parse error: " + e);
             }
+            if (result == null && role == RowRole.RECORD) {
+                try {
+                    result = adapter.parse(row, context);
+                } catch (RuntimeException e) {
+                    result = new RowResult.Rejected("parse error: " + e);
+                }
+            }
             switch (result) {
+                case null -> {
+                    // history only
+                }
                 case RowResult.Accepted accepted -> records.add(accepted.row());
                 case RowResult.Rejected rejected -> rejects.add(new ParsedBatch.Reject(i, rejected.reason(), row.asMap()));
                 case RowResult.Skipped ignored -> skipped++;
             }
         }
-        return new ParsedBatch(batch.seq(), batch.rows().size(), records, rejects, skipped,
+        return new ParsedBatch(batch.seq(), batch.rows().size(), records, rejects, skipped, inspections,
                 HexFormat.of().formatHex(digest.digest()));
     }
 

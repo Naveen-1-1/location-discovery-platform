@@ -26,6 +26,38 @@ public class HttpDownloader {
             .connectTimeout(Duration.ofSeconds(30))
             .build();
 
+    /** What a HEAD request says about a file, after redirects. */
+    public record Head(URI uri, String etag, String lastModified) {
+    }
+
+    /** A small text response (metadata JSON), for checking whether a dataset changed before downloading it. */
+    public String getText(URI uri) throws IOException, InterruptedException {
+        var request = HttpRequest.newBuilder(uri)
+                .header("User-Agent", USER_AGENT)
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new IOException("GET " + uri.getHost() + uri.getPath() + " returned HTTP " + response.statusCode());
+        }
+        return response.body();
+    }
+
+    public Head head(URI uri) throws IOException, InterruptedException {
+        var request = HttpRequest.newBuilder(uri)
+                .header("User-Agent", USER_AGENT)
+                .timeout(Duration.ofSeconds(30))
+                .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+        if (response.statusCode() != 200) {
+            throw new IOException("HEAD " + uri.getHost() + uri.getPath() + " returned HTTP " + response.statusCode());
+        }
+        return new Head(response.uri(), response.headers().firstValue("ETag").orElse(null),
+                response.headers().firstValue("Last-Modified").orElse(null));
+    }
+
     public void download(URI uri, Path target) throws IOException, InterruptedException {
         var request = HttpRequest.newBuilder(uri)
                 .header("User-Agent", USER_AGENT)

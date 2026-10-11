@@ -2,15 +2,20 @@ package io.github.naveen11.placemap.ingest.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static io.github.naveen11.placemap.ingest.snapshot.RowRole.DUPLICATE;
+import static io.github.naveen11.placemap.ingest.snapshot.RowRole.HISTORY_ONLY;
+import static io.github.naveen11.placemap.ingest.snapshot.RowRole.RECORD;
 
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.snapshot.RawBatch;
+import io.github.naveen11.placemap.ingest.snapshot.RowRole;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
 import io.github.naveen11.placemap.ingest.source.ParseContext;
 import io.github.naveen11.placemap.ingest.source.RowResult;
 import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +35,7 @@ class ParseWorkerTest {
                 return super.parse(row, context);
             }
         };
-        var batch = new RawBatch(7, 70, rows, new boolean[] {false, false, false, true, false});
+        var batch = new RawBatch(7, 70, rows, new RowRole[] {RECORD, RECORD, RECORD, DUPLICATE, RECORD});
 
         ParsedBatch parsed = new ParseWorker(throwing, TestData.parseContext()).process(batch);
 
@@ -48,11 +53,29 @@ class ParseWorkerTest {
         List<CsvRow> rows = TestData.rows(TestData.BOSTON_LICENCES).subList(0, 6);
         var worker = new ParseWorker(adapter, TestData.parseContext());
 
-        String a = worker.process(new RawBatch(0, 0, rows, new boolean[6])).checksum();
-        String b = new ParseWorker(adapter, TestData.parseContext()).process(new RawBatch(0, 0, rows, new boolean[6])).checksum();
-        String other = worker.process(new RawBatch(0, 0, rows.subList(0, 5), new boolean[5])).checksum();
+        String a = worker.process(new RawBatch(0, 0, rows, records(6))).checksum();
+        String b = new ParseWorker(adapter, TestData.parseContext()).process(new RawBatch(0, 0, rows, records(6))).checksum();
+        String other = worker.process(new RawBatch(0, 0, rows.subList(0, 5), records(5))).checksum();
 
         assertThat(a).hasSize(64).isEqualTo(b).isNotEqualTo(other);
+    }
+
+    private static RowRole[] records(int n) {
+        var roles = new RowRole[n];
+        Arrays.fill(roles, RECORD);
+        return roles;
+    }
+
+    @Test
+    void historyOnlyRowsAddNoRecord() throws Exception {
+        List<CsvRow> rows = TestData.rows(TestData.BOSTON_LICENCES).subList(0, 3);
+
+        ParsedBatch parsed = new ParseWorker(adapter, TestData.parseContext())
+                .process(new RawBatch(0, 0, rows, new RowRole[] {HISTORY_ONLY, RECORD, HISTORY_ONLY}));
+
+        assertThat(parsed.records()).singleElement().satisfies(r -> assertThat(r.name()).isEqualTo("149 Eat Street"));
+        assertThat(parsed.rejects()).isEmpty();
+        assertThat(parsed.skipped()).isZero();
     }
 
     @Test

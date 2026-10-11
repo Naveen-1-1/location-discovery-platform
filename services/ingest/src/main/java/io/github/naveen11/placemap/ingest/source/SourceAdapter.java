@@ -5,6 +5,7 @@ import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Everything the generic pipeline needs to know about one source. Every snapshot is a CSV file whose header is exactly
@@ -26,4 +27,35 @@ public interface SourceAdapter {
 
     /** Turns one row into a record or a rejection. Runs on parse workers; must not keep state between calls. */
     RowResult parse(CsvRow row, ParseContext context);
+
+    /**
+     * Whether several rows may share a key as lines of one record's history (yearly permit renewals, inspection
+     * lines). The line with the greatest {@link #recordVersion} then describes the record and the others only add
+     * history. Otherwise a repeated key is a duplicate and is rejected.
+     */
+    default boolean linesPerRecord() {
+        return false;
+    }
+
+    /** Orders a record's lines when {@link #linesPerRecord()}; compared as text, so ISO-8601 dates work. */
+    default String recordVersion(CsvRow row) {
+        return "";
+    }
+
+    /**
+     * The inspection a row reports, if this source carries inspection history (ADR 0034). Throws
+     * {@link IllegalArgumentException} with a reason for an unusable line, which is then rejected.
+     */
+    default Optional<InspectionLine> inspection(CsvRow row) {
+        return Optional.empty();
+    }
+
+    /**
+     * A marker of the publisher's current data that is cheap to read without downloading it, such as a dataset's
+     * last-modified time or a file's ETag. When it matches the last successful run, the download is skipped. Null if
+     * the source offers none.
+     */
+    default String remoteVersion(SourceDefinition source, HttpDownloader http) throws IOException, InterruptedException {
+        return null;
+    }
 }

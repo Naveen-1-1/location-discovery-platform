@@ -7,6 +7,8 @@ categories:
     osm: { amenity: [restaurant, fast_food, cafe, bar, pub] }
     official:
       boston_active_food_licenses: { descript: ["Eating & Drinking", "Eating & Drinking w/ Take Out"] }
+      boston_food_inspections: { descript: ["Eating & Drinking", "Eating & Drinking w/ Take Out"] }
+      cambridge_food_establishment_permits: { food_est_permit_type: ["Non Alcohol", "Alcohol", "Bakery"] }
   grocery:
     label: Groceries
     overture:
@@ -16,6 +18,7 @@ categories:
     osm: { shop: [supermarket, convenience, greengrocer] }
     official:
       boston_food_inspections: { descript: ["Retail Food"], licstatus: [Active] }
+      cambridge_food_establishment_permits: { food_est_permit_type: ["Retail"] }
       usda_snap_retailers: { Store_Type: [Convenience Store, Grocery Store, Supermarket, Super Store, Farmers and Markets] }
   pharmacy:
     label: Pharmacies

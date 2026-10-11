@@ -93,6 +93,12 @@ public class OvertureSource implements SourceAdapter {
         Files.move(part, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
+    /** The registry pins one release in the URL, and releases never change, so the URL is the version. */
+    @Override
+    public String remoteVersion(SourceDefinition source, HttpDownloader http) {
+        return "overture:" + source.access().url();
+    }
+
     @Override
     public String key(CsvRow row) {
         return row.get("id");

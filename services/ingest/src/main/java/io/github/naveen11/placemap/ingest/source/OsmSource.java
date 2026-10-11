@@ -139,6 +139,16 @@ public class OsmSource implements SourceAdapter {
         }
     }
 
+    /**
+     * Geofabrik's "-latest" link redirects to a dated file and serves an ETag, so a HEAD request tells whether the
+     * ~300 MB extract changed.
+     */
+    @Override
+    public String remoteVersion(SourceDefinition source, HttpDownloader http) throws IOException, InterruptedException {
+        HttpDownloader.Head head = http.head(URI.create(source.access().url()));
+        return "osm:" + head.uri().getPath() + ";" + (head.etag() != null ? head.etag() : head.lastModified());
+    }
+
     /** GeoJSON lines from osmium → the snapshot CSV, one row per OSM object, sorted by type then id. */
     void writeSnapshot(Path features, Path target) throws IOException {
         var json = new JsonMapper();
