@@ -59,12 +59,22 @@ public record LiveProperties(
     }
 
     /**
-     * MBTA's keyless GTFS-Realtime JSON files and the static GTFS zip they are read with (ADR 0041).
+     * MBTA: the V3 streams when there is an API key, the keyless GTFS-Realtime JSON files while a stream is down or
+     * there is no key, and the static GTFS zip both are read with (ADR 0041).
      *
+     * @param apiKey           MBTA V3 key from {@code MBTA_API_KEY}; empty means the open files only
+     * @param streamTick       how often a connected stream counts as an answer; its topic is stale after 3 of these
+     * @param vehiclesIdle     a vehicles stream silent this long is reconnected (vehicles move every few seconds)
+     * @param alertsIdle       the same for alerts, which can be quiet for long stretches
      * @param departuresDemand trip updates are polled only this long after someone last asked for departures
      */
     public record Mbta(
             @DefaultValue("true") boolean enabled,
+            @DefaultValue("") String apiKey,
+            @DefaultValue("https://api-v3.mbta.com") String v3Url,
+            @DefaultValue("15s") Duration streamTick,
+            @DefaultValue("1m") Duration vehiclesIdle,
+            @DefaultValue("30m") Duration alertsIdle,
             @DefaultValue("https://cdn.mbta.com/realtime/") String realtimeUrl,
             @DefaultValue("https://cdn.mbta.com/MBTA_GTFS.zip") String gtfsUrl,
             @DefaultValue("30s") Duration alertsInterval,

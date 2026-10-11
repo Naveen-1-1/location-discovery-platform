@@ -314,7 +314,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Feed polls by outcome",
-      "description": "ok, failed, or not_wanted (departures skipped because nobody is looking).",
+      "description": "ok, failed, not_wanted (an open file skipped because its V3 stream is up, or departures nobody is looking at), and V3 stream connects and refusals.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -692,6 +692,55 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "MBTA V3 streams",
+      "description": "1 while the topic's V3 stream is connected (needs MBTA_API_KEY). While it is 0, that topic is read from MBTA's open realtime files instead (ADR 0041).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (topic) (placemap_live_stream_healthy{job=\"$job\"})",
+          "legendFormat": "{{topic}}"
+        }
+      ]
     }
   ]
 }

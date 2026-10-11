@@ -147,6 +147,34 @@ class SnapshotWriterTest {
         assertThat(writer.current().topic(Topic.DEPARTURES).snapshotEvent()).isEmpty();
     }
 
+    @Test
+    void streamEventsChangeOneItemAtATimeAndAQuietStreamStaysFresh() {
+        Duration ttl = Duration.ofSeconds(15);
+        writer.apply(new FeedUpdate.Upsert(Topic.VEHICLES, "y1", "{\"id\":\"y1\",\"lat\":1}".getBytes(StandardCharsets.UTF_8), millis.get(), ttl));
+        writer.tick();
+        assertThat(delivered).containsExactlyInAnyOrder(
+                "id: 1\nevent: vehicles\ndata: {\"t\":1000000,\"id\":\"y1\",\"lat\":1}\n\n",
+                "id: 1\nevent: status\ndata: {\"topic\":\"vehicles\",\"stale\":false,\"updated\":1000000}\n\n");
+        delivered.clear();
+
+        writer.apply(new FeedUpdate.Remove(Topic.VEHICLES, "y1", millis.get(), ttl));
+        writer.apply(new FeedUpdate.Remove(Topic.VEHICLES, "never-seen", millis.get(), ttl));
+        writer.tick();
+        assertThat(delivered).containsExactly("id: 2\nevent: vehicles\ndata: {\"t\":1000000,\"id\":\"y1\",\"removed\":true}\n\n");
+        delivered.clear();
+
+        for (int i = 0; i < 4; i++) { // a minute of touches every 15 s: never stale
+            millis.addAndGet(15_000);
+            writer.apply(new FeedUpdate.Touch(Topic.VEHICLES, millis.get(), ttl));
+            writer.tick();
+        }
+        assertThat(delivered).isEmpty();
+        assertThat(writer.current().topic(Topic.VEHICLES).stale()).isFalse();
+        millis.addAndGet(45_001);
+        writer.tick();
+        assertThat(writer.current().topic(Topic.VEHICLES).stale()).as("3 × 15 s without a touch").isTrue();
+    }
+
     private FeedUpdate.Replace replace(Map<String, String> items) {
         var bytes = new LinkedHashMap<String, byte[]>();
         items.forEach((id, json) -> bytes.put(id, json.getBytes(StandardCharsets.UTF_8)));

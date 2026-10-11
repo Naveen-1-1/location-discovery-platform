@@ -70,16 +70,21 @@ public final class MbtaParsers {
                     byStop.computeIfAbsent(stop, s -> new LinkedHashMap<>()).put(shown.id(), shown);
                 }
             }
-            var items = new HashMap<String, byte[]>();
-            byStop.forEach((stop, alerts) -> {
-                var list = new ArrayList<>(alerts.values());
-                list.sort(Comparator.comparing(StopAlert::id));
-                boolean elevator = list.stream().anyMatch(a -> "ELEVATOR_CLOSURE".equals(a.detail()));
-                boolean escalator = list.stream().anyMatch(a -> "ESCALATOR_CLOSURE".equals(a.detail()));
-                items.put(stop, JSON.writeValueAsBytes(new StopAlerts(stop, elevator, escalator, list)));
-            });
-            return items;
+            return byStop(byStop);
         };
+    }
+
+    /** One item per stop: its alerts sorted by id, and whether any of them is an elevator or escalator outage. */
+    static Map<String, byte[]> byStop(Map<String, ? extends Map<String, StopAlert>> alertsPerStop) {
+        var items = new HashMap<String, byte[]>();
+        alertsPerStop.forEach((stop, alerts) -> {
+            var list = new ArrayList<>(alerts.values());
+            list.sort(Comparator.comparing(StopAlert::id));
+            boolean elevator = list.stream().anyMatch(a -> "ELEVATOR_CLOSURE".equals(a.detail()));
+            boolean escalator = list.stream().anyMatch(a -> "ESCALATOR_CLOSURE".equals(a.detail()));
+            items.put(stop, JSON.writeValueAsBytes(new StopAlerts(stop, elevator, escalator, list)));
+        });
+        return items;
     }
 
     /** Every vehicle with a position, rounded to about 1 m. */
@@ -172,7 +177,7 @@ public final class MbtaParsers {
         return any;
     }
 
-    private static double round(double degrees) {
+    static double round(double degrees) {
         return Math.round(degrees * 100_000) / 100_000.0;
     }
 }

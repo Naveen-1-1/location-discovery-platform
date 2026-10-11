@@ -180,15 +180,33 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
                         changes.put(LiveKey.item(topic, id), json);
                     }
                 });
-                Health h = health.get(topic);
-                h.updatedMillis = replace.fetchedAtMillis();
-                h.ttlMillis = replace.ttl().toMillis();
-                changedTopics.add(topic); // "updated" moved even if no item did
+                answered(topic, replace.fetchedAtMillis(), replace.ttl());
             }
+            case FeedUpdate.Upsert upsert -> {
+                byte[] old = items.get(topic).put(upsert.id(), upsert.json());
+                if (old == null || !Arrays.equals(old, upsert.json())) {
+                    changes.put(LiveKey.item(topic, upsert.id()), upsert.json());
+                }
+                answered(topic, upsert.atMillis(), upsert.ttl());
+            }
+            case FeedUpdate.Remove remove -> {
+                if (items.get(topic).remove(remove.id()) != null) {
+                    changes.put(LiveKey.item(topic, remove.id()), REMOVED);
+                }
+                answered(topic, remove.atMillis(), remove.ttl());
+            }
+            case FeedUpdate.Touch touch -> answered(topic, touch.atMillis(), touch.ttl());
             case FeedUpdate.Failed failed -> {
                 // Nothing to change now: the topic turns stale by time in refreshHealth().
             }
         }
+    }
+
+    private void answered(Topic topic, long atMillis, Duration ttl) {
+        Health h = health.get(topic);
+        h.updatedMillis = atMillis;
+        h.ttlMillis = ttl.toMillis();
+        changedTopics.add(topic); // "updated" moved even if no item did
     }
 
     /** One tick: re-check staleness, then publish if anything changed. Writer thread only. */

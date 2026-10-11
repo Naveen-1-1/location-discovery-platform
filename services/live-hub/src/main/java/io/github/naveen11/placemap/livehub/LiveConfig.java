@@ -8,6 +8,8 @@ import io.github.naveen11.placemap.livehub.feeds.FeedScheduler;
 import io.github.naveen11.placemap.livehub.feeds.MbtaParsers;
 import io.github.naveen11.placemap.livehub.feeds.MbtaRealtimeFeed;
 import io.github.naveen11.placemap.livehub.feeds.MbtaStatic;
+import io.github.naveen11.placemap.livehub.feeds.MbtaStream;
+import io.github.naveen11.placemap.livehub.feeds.MbtaV3;
 import io.github.naveen11.placemap.livehub.sse.LiveHub;
 import io.github.naveen11.placemap.livehub.sse.LiveServlet;
 import io.github.naveen11.placemap.livehub.state.Frame;
@@ -17,8 +19,12 @@ import io.github.naveen11.placemap.livehub.state.SnapshotWriter;
 import io.github.naveen11.placemap.livehub.state.Topic;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationPredicate;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
@@ -35,6 +41,8 @@ public class LiveConfig {
 
     private static final Logger log = LoggerFactory.getLogger(LiveConfig.class);
     private static final String USER_AGENT = "place-discovery-map-live-hub (+https://github.com/Naveen-1-1/place-discovery-map)";
+    /** For the long-lived MBTA streams: a connect timeout only, since a stream is open for as long as it lasts. */
+    private static final HttpClient STREAMS = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     @Bean
     LiveMetrics liveMetrics(MeterRegistry registry) {
@@ -115,12 +123,25 @@ public class LiveConfig {
                             .build();
                     var names = new MbtaStatic(client, mbta.gtfsUrl());
                     scheduler.start(names);
+                    // With a key, the V3 streams lead and each open file is read only while its stream is down.
+                    BooleanSupplier alertsFallback = () -> true;
+                    BooleanSupplier vehiclesFallback = () -> true;
+                    if (!mbta.apiKey().isBlank()) {
+                        MbtaStream alerts = stream(mbta, "/alerts", Topic.ALERTS, MbtaV3.alerts(names::names),
+                                mbta.alertsIdle());
+                        MbtaStream vehicles = stream(mbta, "/vehicles", Topic.VEHICLES, MbtaV3.vehicles(),
+                                mbta.vehiclesIdle());
+                        alertsFallback = () -> !alerts.healthy();
+                        vehiclesFallback = () -> !vehicles.healthy();
+                    } else {
+                        log.info("MBTA_API_KEY is empty: MBTA alerts and vehicles come from the open realtime files");
+                    }
                     scheduler.start(new MbtaRealtimeFeed(client, mbta.realtimeUrl() + "Alerts_enhanced.json",
-                            Topic.ALERTS, mbta.alertsInterval(), MbtaParsers.alerts(names::names), () -> true, writer,
-                            metrics, System::currentTimeMillis));
+                            Topic.ALERTS, mbta.alertsInterval(), MbtaParsers.alerts(names::names), alertsFallback,
+                            writer, metrics, System::currentTimeMillis));
                     scheduler.start(new MbtaRealtimeFeed(client, mbta.realtimeUrl() + "VehiclePositions_enhanced.json",
-                            Topic.VEHICLES, mbta.vehiclesInterval(), MbtaParsers.vehicles(), () -> true, writer,
-                            metrics, System::currentTimeMillis));
+                            Topic.VEHICLES, mbta.vehiclesInterval(), MbtaParsers.vehicles(), vehiclesFallback,
+                            writer, metrics, System::currentTimeMillis));
                     departuresPollNow.connect(scheduler.start(new MbtaRealtimeFeed(client,
                             mbta.realtimeUrl() + "TripUpdates_enhanced.json", Topic.DEPARTURES,
                             mbta.departuresInterval(), MbtaParsers.departures(names::names), departuresDemand::recent,
@@ -131,9 +152,22 @@ public class LiveConfig {
                 running = true;
             }
 
+            private final List<MbtaStream> streams = new ArrayList<>();
+
+            private MbtaStream stream(LiveProperties.Mbta mbta, String path, Topic topic, MbtaStream.Handler handler,
+                    Duration idle) {
+                var stream = new MbtaStream(STREAMS, URI.create(mbta.v3Url() + path), mbta.apiKey(), topic, handler,
+                        writer, metrics, mbta.streamTick(), idle, System::currentTimeMillis);
+                stream.start();
+                scheduler.start(stream); // its tick: "still connected", or a reconnect if it went silent
+                streams.add(stream);
+                return stream;
+            }
+
             @Override
             public void stop() {
                 scheduler.close();
+                streams.forEach(MbtaStream::close);
                 hub.close();
                 writer.close();
                 running = false;

@@ -18,6 +18,18 @@ public sealed interface FeedUpdate {
     record Replace(Topic topic, Map<String, byte[]> items, long fetchedAtMillis, Duration ttl) implements FeedUpdate {
     }
 
+    /** One item is new or changed, as a stream reports it. Also counts as an answer from the feed. */
+    record Upsert(Topic topic, String id, byte[] json, long atMillis, Duration ttl) implements FeedUpdate {
+    }
+
+    /** One item is gone, as a stream reports it. Also counts as an answer from the feed. */
+    record Remove(Topic topic, String id, long atMillis, Duration ttl) implements FeedUpdate {
+    }
+
+    /** The feed is still there and has nothing new: a quiet stream that is still connected. */
+    record Touch(Topic topic, long atMillis, Duration ttl) implements FeedUpdate {
+    }
+
     /** The feed did not answer usefully. The topic goes stale once this has lasted 3× its ttl. */
     record Failed(Topic topic, String reason, long atMillis) implements FeedUpdate {
     }

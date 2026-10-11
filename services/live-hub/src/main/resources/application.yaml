@@ -45,3 +45,5 @@ management:
 placemap:
   live:                          # defaults in LiveProperties (ADR 0023, 0041)
     connection-executor: ${PLACEMAP_LIVE_THREADS:virtual}   # or pool
+    mbta:
+      api-key: ${MBTA_API_KEY:}  # from .env; empty means MBTA's open realtime files only
