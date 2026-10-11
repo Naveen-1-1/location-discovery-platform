@@ -23,6 +23,15 @@ button, select { font: inherit; }
 .error { color: var(--error); font-size: 0.875rem; margin: 0; }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 
+.segmented { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.segmented button { flex: 1; border: none; background: var(--bg); padding: 6px 0; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button.on { background: var(--fg); color: var(--bg); }
+.toggle { display: flex; gap: 6px; align-items: center; font-size: 0.875rem; cursor: pointer; }
+.muted.warn { color: #92400e; }
+button.link { border: none; background: none; padding: 4px 0 0; color: var(--accent); cursor: pointer; font-size: 0.875rem; }
+button.link:disabled { color: var(--muted); cursor: default; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 2px solid; border-radius: 999px; background: var(--bg); padding: 3px 10px; cursor: pointer; font-size: 0.8125rem; }
 .chip.on { background: var(--fg); color: var(--bg); }

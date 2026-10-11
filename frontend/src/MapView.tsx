@@ -2,7 +2,7 @@ import type { FeatureCollection } from "geojson";
 import { addProtocol, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Map, {
   Layer,
   Marker,
@@ -10,9 +10,18 @@ import Map, {
   Popup,
   Source,
   type MapLayerMouseEvent,
+  type MapRef,
 } from "react-map-gl/maplibre";
-import type { NearbyPlace } from "./api";
-import { CATEGORY_COLORS, FALLBACK_COLOR, formatDistance } from "./categories";
+import type { IsochroneCollection, NearbyPlace, RouteFeature, TravelMode } from "./api";
+import {
+  CATEGORY_COLORS,
+  FALLBACK_COLOR,
+  formatDistance,
+  formatDuration,
+  ISOCHRONE_COLORS,
+  MODE_VERBS,
+  ROUTING_CREDIT,
+} from "./categories";
 import { basemapStyle } from "./mapStyle";
 // MapLibre finds its worker relative to its own module URL, which breaks once a bundler moves that module (Vite's dep
 // cache in development, the app chunk in production). Let Vite bundle the worker and tell MapLibre where it is.
@@ -22,6 +31,7 @@ setWorkerUrl(maplibreWorkerUrl);
 addProtocol("pmtiles", new Protocol().tile);
 
 const PLACES_LAYER = "places";
+const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 const circleColor = [
   "match",
@@ -30,17 +40,52 @@ const circleColor = [
   FALLBACK_COLOR,
 ] as unknown as string;
 
+const isochroneColor = [
+  "match",
+  ["get", "minutes"],
+  ...Object.entries(ISOCHRONE_COLORS).flatMap(([minutes, color]) => [Number(minutes), color]),
+  "#86b6ef",
+] as unknown as string;
+
 type Props = {
   origin: { lat: number; lon: number };
   radius: number;
   places: NearbyPlace[];
   selected: NearbyPlace | null;
+  /** The mode being asked for, which the route button uses. */
+  mode: TravelMode | null;
+  /** The mode the places on screen were sorted by; it labels their travel times. */
+  resultMode: TravelMode | null;
+  route: RouteFeature | undefined;
+  /** "loading", an error message, or null. */
+  routeState: string | null;
+  isochrones: IsochroneCollection | undefined;
+  /** Whether anything on screen came from the routing engine, which then needs its credit. */
+  routingCredit: boolean;
   onPickOrigin: (lat: number, lon: number) => void;
   onSelect: (place: NearbyPlace | null) => void;
+  onShowRoute: (place: NearbyPlace) => void;
 };
 
-export function MapView({ origin, radius, places, selected, onPickOrigin, onSelect }: Props) {
+export function MapView(props: Props) {
+  const { origin, radius, places, selected, mode, resultMode, route, routeState, isochrones, routingCredit } = props;
   const style = useMemo(basemapStyle, []);
+  const map = useRef<MapRef>(null);
+
+  // Bring a new route fully into view, with room for the popup above it.
+  useEffect(() => {
+    const line = route?.geometry.coordinates;
+    if (!line || line.length < 2) return;
+    const lons = line.map((c) => c[0]);
+    const lats = line.map((c) => c[1]);
+    map.current?.fitBounds(
+      [
+        [Math.min(...lons), Math.min(...lats)],
+        [Math.max(...lons), Math.max(...lats)],
+      ],
+      { padding: { top: 160, bottom: 60, left: 60, right: 60 }, maxZoom: 17, duration: 600 },
+    );
+  }, [route]);
 
   const geojson = useMemo<FeatureCollection>(
     () => ({
@@ -55,17 +100,24 @@ export function MapView({ origin, radius, places, selected, onPickOrigin, onSele
     [places],
   );
 
+  // Largest area first, so each smaller one is drawn on top of it.
+  const areas = useMemo<FeatureCollection>(
+    () => (isochrones ? { ...isochrones, features: [...isochrones.features].reverse() } : EMPTY),
+    [isochrones],
+  );
+
   function handleClick(e: MapLayerMouseEvent) {
     const hit = e.features?.[0];
     if (hit) {
-      onSelect(places.find((p) => p.id === hit.properties?.id) ?? null);
+      props.onSelect(places.find((p) => p.id === hit.properties?.id) ?? null);
     } else {
-      onPickOrigin(e.lngLat.lat, e.lngLat.lng);
+      props.onPickOrigin(e.lngLat.lat, e.lngLat.lng);
     }
   }
 
   return (
     <Map
+      ref={map}
       initialViewState={{ latitude: origin.lat, longitude: origin.lon, zoom: radius > 2000 ? 13 : 14.5 }}
       mapStyle={style}
       interactiveLayerIds={[PLACES_LAYER]}
@@ -74,6 +126,18 @@ export function MapView({ origin, radius, places, selected, onPickOrigin, onSele
       style={{ width: "100%", height: "100%" }}
     >
       <NavigationControl position="top-right" />
+      <Source id="isochrones" type="geojson" data={areas}>
+        <Layer id="isochrone-fill" type="fill" paint={{ "fill-color": isochroneColor, "fill-opacity": 0.22 }} />
+        <Layer id="isochrone-line" type="line" paint={{ "line-color": isochroneColor, "line-width": 1.5 }} />
+      </Source>
+      <Source id="route" type="geojson" data={route ?? EMPTY}>
+        <Layer
+          id="route-line"
+          type="line"
+          layout={{ "line-cap": "round", "line-join": "round" }}
+          paint={{ "line-color": "#2563eb", "line-width": 5, "line-opacity": 0.85 }}
+        />
+      </Source>
       <Source
         id="places"
         type="geojson"
@@ -91,6 +155,13 @@ export function MapView({ origin, radius, places, selected, onPickOrigin, onSele
           }}
         />
       </Source>
+      {/* Puts the routing engine's credit in the attribution while anything on screen comes from it. MapLibre only
+          credits sources a visible layer uses, hence the empty, transparent layer. */}
+      {routingCredit && (
+        <Source id="routing-credit" type="geojson" data={EMPTY} attribution={ROUTING_CREDIT}>
+          <Layer id="routing-credit" type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
+        </Source>
+      )}
       <Marker latitude={origin.lat} longitude={origin.lon} color="#111827" />
       {selected && (
         <Popup
@@ -98,11 +169,28 @@ export function MapView({ origin, radius, places, selected, onPickOrigin, onSele
           longitude={selected.lon}
           offset={10}
           closeOnClick={false}
-          onClose={() => onSelect(null)}
+          onClose={() => props.onSelect(null)}
         >
           <strong>{selected.name}</strong>
           {selected.address && <div>{selected.address}</div>}
-          <div className="muted">{formatDistance(selected.distanceMeters)} away (straight line)</div>
+          <div className="muted">
+            {selected.travelSeconds !== null && resultMode
+              ? `${formatDuration(selected.travelSeconds)} ${MODE_VERBS[resultMode]}, `
+              : ""}
+            {formatDistance(selected.distanceMeters)} away in a straight line
+          </div>
+          {mode && !route && (
+            <button className="link" onClick={() => props.onShowRoute(selected)} disabled={routeState === "loading"}>
+              {routeState === "loading" ? "Finding a route…" : "Show route"}
+            </button>
+          )}
+          {route && (
+            <div className="muted">
+              Route: {formatDuration(route.properties.seconds)}, {formatDistance(route.properties.meters)}
+              {route.properties.driveWithoutTraffic ? " (without traffic)" : ""}
+            </div>
+          )}
+          {routeState && routeState !== "loading" && <div className="error">{routeState}</div>}
         </Popup>
       )}
     </Map>

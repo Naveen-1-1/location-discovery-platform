@@ -1,6 +1,9 @@
 // Typed client for the api service. In development Vite proxies /api to localhost:8080.
+import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from "geojson";
 
 export type Category = { code: string; label: string };
+
+export type TravelMode = "walk" | "bike" | "drive";
 
 export type NearbyPlace = {
   id: number;
@@ -9,36 +12,85 @@ export type NearbyPlace = {
   address: string | null;
   lat: number;
   lon: number;
+  /** Straight-line distance from the search's snapped origin. */
   distanceMeters: number;
+  /** Null for a straight-line search, a fallback, or a place the routing engine cannot reach. */
+  travelSeconds: number | null;
+  travelMeters: number | null;
 };
 
 export type NearbyResponse = {
+  snappedCell: string;
   lat: number;
   lon: number;
+  /** How far the search's real starting point can be from the snapped one the times are measured from. */
+  maxSnapErrorMeters: number;
+  mode: TravelMode | null;
   radiusMeters: number;
-  /** "straight_line" in Phase 1; routed sources ("ors", "valhalla") arrive in Phase 3. */
+  /** The routing engine that gave the travel times ("openrouteservice"), or "straight_line". */
   travelTimeSource: string;
+  /** Why a search with a mode has no travel times ("timeout", "breaker_open", …); null otherwise. */
+  fallback: string | null;
+  driveWithoutTraffic: boolean;
   places: NearbyPlace[];
 };
 
 export type NearbyQuery = {
   lat: number;
   lon: number;
+  /** Null for a straight-line search within radius. */
+  mode: TravelMode | null;
   radius: number;
   categories: readonly string[];
   limit?: number;
 };
 
+/** What the api says about a route or an isochrone besides its geometry. */
+type RoutedProperties = {
+  mode: TravelMode;
+  travelTimeSource: string;
+  driveWithoutTraffic: boolean;
+  snappedCell: string;
+  maxSnapErrorMeters: number;
+};
+
+export type RouteFeature = Feature<
+  LineString,
+  RoutedProperties & { placeId: number; placeName: string; seconds: number; meters: number }
+>;
+
+/** One area per limit, smallest first. */
+export type IsochroneCollection = FeatureCollection<Polygon | MultiPolygon, { minutes: number }> & RoutedProperties;
+
+type Origin = { lat: number; lon: number };
+
 /** Coordinates go out rounded to 5 decimals (~1 m): enough precision, and stable cache keys. */
+function originParams(o: Origin): URLSearchParams {
+  return new URLSearchParams({ lat: o.lat.toFixed(5), lon: o.lon.toFixed(5) });
+}
+
 export function nearbyUrl(q: NearbyQuery): string {
-  const params = new URLSearchParams({
-    lat: q.lat.toFixed(5),
-    lon: q.lon.toFixed(5),
-    radius: String(q.radius),
-    limit: String(q.limit ?? 100),
-  });
+  const params = originParams(q);
+  // With a mode the server searches the mode's own radius and sorts by travel time.
+  if (q.mode) params.set("mode", q.mode);
+  else params.set("radius", String(q.radius));
+  params.set("limit", String(q.limit ?? 100));
   for (const c of [...q.categories].sort()) params.append("category", c);
   return `/api/places/nearby?${params}`;
+}
+
+export function routeUrl(origin: Origin, placeId: number, mode: TravelMode): string {
+  const params = originParams(origin);
+  params.set("place", String(placeId));
+  params.set("mode", mode);
+  return `/api/route?${params}`;
+}
+
+export function isochroneUrl(origin: Origin, mode: TravelMode, minutes: readonly number[]): string {
+  const params = originParams(origin);
+  params.set("mode", mode);
+  params.set("minutes", [...minutes].sort((a, b) => a - b).join(","));
+  return `/api/isochrone?${params}`;
 }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -58,3 +110,9 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 export const fetchCategories = (signal?: AbortSignal) => getJson<Category[]>("/api/categories", signal);
 
 export const fetchNearby = (q: NearbyQuery, signal?: AbortSignal) => getJson<NearbyResponse>(nearbyUrl(q), signal);
+
+export const fetchRoute = (origin: Origin, placeId: number, mode: TravelMode, signal?: AbortSignal) =>
+  getJson<RouteFeature>(routeUrl(origin, placeId, mode), signal);
+
+export const fetchIsochrones = (origin: Origin, mode: TravelMode, minutes: readonly number[], signal?: AbortSignal) =>
+  getJson<IsochroneCollection>(isochroneUrl(origin, mode, minutes), signal);

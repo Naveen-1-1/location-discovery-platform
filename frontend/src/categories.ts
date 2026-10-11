@@ -20,3 +20,22 @@ export const FALLBACK_COLOR = "#666666";
 export function formatDistance(meters: number): string {
   return meters < 1000 ? `${meters} m` : `${(meters / 1000).toFixed(1)} km`;
 }
+
+/** Under a minute shows as "< 1 min", so a drive the engine rounds to 0 s never reads "0 min". */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return "< 1 min";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const rest = minutes % 60;
+  return rest === 0 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
+}
+
+export const MODE_LABELS = { walk: "Walk", bike: "Bike", drive: "Drive" } as const;
+
+export const MODE_VERBS = { walk: "walking", bike: "cycling", drive: "driving" } as const;
+
+/** Reachable-area limits in minutes, and their colours: one hue, darker for nearer (sequential). */
+export const ISOCHRONE_MINUTES = [5, 10, 15] as const;
+export const ISOCHRONE_COLORS: Record<number, string> = { 5: "#1c5cab", 10: "#3987e5", 15: "#86b6ef" };
+
+export const ROUTING_CREDIT = 'Routing © <a href="https://openrouteservice.org">openrouteservice.org</a>';
