@@ -10,7 +10,8 @@ It is also a learning project. The three backend services I write contain real t
 load tests and crash tests prove that code holds up. Observability, CI/CD and infrastructure as code are part of
 the project from the start.
 
-> **Status:** Phase 1 (walking skeleton): a map of nearby places sorted by straight-line distance, with monitoring.
+> **Status:** Phase 5: every planned source is imported, the map filters by open now, SNAP, licence and inspection,
+> and a search box finds places and addresses. Sign-in and saved lists come in Phase 6.
 
 ## How it fits together
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
@@ -71,6 +72,20 @@ tools/dev.sh ingest-once boston_active_food_licenses        # one import now, th
 ```
 Downloads are saved under `data/raw/` (git-ignored). Personal fields are never downloaded
 ([ADR 0031](docs/adr/0031-personal-data-dropped-at-import.md)).
+
+**Filters and search (Phase 5):** "open now", "accepts SNAP/EBT", "licensed" and "passed inspection" work from facts
+each import stores per place; the search box finds places by name in the database and addresses through Photon, by way
+of the api so typed addresses never leave our servers ([ADR 0042](docs/adr/0042-sources-filters-search.md)).
+
+**Checking the importers and the matcher:**
+```bash
+./mvnw -pl services/ingest -am test -Dtest=SourceContractTest -Dsurefire.failIfNoSpecifiedTests=false -Dplacemap.contract=true
+tools/dev.sh match-sample     # data/eval/match-sample.csv: 400 scored cases to label, 100 marked for a blind check
+tools/dev.sh match-evaluate   # precision and recall per threshold from the labels (and the blind check)
+tools/dev.sh coverage         # docs/data/coverage.md from the database
+```
+The contract test fetches each source's real data and fails when a publisher changes what the importer reads; it also
+runs nightly in CI. The blind check is `tools/label/index.html`, opened in a browser.
 
 ## Building
 Requires JDK 25 (Temurin) and Maven 3.9.6 or newer. Docker Desktop must be running for the database
