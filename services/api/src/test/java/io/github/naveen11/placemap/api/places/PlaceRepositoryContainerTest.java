@@ -176,16 +176,16 @@ class PlaceRepositoryContainerTest {
 
     @Test
     void filtersKeepOnlyPlacesWhoseFactsPassAndDetailsShowThem() {
-        // Two cafes at Kenmore, far from the places above: one open on weekday mornings and SNAP-registered.
+        // Two cafes at Harvard Square, outside the scatter above: one open on weekday mornings and SNAP-registered.
         long open = jdbc.sql("""
                         INSERT INTO place.place (name, category, geom, address)
-                        VALUES ('Morning Cafe', 'food', ST_SetSRID(ST_MakePoint(-71.0950, 42.3488), 4326)::geography,
+                        VALUES ('Morning Cafe', 'food', ST_SetSRID(ST_MakePoint(-71.1190, 42.3736), 4326)::geography,
                                 '1 Beacon St')
                         RETURNING place_id
                         """).query(Long.class).single();
         long other = jdbc.sql("""
                         INSERT INTO place.place (name, category, geom)
-                        VALUES ('Evening Bar', 'food', ST_SetSRID(ST_MakePoint(-71.0951, 42.3489), 4326)::geography)
+                        VALUES ('Evening Bar', 'food', ST_SetSRID(ST_MakePoint(-71.1191, 42.3737), 4326)::geography)
                         RETURNING place_id
                         """).query(Long.class).single();
         jdbc.sql("""
@@ -196,20 +196,20 @@ class PlaceRepositoryContainerTest {
                        (:other, false, true, 'failed', null, null, null, null)
                 """).param("open", open).param("other", other).update();
 
-        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), PlaceFilters.NONE, 10)).hasSize(2);
-        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), new PlaceFilters(false, true, false, null), 10))
+        assertThat(repository.nearby(42.3736, -71.1190, 100, List.of(), PlaceFilters.NONE, 10)).hasSize(2);
+        assertThat(repository.nearby(42.3736, -71.1190, 100, List.of(), new PlaceFilters(false, true, false, null), 10))
                 .hasSize(2);
-        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), new PlaceFilters(true, false, true, 480), 10))
+        assertThat(repository.nearby(42.3736, -71.1190, 100, List.of(), new PlaceFilters(true, false, true, 480), 10))
                 .singleElement().satisfies(p -> {
                     assertThat(p.id()).isEqualTo(open);
                     assertThat(p.facts().acceptsSnap()).isTrue();
                     assertThat(p.facts().week().openAt(480)).isTrue();
                 });
-        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), new PlaceFilters(false, false, false, 720), 10))
+        assertThat(repository.nearby(42.3736, -71.1190, 100, List.of(), new PlaceFilters(false, false, false, 720), 10))
                 .as("Monday noon: closed, and the bar's hours are unknown").isEmpty();
-        assertThat(repository.unknownHours(42.3488, -71.0950, 100, List.of(), new PlaceFilters(false, false, false, 720)))
+        assertThat(repository.unknownHours(42.3736, -71.1190, 100, List.of(), new PlaceFilters(false, false, false, 720)))
                 .as("the bar, left out for unknown hours").isEqualTo(1);
-        assertThat(repository.unknownHours(42.3488, -71.0950, 100, List.of(), new PlaceFilters(true, false, false, 720)))
+        assertThat(repository.unknownHours(42.3736, -71.1190, 100, List.of(), new PlaceFilters(true, false, false, 720)))
                 .as("and not counted when another filter would drop it anyway").isZero();
 
         PlaceDetails details = repository.details(open, 480).orElseThrow();
