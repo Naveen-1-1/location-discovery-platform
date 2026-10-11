@@ -4,7 +4,8 @@
 #   tools/dev.sh migrate   apply database migrations to Neon
 #   tools/dev.sh tiles     build the Boston basemap file for the frontend
 #   tools/dev.sh api       build and start the api service on :8080
-#   tools/dev.sh web       start the map frontend on :5173 (proxies /api to :8080)
+#   tools/dev.sh live      build and start live-hub on :8081 (live bikes over SSE; PLACEMAP_LIVE_THREADS=pool to compare)
+#   tools/dev.sh web       start the map frontend on :5173 (proxies /api to :8080 and /live to :8081)
 #   tools/dev.sh drill     with the api running in drill mode: send failing requests to test alerting
 #   tools/dev.sh ingest    start the importer: imports each source on its cadence, resumes unfinished runs
 #   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
@@ -62,6 +63,12 @@ case "${1:-help}" in
     stop_previous 8080 services/api/target/api.jar
     exec java "${JAVA_FLAGS[@]}" -jar services/api/target/api.jar
     ;;
+  live)
+    load_env
+    ./mvnw -q -B -pl services/live-hub -am package -DskipTests
+    stop_previous 8081 services/live-hub/target/live-hub.jar
+    exec java "${JAVA_FLAGS[@]}" -jar services/live-hub/target/live-hub.jar
+    ;;
   drill)
     # Needs the api started with: PLACEMAP_DRILLS=true tools/dev.sh api
     # Default: one failing request per second for 2 minutes, enough to hold the 5xx alert's 1-minute pending period.
@@ -111,6 +118,6 @@ case "${1:-help}" in
     exec npm run dev
     ;;
   *)
-    sed -n '2,12p' "$0"
+    sed -n '2,13p' "$0"
     ;;
 esac

@@ -1,0 +1,20 @@
+# Loaded on top of src/main/resources/application.yaml (config/ wins). Tests never export telemetry and never
+# call the real feeds.
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+
+placemap:
+  live:
+    bluebikes:
+      url: http://localhost:1/unused   # each test that needs the feed points it at its own WireMock server

@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: live-hub         # becomes OpenTelemetry service.name
+  threads:
+    virtual:
+      enabled: true        # Tomcat request handling on virtual threads (ADR 0013)
+
+server:
+  port: 8081
+  # Trust X-Forwarded-For only from proxies on loopback or private networks (Caddy in front, ADR 0028), so the
+  # per-client stream limit sees each client instead of the proxy.
+  forward-headers-strategy: native
+  tomcat:
+    max-connections: 12000       # room for the 5,000-stream test (L6) plus ordinary requests
+    # Also Tomcat's blocking-write timeout: the backstop behind the watchdog's 10 s eviction (ADR 0023).
+    connection-timeout: 15s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  tracing:
+    sampling:
+      probability: 1.0       # development: keep every trace (Grafana Cloud free: 50 GB/month)
+  opentelemetry:
+    resource-attributes:
+      "[service.namespace]": placemap
+      "[deployment.environment]": ${PLACEMAP_ENV:dev}
+  otlp:
+    metrics:
+      export:
+        step: 30s
+        base-time-unit: seconds   # Prometheus convention: *_seconds
+        histogram-flavor: base2_exponential_bucket_histogram
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
+        "[http.server.requests.active]": false
+        "[http.client.requests]": true
+        "[http.client.requests.active]": false
+  # OTLP endpoints and auth come from OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL in .env.
+
+placemap:
+  live:                          # defaults in LiveProperties (ADR 0023, 0041)
+    connection-executor: ${PLACEMAP_LIVE_THREADS:virtual}   # or pool
