@@ -1,5 +1,11 @@
 package io.github.naveen11.placemap.api.routing;
 
+import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.micrometer.tagged.TaggedBulkheadMetrics;
+import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import org.slf4j.Logger;
@@ -17,6 +23,21 @@ import org.springframework.web.client.RestClient;
 class RoutingConfig {
 
     private static final Logger log = LoggerFactory.getLogger(RoutingConfig.class);
+
+    /** The engine behind the shared bulkhead and circuit breaker, both exported as metrics. */
+    @Bean
+    GuardedRouting guardedRouting(RoutingClient client, RoutingProperties properties, MeterRegistry registry) {
+        var bulkheads = BulkheadRegistry.ofDefaults();
+        var bulkhead = bulkheads.bulkhead("routing", BulkheadConfig.custom()
+                .maxConcurrentCalls(properties.concurrency())
+                .maxWaitDuration(Duration.ZERO)   // full means refused at once; waiting would only miss deadlines
+                .build());
+        var breakers = CircuitBreakerRegistry.ofDefaults();
+        var breaker = breakers.circuitBreaker("routing", GuardedRouting.breakerConfig());
+        TaggedBulkheadMetrics.ofBulkheadRegistry(bulkheads).bindTo(registry);
+        TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(breakers).bindTo(registry);
+        return new GuardedRouting(client, bulkhead, breaker);
+    }
 
     @Bean
     RoutingClient routingClient(RoutingProperties properties, RestClient.Builder builder) {

@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.api.places;
 
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -57,6 +58,18 @@ public class PlaceRepository {
                         null,
                         null))
                 .list();
+    }
+
+    /** A live place's position; empty if there is no such place or it has been retired. */
+    public Optional<PlaceLocation> location(long placeId) {
+        return jdbc.sql("""
+                        SELECT name, ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lon
+                        FROM place.place WHERE place_id = :id AND retired_at IS NULL
+                        """)
+                .param("id", placeId)
+                .query((rs, i) -> new PlaceLocation(placeId, rs.getString("name"), rs.getDouble("lat"),
+                        rs.getDouble("lon")))
+                .optional();
     }
 
     public List<Category> categories() {

@@ -5,9 +5,13 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-/** {@code placemap.routing.*}. */
+/**
+ * {@code placemap.routing.*}.
+ *
+ * @param concurrency the routing bulkhead: calls to the engine in flight at once (ADR 0026)
+ */
 @ConfigurationProperties("placemap.routing")
-public record RoutingProperties(@DefaultValue Ors ors) {
+public record RoutingProperties(@DefaultValue("8") int concurrency, @DefaultValue Ors ors) {
 
     /**
      * The hosted openrouteservice API (ADR 0033).

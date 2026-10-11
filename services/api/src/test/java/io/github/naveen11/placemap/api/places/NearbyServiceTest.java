@@ -11,7 +11,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.naveen11.placemap.api.Deadline;
-import io.github.naveen11.placemap.api.routing.GeoPoint;
+import io.github.naveen11.placemap.api.routing.FakeRoutingClient;
+import io.github.naveen11.placemap.api.routing.GuardedRouting;
 import io.github.naveen11.placemap.api.routing.RoutingClient;
 import io.github.naveen11.placemap.api.routing.RoutingException;
 import io.github.naveen11.placemap.api.routing.RoutingException.Kind;
@@ -30,24 +31,22 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.JsonNode;
 
 /** The plan's claims for showcase 3 (shared work, deadlines, bulkheads, breaker, fallback), at the service level. */
 class NearbyServiceTest {
 
     private static final NearbyProperties DEFAULTS = new NearbyProperties(Duration.ofMillis(1500),
-            Duration.ofMillis(800), 10_000, Duration.ofMinutes(5), Duration.ofSeconds(15), 10, 8);
+            Duration.ofMillis(800), 10_000, Duration.ofMinutes(5), Duration.ofSeconds(15), 10);
     private static final SnappedOrigin COMMON = new SnappedOrigin("8a2a3066...", 42.3550, -71.0656, 75);
 
     private final PlaceRepository places = mock(PlaceRepository.class);
     private final AtomicLong clock = new AtomicLong();
-    private final FakeEngine engine = new FakeEngine();
-    private final CircuitBreaker breaker = CircuitBreaker.of("routing", NearbyConfig.routingBreaker());
+    private final FakeRoutingClient engine = new FakeRoutingClient();
+    private final CircuitBreaker breaker = CircuitBreaker.of("routing", GuardedRouting.breakerConfig());
+    private final GuardedRouting routing = engine.guarded(breaker);
     private NearbyService service;
 
     @AfterEach
@@ -55,12 +54,13 @@ class NearbyServiceTest {
         if (service != null) {
             service.close();
         }
+        routing.close();
     }
 
     @Test
     void oneHundredIdenticalSearchesShareOneDatabaseQueryAndOneRoutingCall() throws Exception {
         returnPlaces(3);
-        engine.answer = targets -> legs(targets.size());
+        engine.travelTimes = targets -> legs(targets.size());
         engine.delay = Duration.ofMillis(200);
         service = service(DEFAULTS);
         NearbyQuery query = walk();
@@ -87,7 +87,7 @@ class NearbyServiceTest {
     @Test
     void aCallerTimingOutDoesNotCancelTheSharedWork() {
         returnPlaces(2);
-        engine.answer = targets -> legs(targets.size());
+        engine.travelTimes = targets -> legs(targets.size());
         engine.delay = Duration.ofMillis(300);
         service = service(DEFAULTS);
         NearbyQuery query = walk();
@@ -129,7 +129,7 @@ class NearbyServiceTest {
     @Test
     void aSlowEngineGivesAFlaggedStraightLineFallbackAtTheTravelTimeLimit() {
         returnPlaces(3);
-        engine.answer = targets -> legs(targets.size());
+        engine.travelTimes = targets -> legs(targets.size());
         engine.delay = Duration.ofSeconds(2);
         service = service(DEFAULTS);
 
@@ -146,7 +146,7 @@ class NearbyServiceTest {
     @Test
     void fallbacksAreSharedBrieflyAndTravelTimesForFiveMinutes() {
         returnPlaces(1);
-        engine.answer = targets -> {
+        engine.travelTimes = targets -> {
             throw new RoutingException(Kind.UNAVAILABLE, "down");
         };
         service = service(DEFAULTS);
@@ -157,7 +157,7 @@ class NearbyServiceTest {
         search(query);
         assertThat(engine.calls).as("a fallback is shared for 15 s").hasValue(1);
 
-        engine.answer = targets -> legs(targets.size());
+        engine.travelTimes = targets -> legs(targets.size());
         clock.addAndGet(Duration.ofSeconds(6).toNanos());
         assertThat(search(query).fallback()).as("then the engine is asked again").isNull();
         clock.addAndGet(Duration.ofMinutes(4).toNanos());
@@ -171,7 +171,7 @@ class NearbyServiceTest {
     @Test
     void theBreakerOpensAfterRepeatedFailuresAndStopsCallingTheEngine() {
         returnPlaces(1);
-        engine.answer = targets -> {
+        engine.travelTimes = targets -> {
             throw new RoutingException(Kind.UNAVAILABLE, "down");
         };
         service = service(DEFAULTS);
@@ -189,7 +189,7 @@ class NearbyServiceTest {
     @Test
     void anOriginWithNoRouteDoesNotCountAgainstTheEngine() {
         returnPlaces(1);
-        engine.answer = targets -> {
+        engine.travelTimes = targets -> {
             throw new RoutingException(Kind.UNROUTABLE, "origin far from any path");
         };
         service = service(DEFAULTS);
@@ -205,7 +205,7 @@ class NearbyServiceTest {
     void placesAreSortedByTravelTimeWithUnreachableOnesLast() {
         when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), anyInt())).thenReturn(List.of(
                 place(1, 100), place(2, 200), place(3, 300), place(4, 400)));
-        engine.answer = targets -> {
+        engine.travelTimes = targets -> {
             var legs = new ArrayList<RoutingClient.Leg>();
             legs.add(new RoutingClient.Leg(900, 1_000)); // nearest in a straight line, but slow to reach
             legs.add(null);                              // unreachable
@@ -243,10 +243,8 @@ class NearbyServiceTest {
     private NearbyService service(NearbyProperties properties) {
         var config = BulkheadConfig.custom().maxConcurrentCalls(properties.databaseConcurrency())
                 .maxWaitDuration(Duration.ZERO).build();
-        var routingConfig = BulkheadConfig.custom().maxConcurrentCalls(properties.routingConcurrency())
-                .maxWaitDuration(Duration.ZERO).build();
-        return new NearbyService(places, engine, properties, Bulkhead.of("database", config),
-                Bulkhead.of("routing", routingConfig), breaker, new SimpleMeterRegistry(), clock::get);
+        return new NearbyService(places, routing, properties, Bulkhead.of("database", config),
+                new SimpleMeterRegistry(), clock::get);
     }
 
     /**
@@ -300,39 +298,6 @@ class NearbyServiceTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
-        }
-    }
-
-    /** A routing engine whose answer, delay and call count the test controls. */
-    private static final class FakeEngine implements RoutingClient {
-        final AtomicInteger calls = new AtomicInteger();
-        volatile Function<List<GeoPoint>, List<Leg>> answer = targets -> List.of();
-        volatile Duration delay = Duration.ZERO;
-
-        @Override
-        public String name() {
-            return "fake-engine";
-        }
-
-        @Override
-        public List<Leg> travelTimes(GeoPoint origin, List<GeoPoint> targets, TravelMode mode) {
-            calls.incrementAndGet();
-            try {
-                Thread.sleep(delay);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return answer.apply(targets);
-        }
-
-        @Override
-        public Route route(GeoPoint from, GeoPoint to, TravelMode mode) {
-            return new Route(0, 0, (JsonNode) null);
-        }
-
-        @Override
-        public List<Isochrone> isochrones(GeoPoint origin, TravelMode mode, List<Integer> minutes) {
-            return List.of();
         }
     }
 }

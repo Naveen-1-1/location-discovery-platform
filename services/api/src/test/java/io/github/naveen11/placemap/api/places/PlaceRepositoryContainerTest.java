@@ -108,6 +108,21 @@ class PlaceRepositoryContainerTest {
         assertThat(result).extracting(NearbyPlace::id).doesNotContainAnyElementsOf(retiredIds);
     }
 
+    @Test
+    void locatesLivePlacesButNotRetiredOnes() {
+        long live = jdbc.sql("SELECT min(place_id) FROM place.place WHERE retired_at IS NULL").query(Long.class).single();
+        long retired = jdbc.sql("SELECT min(place_id) FROM place.place WHERE retired_at IS NOT NULL")
+                .query(Long.class).single();
+
+        assertThat(repository.location(live)).hasValueSatisfying(place -> {
+            assertThat(place.id()).isEqualTo(live);
+            assertThat(place.lat()).isBetween(42.0, 43.0);
+            assertThat(place.lon()).isBetween(-72.0, -70.0);
+        });
+        assertThat(repository.location(retired)).isEmpty();
+        assertThat(repository.location(-1)).isEmpty();
+    }
+
     /**
      * Guards the query shape, not the planner's cost choice: with sequential scans disabled, the partial GiST index
      * must be able to serve both the radius filter and the KNN ordering. Rewriting the query (e.g. moving the origin

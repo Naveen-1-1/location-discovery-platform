@@ -6,27 +6,22 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.Ticker;
 import io.github.naveen11.placemap.api.Deadline;
 import io.github.naveen11.placemap.api.routing.GeoPoint;
-import io.github.naveen11.placemap.api.routing.RoutingClient;
+import io.github.naveen11.placemap.api.routing.GuardedRouting;
 import io.github.naveen11.placemap.api.routing.RoutingClient.Leg;
-import io.github.naveen11.placemap.api.routing.RoutingException;
 import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.cache.CaffeineCacheMetrics;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,9 +34,9 @@ import org.slf4j.LoggerFactory;
  *       its own deadline, so a caller timing out never cancels the work the others wait for.
  *   <li>A load passes the database bulkhead without waiting (full means the caller gets a 503) and fetches the
  *       {@value #CANDIDATES} nearest candidates.
- *   <li>With a mode, the load then passes the routing bulkhead and circuit breaker and asks the engine for travel
- *       times to all candidates in one call, cut off after {@code travelTimeTimeout}. Any failure there falls back to
- *       the straight-line order, flagged in the result.
+ *   <li>With a mode, the load then asks the engine for travel times to all candidates in one call, through the
+ *       shared routing guard (bulkhead, circuit breaker) and cut off after {@code travelTimeTimeout}. Any failure there
+ *       falls back to the straight-line order, flagged in the result.
  *   <li>Failed loads are not cached. Results with travel times are shared for {@code cacheTtl}, fallbacks for the
  *       much shorter {@code fallbackTtl}.
  * </ol>
@@ -56,23 +51,19 @@ public class NearbyService implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(NearbyService.class);
 
     private final PlaceRepository places;
-    private final RoutingClient routing;
+    private final GuardedRouting routing;
     private final Bulkhead database;
-    private final Bulkhead routingBulkhead;
-    private final CircuitBreaker breaker;
     private final Duration travelTimeTimeout;
     private final MeterRegistry registry;
     private final ExecutorService loaders =
             Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("nearby-load-", 1).factory());
     private final AsyncLoadingCache<NearbyQuery, NearbyResult> cache;
 
-    public NearbyService(PlaceRepository places, RoutingClient routing, NearbyProperties properties, Bulkhead database,
-            Bulkhead routingBulkhead, CircuitBreaker breaker, MeterRegistry registry, Ticker ticker) {
+    public NearbyService(PlaceRepository places, GuardedRouting routing, NearbyProperties properties, Bulkhead database,
+            MeterRegistry registry, Ticker ticker) {
         this.places = places;
         this.routing = routing;
         this.database = database;
-        this.routingBulkhead = routingBulkhead;
-        this.breaker = breaker;
         this.travelTimeTimeout = properties.travelTimeTimeout();
         this.registry = registry;
         // Loads run on virtual threads; the cache's own housekeeping stays on its default pool, which outlives this
@@ -121,41 +112,15 @@ public class NearbyService implements AutoCloseable {
             return loaded(query, STRAIGHT_LINE, null, candidates);
         }
         if (candidates.isEmpty()) {
-            return loaded(query, routing.name(), null, candidates);
+            return loaded(query, routing.engine(), null, candidates);
         }
+        List<GeoPoint> targets = candidates.stream().map(p -> new GeoPoint(p.lat(), p.lon())).toList();
         try {
-            return loaded(query, routing.name(), null, byTravelTime(candidates, travelTimes(query, candidates)));
-        } catch (Fallback f) {
-            return loaded(query, STRAIGHT_LINE, f.getMessage(), candidates);
-        }
-    }
-
-    private List<Leg> travelTimes(NearbyQuery query, List<NearbyPlace> candidates) {
-        if (!routingBulkhead.tryAcquirePermission()) {
-            throw new Fallback("bulkhead_full");
-        }
-        try {
-            if (!breaker.tryAcquirePermission()) {
-                throw new Fallback("breaker_open");
-            }
-            List<GeoPoint> targets = candidates.stream().map(p -> new GeoPoint(p.lat(), p.lon())).toList();
-            long start = System.nanoTime();
-            try {
-                // The time limit is enforced here, whatever the adapter's own HTTP timeout: a late answer is
-                // abandoned (and still logged by the client), the fallback goes out on time.
-                List<Leg> legs = CompletableFuture
-                        .supplyAsync(() -> routing.travelTimes(query.origin().point(), targets, query.mode()), loaders)
-                        .orTimeout(travelTimeTimeout.toNanos(), TimeUnit.NANOSECONDS)
-                        .join();
-                breaker.onSuccess(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                return legs;
-            } catch (CompletionException e) {
-                Throwable cause = e.getCause() == null ? e : e.getCause();
-                breaker.onError(System.nanoTime() - start, TimeUnit.NANOSECONDS, cause);
-                throw new Fallback(reason(cause));
-            }
-        } finally {
-            routingBulkhead.onComplete();
+            List<Leg> legs = routing.call(travelTimeTimeout,
+                    engine -> engine.travelTimes(query.origin().point(), targets, query.mode()));
+            return loaded(query, routing.engine(), null, byTravelTime(candidates, legs));
+        } catch (GuardedRouting.Refused refused) {
+            return loaded(query, STRAIGHT_LINE, refused.reason(), candidates);
         }
     }
 
@@ -169,16 +134,6 @@ public class NearbyService implements AutoCloseable {
                 .thenComparingLong(NearbyPlace::distanceMeters)
                 .thenComparingLong(NearbyPlace::id));
         return List.copyOf(timed);
-    }
-
-    static String reason(Throwable cause) {
-        if (cause instanceof TimeoutException) {
-            return "timeout";
-        }
-        if (cause instanceof RoutingException routingFailure) {
-            return routingFailure.kind().name().toLowerCase(Locale.ROOT);
-        }
-        return "error";
     }
 
     private NearbyResult loaded(NearbyQuery query, String source, String fallback, List<NearbyPlace> found) {
@@ -197,15 +152,6 @@ public class NearbyService implements AutoCloseable {
     @Override
     public void close() {
         loaders.close();
-    }
-
-    /** Ends a load's travel-time step; the message is the reason reported to clients. No stack trace needed. */
-    private static final class Fallback extends RuntimeException {
-        private static final long serialVersionUID = 1L;
-
-        Fallback(String reason) {
-            super(reason, null, false, false);
-        }
     }
 
     /** Routed results live for {@code routed}, fallbacks for {@code fallback}; reads do not extend either. */

@@ -13,7 +13,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param fallbackTtl how long a straight-line fallback is shared: long enough to absorb a burst while the engine is
  *     down, short enough that travel times come back soon after it recovers
  * @param databaseConcurrency the database bulkhead: as many permits as the connection pool has connections
- * @param routingConcurrency the routing bulkhead
  */
 @ConfigurationProperties("placemap.nearby")
 public record NearbyProperties(
@@ -22,5 +21,4 @@ public record NearbyProperties(
         @DefaultValue("10000") int cacheSize,
         @DefaultValue("5m") Duration cacheTtl,
         @DefaultValue("15s") Duration fallbackTtl,
-        @DefaultValue("10") int databaseConcurrency,
-        @DefaultValue("8") int routingConcurrency) {}
+        @DefaultValue("10") int databaseConcurrency) {}
