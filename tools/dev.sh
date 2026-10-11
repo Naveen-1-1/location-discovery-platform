@@ -11,6 +11,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# JDK 25 warns about libraries that load native code (H3, DuckDB) or use sun.misc.Unsafe (protobuf, inside the
+# OpenTelemetry exporter). Both are expected here, so allow them explicitly instead of printing warnings every run.
+JAVA_FLAGS=(--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow)
+
 load_env() {
   if [[ ! -f .env ]]; then
     echo "No .env file. Copy .env.example to .env and fill it in." >&2
@@ -54,7 +58,7 @@ case "${1:-help}" in
     load_env
     ./mvnw -q -B -pl services/api -am package -DskipTests
     stop_previous 8080 services/api/target/api.jar
-    exec java -jar services/api/target/api.jar
+    exec java "${JAVA_FLAGS[@]}" -jar services/api/target/api.jar
     ;;
   drill)
     # Needs the api started with: PLACEMAP_DRILLS=true tools/dev.sh api
@@ -68,7 +72,7 @@ case "${1:-help}" in
   ingest)
     load_env
     ./mvnw -q -B -pl services/ingest -am package -DskipTests
-    exec java -jar services/ingest/target/ingest.jar
+    exec java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar
     ;;
   ingest-once)
     load_env
@@ -82,7 +86,7 @@ case "${1:-help}" in
     ./mvnw -q -B -pl services/ingest -am package -DskipTests
     # One process per source, in the order given: later sources match against the places earlier ones created.
     for source_id in "${sources[@]}"; do
-      java -jar services/ingest/target/ingest.jar --placemap.ingest.once="$source_id" --placemap.ingest.force="$force"
+      java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.once="$source_id" --placemap.ingest.force="$force"
     done
     ;;
   web)
