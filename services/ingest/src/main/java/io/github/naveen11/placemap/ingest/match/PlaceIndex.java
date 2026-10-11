@@ -88,10 +88,15 @@ public final class PlaceIndex {
     private final Map<Long, List<IndexedPlace>> byCell;
     private final Map<Long, List<IndexedPlace>> outlinesByCell;
     private final Map<String, Long> linkedPlace;
+    private final String joinSource;
+    private final Map<String, Long> joinedPlace;
     private final int size;
 
-    private PlaceIndex(H3Core h3, List<IndexedPlace> places, Map<String, Long> linkedPlace) {
+    private PlaceIndex(H3Core h3, List<IndexedPlace> places, Map<String, Long> linkedPlace, String joinSource,
+            Map<String, Long> joinedPlace) {
         this.h3 = h3;
+        this.joinSource = joinSource;
+        this.joinedPlace = Map.copyOf(joinedPlace);
         var points = new HashMap<Long, List<IndexedPlace>>();
         var outlines = new HashMap<Long, List<IndexedPlace>>();
         for (IndexedPlace place : places) {
@@ -111,7 +116,8 @@ public final class PlaceIndex {
         this.size = places.size();
     }
 
-    public static PlaceIndex load(DataSource dataSource, String source, long runId) {
+    /** @param joinSource the source this one joins by key ({@code SourceAdapter.joinsSource()}), or null */
+    public static PlaceIndex load(DataSource dataSource, String source, long runId, String joinSource) {
         H3Core h3;
         try {
             h3 = H3Core.newInstance();
@@ -137,13 +143,33 @@ public final class PlaceIndex {
                 .query(rs -> {
                     linked.put(rs.getString(1), rs.getLong(2));
                 });
-        return new PlaceIndex(h3, places, linked);
+        var joined = new HashMap<String, Long>();
+        if (joinSource != null) {
+            // The same frozen view as the places: live places that existed when the run started.
+            jdbc.sql("""
+                            SELECT l.source_key, l.place_id FROM place.place_source_link l
+                            JOIN place.place p ON p.place_id = l.place_id
+                            WHERE l.source = ? AND p.retired_at IS NULL
+                              AND p.created_at < (SELECT started_at FROM ingest.run WHERE run_id = ?)
+                            """)
+                    .params(joinSource, runId)
+                    .query(rs -> {
+                        joined.put(rs.getString(1), rs.getLong(2));
+                    });
+        }
+        return new PlaceIndex(h3, places, linked, joinSource, joined);
     }
 
     /** For tests: an index over the given places and links. */
     static PlaceIndex of(List<IndexedPlace> places, Map<String, Long> linkedPlace) {
+        return of(places, linkedPlace, null, Map.of());
+    }
+
+    /** For tests: an index for a source that joins {@code joinSource}'s places by key. */
+    static PlaceIndex of(List<IndexedPlace> places, Map<String, Long> linkedPlace, String joinSource,
+            Map<String, Long> joinedPlace) {
         try {
-            return new PlaceIndex(H3Core.newInstance(), places, linkedPlace);
+            return new PlaceIndex(H3Core.newInstance(), places, linkedPlace, joinSource, joinedPlace);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -161,6 +187,16 @@ public final class PlaceIndex {
     /** The place this source's record is already linked to, or null. */
     public Long linkedPlace(String sourceKey) {
         return linkedPlace.get(sourceKey);
+    }
+
+    /** The source this run's records join by key, or null if they are matched by score. */
+    public String joinSource() {
+        return joinSource;
+    }
+
+    /** The place of the {@link #joinSource()} record with this key, or null. */
+    public Long joinedPlace(String sourceKey) {
+        return joinedPlace.get(sourceKey);
     }
 
     /**

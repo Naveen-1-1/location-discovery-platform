@@ -268,7 +268,7 @@ public class RunCoordinator {
         int upsertWorkers = properties.upsertWorkers();
         // H3 is native code, so the index is built on a platform thread (as are the match workers that query it).
         PlaceIndex index = PlatformThreads.call("ingest-index-" + sourceId,
-                () -> PlaceIndex.load(dataSource, sourceId, run.runId()));
+                () -> PlaceIndex.load(dataSource, sourceId, run.runId(), adapter.joinsSource().orElse(null)));
         var matcher = new Matcher(index, priority, sourceId);
         log.info("ingest {}: matching against {} places", sourceId, index.size());
         // Each queue holds twice its consumers' worker count, in batches of batch-size rows (the plan's sizing).

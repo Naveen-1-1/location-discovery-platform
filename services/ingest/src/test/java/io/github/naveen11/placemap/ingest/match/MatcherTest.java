@@ -216,4 +216,17 @@ class MatcherTest {
                 .satisfies(n -> assertThat(n.meters()).isCloseTo(40, offset(0.5)));
         assertThat(index.near(LON + 420 * LON_METRE, LAT + 700 * METRE, 100)).isEmpty();
     }
+
+    @Test
+    void aSourceDescribingAnothersRecordsJoinsTheirPlaceByKeyAndIsNeverScored() {
+        var index = PlaceIndex.of(List.of(place(1, "Ronan Park", "park", 0, null, OPEN_SPACE)), Map.of(), OPEN_SPACE,
+                Map.of("375", 1L));
+        var matcher = new Matcher(index, PRIORITY, "boston_park_features");
+
+        SourceRow features = SourceRow.of("375", "Ronan Park", null, null, null, null, null, null, null, Map.of());
+        assertThat(matcher.decide(features)).isEqualTo(new MatchDecision.Link(1, 1.0, "id"));
+        SourceRow orphan = SourceRow.of("999", "Ronan Park", null, LON, LAT, null, null, null, null, Map.of());
+        assertThat(matcher.decide(orphan)).as("no parcel place, and no fallback to scoring")
+                .isEqualTo(new MatchDecision.Unlinked("no boston_open_space place with this key"));
+    }
 }

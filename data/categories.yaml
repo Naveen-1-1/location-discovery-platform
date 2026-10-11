@@ -9,6 +9,7 @@ categories:
       boston_active_food_licenses: { descript: ["Eating & Drinking", "Eating & Drinking w/ Take Out"] }
       boston_food_inspections: { descript: ["Eating & Drinking", "Eating & Drinking w/ Take Out"] }
       cambridge_food_establishment_permits: { food_est_permit_type: ["Non Alcohol", "Alcohol", "Bakery"] }
+      boston_licensing_board_licenses: { license_category: ["Common Victualler", "General on Premise"] }
   grocery:
     label: Groceries
     overture:
@@ -68,3 +69,6 @@ categories:
     overture: { basic_category: [community_center] }
     osm: { amenity: [community_centre] }
     official: { boston_bcyf_community_centers: {} }
+  wifi:
+    label: Free Wi-Fi
+    official: { boston_wicked_free_wifi: {} }

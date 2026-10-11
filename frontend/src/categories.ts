@@ -13,6 +13,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   library: "#8d6e63",
   hospital: "#d62828",
   community_centre: "#bc6c25",
+  wifi: "#4361ee",
 };
 
 export const FALLBACK_COLOR = "#666666";

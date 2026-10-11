@@ -12,6 +12,8 @@ import org.locationtech.jts.io.WKTReader;
  *
  * <ol>
  *   <li>Already linked: keep the place.
+ *   <li>A source that describes another source's records (park features of a parcel) joins that record's place by
+ *       key, and is never scored.
  *   <li>Score every live place within 100 m as 0.45·name + 0.25·address + 0.2·distance + 0.1·category. The best
  *       one at 0.80 or above is a match. Distances to and from an outline (a park) are measured from its edge, 0 m
  *       inside it.
@@ -43,6 +45,12 @@ public final class Matcher {
         Long linked = index.linkedPlace(record.key());
         if (linked != null) {
             return new MatchDecision.Keep(linked);
+        }
+        if (index.joinSource() != null) {
+            Long joined = index.joinedPlace(record.key());
+            return joined != null
+                    ? new MatchDecision.Link(joined, 1.0, "id")
+                    : new MatchDecision.Unlinked("no " + index.joinSource() + " place with this key");
         }
         if (record.lon() == null) {
             return new MatchDecision.Unlinked("no location");

@@ -44,14 +44,15 @@ public final class ParseContext {
         if (lonText == null || latText == null) {
             return new ReadPoint(0, 0, RowResult.rejected("missing coordinates"));
         }
-        double lon;
-        double lat;
         try {
-            lon = Double.parseDouble(lonText);
-            lat = Double.parseDouble(latText);
+            return checkPoint(Double.parseDouble(lonText), Double.parseDouble(latText));
         } catch (NumberFormatException e) {
             return new ReadPoint(0, 0, RowResult.rejected("unreadable coordinates"));
         }
+    }
+
+    /** {@link #readPoint} for a point already in numbers, such as one just reprojected. */
+    public ReadPoint checkPoint(double lon, double lat) {
         Optional<String> problem = pointProblem(lon, lat);
         if (problem.isEmpty()) {
             return new ReadPoint(lon, lat, null);

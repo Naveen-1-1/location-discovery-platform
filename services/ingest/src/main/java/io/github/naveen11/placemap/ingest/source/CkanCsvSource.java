@@ -25,11 +25,20 @@ public abstract class CkanCsvSource implements SourceAdapter {
 
     @Override
     public void fetch(SourceDefinition source, Path target, HttpDownloader http) throws IOException, InterruptedException {
+        download(source, http, columns(), target);
+    }
+
+    /**
+     * Downloads the chosen fields sorted by {@link #sortColumns()}. Sources that turn the rows into something else
+     * (one row per park, per Wi-Fi site) download to a working file and write their snapshot from it.
+     */
+    protected void download(SourceDefinition source, HttpDownloader http, List<String> fields, Path target)
+            throws IOException, InterruptedException {
         if (!"ckan_csv".equals(source.access().method())) {
             throw new IllegalStateException(sourceId() + " is registered as " + source.access().method() + ", not ckan_csv");
         }
         String url = source.access().url()
-                + "?fields=" + encode(String.join(",", columns()))
+                + "?fields=" + encode(String.join(",", fields))
                 + "&sort=" + encode(String.join(",", sortColumns()));
         http.download(URI.create(url), target);
     }

@@ -44,7 +44,11 @@ class SourceContractTest {
                 new AfdcFuelStations(name -> Optional.ofNullable(System.getenv(name)).orElse("")),
                 new BostonOpenSpace(),
                 new BostonPublicLibraries(),
-                new BostonBcyfCenters());
+                new BostonBcyfCenters(),
+                new UsdaSnapRetailers(TestData.area()),
+                new BostonLicensingBoard(),
+                new BostonParkFeatures(),
+                new BostonWickedFreeWifi());
     }
 
     @ParameterizedTest(name = "{0}")

@@ -51,6 +51,15 @@ public interface SourceAdapter {
     }
 
     /**
+     * The source whose records this one describes under the same key, such as park features describing Boston's
+     * open-space parcels by {@code OS_ID}. Such a record joins the place of the record it describes (the ID join of
+     * ADR 0022) and is never scored. Empty for sources matched by name, address and distance.
+     */
+    default Optional<String> joinsSource() {
+        return Optional.empty();
+    }
+
+    /**
      * Why this importer cannot run yet, such as a missing API key, or empty. The scheduler then skips the source
      * (and says so once) instead of failing a run every hour.
      */

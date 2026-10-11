@@ -156,7 +156,7 @@ sources:
     name: Licensing Board Licenses
     publisher: City of Boston (Analyze Boston) - Boston Licensing Board
     category_scope: [food, alcohol, nightlife]
-    role: existence             # common victualler and alcohol licensed premises
+    role: enrich                # ADR 0032: food places come from Overture and OSM; this adds licences and hours
     access:
       method: ckan_csv
       url: https://data.boston.gov/datastore/dump/04dc653b-1789-4374-9669-b07df7233344
@@ -260,7 +260,8 @@ sources:
     role: enrich
     access:
       method: ckan_csv
-      url: https://data.boston.gov/dataset/0ab7eb75-f3f3-4aea-8bf1-ae11dbfe1e32/resource/4d28fc98-c503-4065-987f-9fbc41947fc4/download/park_features.csv
+      url: https://data.boston.gov/datastore/dump/4d28fc98-c503-4065-987f-9fbc41947fc4
+      # filestore: https://data.boston.gov/dataset/0ab7eb75-f3f3-4aea-8bf1-ae11dbfe1e32/resource/4d28fc98-c503-4065-987f-9fbc41947fc4/download/park_features.csv
       api_key_env: null
       rate_limit: null
     cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04
@@ -279,10 +280,11 @@ sources:
     name: Wicked Free WiFi Locations
     publisher: City of Boston (Analyze Boston) - Boston Maps
     category_scope: [wifi]
-    role: enrich
+    role: existence             # one Free Wi-Fi place per site (owner decision 2026-10-11, ADR 0042)
     access:
       method: ckan_csv
-      url: https://data.boston.gov/dataset/8507af6d-9cea-4e6c-a9ef-9b7848907cbc/resource/9a338635-4013-46ef-90b7-42836299e2de/download/wicked_free_wifi_locations.csv
+      url: https://data.boston.gov/datastore/dump/9a338635-4013-46ef-90b7-42836299e2de
+      # filestore: https://data.boston.gov/dataset/8507af6d-9cea-4e6c-a9ef-9b7848907cbc/resource/9a338635-4013-46ef-90b7-42836299e2de/download/wicked_free_wifi_locations.csv
       api_key_env: null
       rate_limit: null
     cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04
