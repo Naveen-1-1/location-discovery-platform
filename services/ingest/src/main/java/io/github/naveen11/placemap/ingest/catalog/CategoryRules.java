@@ -23,7 +23,6 @@ import tools.jackson.dataformat.yaml.YAMLMapper;
  *       {@code healthcare=pharmacy}).
  *   <li><b>Official sources</b> ({@code official: {source_id: ...}}): the listed fields are filters, so a row matches
  *       only if <em>every</em> one has a listed value. An empty rule ({@code {}}) matches every row.
- *   <li>A field named {@code X_prefix} matches values of {@code X} that start with a listed value.
  * </ul>
  */
 public final class CategoryRules {
@@ -31,14 +30,11 @@ public final class CategoryRules {
     static final String OVERTURE = "overture";
     static final String OSM = "osm";
 
-    private record FieldRule(String field, boolean prefix, List<String> values) {
+    private record FieldRule(String field, List<String> values) {
 
         boolean matches(Function<String, String> row) {
             String value = row.apply(field);
-            if (value == null) {
-                return false;
-            }
-            return prefix ? values.stream().anyMatch(value::startsWith) : values.contains(value);
+            return value != null && values.contains(value);
         }
     }
 
@@ -76,10 +72,8 @@ public final class CategoryRules {
     private static List<FieldRule> fields(JsonNode rule) {
         var fields = new ArrayList<FieldRule>();
         for (Map.Entry<String, JsonNode> field : rule.properties()) {
-            boolean prefix = field.getKey().endsWith("_prefix");
-            String name = prefix ? field.getKey().substring(0, field.getKey().length() - "_prefix".length()) : field.getKey();
             // YAML may write codes as numbers (location_type: [0, 1]); rows hold text.
-            fields.add(new FieldRule(name, prefix, field.getValue().values().stream().map(JsonNode::asString).toList()));
+            fields.add(new FieldRule(field.getKey(), field.getValue().values().stream().map(JsonNode::asString).toList()));
         }
         return List.copyOf(fields);
     }

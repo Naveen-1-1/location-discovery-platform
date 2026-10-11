@@ -50,6 +50,18 @@ class SourceRowTest {
     }
 
     @Test
+    void anOutlineIsHashedWhileRecordsWithoutOneKeepTheirStoredHashes() {
+        SourceRow plain = row("Park", -71.0, Map.of());
+        SourceRow outlined = plain.withOutline("MULTIPOLYGON (((-71 42, -71 42.001, -70.999 42, -71 42)))");
+
+        // Records stored before outlines existed must not all look changed: the hash text only grows when one is set.
+        assertThat(plain.rowHash()).isEqualTo("a883a049d13b4e0af85cf1a84554d38fef636fb256e5941462563ff9d1fa1ae5");
+        assertThat(outlined.rowHash()).isNotEqualTo(plain.rowHash());
+        assertThat(outlined.outlineEwkt()).startsWith("SRID=4326;MULTIPOLYGON");
+        assertThat(plain.outline()).isNull();
+    }
+
+    @Test
     void locationIsAllOrNothing() {
         assertThatThrownBy(() -> SourceRow.of("k", "Cafe", null, -71.0, null, null, null, null, null, Map.of()))
                 .isInstanceOf(IllegalArgumentException.class);

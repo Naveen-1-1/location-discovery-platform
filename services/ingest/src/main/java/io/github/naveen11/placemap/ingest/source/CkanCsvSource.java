@@ -38,9 +38,13 @@ public abstract class CkanCsvSource implements SourceAdapter {
     @Override
     public String remoteVersion(SourceDefinition source, HttpDownloader http) throws IOException, InterruptedException {
         URI dump = URI.create(source.access().url());
-        String resource = Path.of(dump.getPath()).getFileName().toString();
-        URI metadata = URI.create(dump.getScheme() + "://" + dump.getHost() + "/api/3/action/resource_show?id="
-                + encode(resource));
+        return resourceVersion(http, dump, Path.of(dump.getPath()).getFileName().toString());
+    }
+
+    /** A CKAN resource's last-modified time, from the metadata API of the portal {@code url} is on. */
+    static String resourceVersion(HttpDownloader http, URI url, String resourceId) throws IOException, InterruptedException {
+        URI metadata = URI.create(url.getScheme() + "://" + url.getHost() + "/api/3/action/resource_show?id="
+                + encode(resourceId));
         JsonNode result = JSON.readTree(http.getText(metadata)).required("result");
         String modified = result.path("last_modified").asString(null);
         return "ckan:" + (modified != null ? modified : result.required("metadata_modified").asString());

@@ -51,6 +51,14 @@ public interface SourceAdapter {
     }
 
     /**
+     * Why this importer cannot run yet, such as a missing API key, or empty. The scheduler then skips the source
+     * (and says so once) instead of failing a run every hour.
+     */
+    default Optional<String> notReady(SourceDefinition source) {
+        return Optional.empty();
+    }
+
+    /**
      * A marker of the publisher's current data that is cheap to read without downloading it, such as a dataset's
      * last-modified time or a file's ETag. When it matches the last successful run, the download is skipped. Null if
      * the source offers none.

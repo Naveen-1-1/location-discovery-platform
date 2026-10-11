@@ -36,11 +36,11 @@ class CatalogTest {
                 .contains("food");
         assertThat(rules.officialCategory("boston_active_food_licenses", Map.of("descript", "Retail Food")::get))
                 .isEmpty();
-        // A field named X_prefix matches values of X that start with a listed value.
-        assertThat(rules.officialCategory("fdic_bank_locations",
-                Map.of("SERVTYPE_DESC", "FULL SERVICE - BRICK AND MORTAR OFFICE")::get)).contains("bank");
         // Numbers in YAML match text in rows.
         assertThat(rules.officialCategory("mbta_gtfs", Map.of("location_type", "1")::get)).contains("transit");
+        assertThat(rules.officialCategory("fdic_bank_locations", Map.of("SERVTYPE", "11")::get)).contains("bank");
+        assertThat(rules.officialCategory("fdic_bank_locations", Map.of("SERVTYPE", "13")::get)).as("home banking")
+                .isEmpty();
         // An empty rule matches every row of that source.
         assertThat(rules.officialCategory("massgis_hospitals", Map.<String, String>of()::get)).contains("hospital");
     }

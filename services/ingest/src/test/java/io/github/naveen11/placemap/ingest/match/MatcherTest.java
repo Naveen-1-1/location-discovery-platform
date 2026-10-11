@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.ingest.match;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.offset;
 
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.locationtech.jts.io.WKTReader;
 
 /** The decision rules of ADR 0022 and gate G1 (ADR 0032) against a hand-built index around Boston Common. */
 class MatcherTest {
@@ -159,5 +161,59 @@ class MatcherTest {
         assertThat(food.get(1)).isEqualTo(new SourcePriority.Role("food", OSM, 1, true));
         assertThat(food).filteredOn(r -> r.source().equals(LICENCES))
                 .singleElement().satisfies(r -> assertThat(r.existence()).isFalse());
+    }
+
+    private static final String OPEN_SPACE = "boston_open_space";
+    private static final double LON_METRE = METRE / Math.cos(Math.toRadians(LAT));
+
+    /** A park outline from 0 to 800 m north of the test point and 300 m either side of it, as WKT. */
+    private static String parkOutline() {
+        double w = LON - 300 * LON_METRE;
+        double e = LON + 300 * LON_METRE;
+        double s = LAT;
+        double n = LAT + 800 * METRE;
+        return "MULTIPOLYGON (((%s %s, %s %s, %s %s, %s %s, %s %s)))".formatted(w, s, e, s, e, n, w, n, w, s);
+    }
+
+    @Test
+    void aParkRecordIsComparedWithPlacesInsideItsOutlineNotJustNearItsPoint() {
+        // OSM's point for the park is 600 m from the city's: far beyond 100 m, but inside the city's outline.
+        Matcher matcher = matcher(OPEN_SPACE, Map.of(), place(1, "Franklin Park", "park", 600, null, OSM));
+        SourceRow city = SourceRow.of("1001", "Franklin Park", "park", LON, LAT, null, null, null, null, Map.of());
+
+        assertThat(matcher.decide(city)).as("by point").isEqualTo(new MatchDecision.Create());
+        assertThat(matcher.decide(city.withOutline(parkOutline()))).isInstanceOfSatisfying(MatchDecision.Link.class,
+                link -> {
+                    assertThat(link.placeId()).isEqualTo(1);
+                    assertThat(link.score()).isEqualTo(0.875); // name 1, address unknown 0.5, inside: distance 1
+                });
+    }
+
+    @Test
+    void aRecordNearAnOutlinedPlaceIsComparedWithTheOutline() {
+        // The city's park is the place (its point at the south edge); OSM's record for it lies 600 m north, inside.
+        var outline = PlaceIndex.read(new WKTReader(), parkOutline());
+        var park = new PlaceIndex.IndexedPlace(1, "park", LON, LAT, Similarity.normalizeName("Franklin Park"), null,
+                Set.of(OPEN_SPACE), outline);
+        SourceRow osm = record("way/1", "Franklin Park", "park", 600, null, null);
+
+        assertThat(matcher(OSM, Map.of(), park).decide(osm)).isInstanceOfSatisfying(MatchDecision.Link.class,
+                link -> assertThat(link.placeId()).isEqualTo(1));
+        var withoutOutline = new PlaceIndex.IndexedPlace(1, "park", LON, LAT, park.normalizedName(), null,
+                Set.of(OPEN_SPACE));
+        assertThat(matcher(OSM, Map.of(), withoutOutline).decide(osm)).isEqualTo(new MatchDecision.Create());
+    }
+
+    @Test
+    void outlineDistancesAreMeasuredFromTheEdge() {
+        var outline = PlaceIndex.read(new WKTReader(), parkOutline());
+        var index = PlaceIndex.of(List.of(new PlaceIndex.IndexedPlace(1, "park", LON, LAT, "park", null, Set.of(OSM),
+                outline)), Map.of());
+
+        assertThat(PlaceIndex.metersToOutline(outline, LON, LAT + 400 * METRE)).isZero();
+        assertThat(PlaceIndex.metersToOutline(outline, LON, LAT - 50 * METRE)).isCloseTo(50, offset(0.5));
+        assertThat(index.near(LON + 340 * LON_METRE, LAT + 700 * METRE, 100)).singleElement()
+                .satisfies(n -> assertThat(n.meters()).isCloseTo(40, offset(0.5)));
+        assertThat(index.near(LON + 420 * LON_METRE, LAT + 700 * METRE, 100)).isEmpty();
     }
 }

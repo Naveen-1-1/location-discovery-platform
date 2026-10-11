@@ -9,6 +9,7 @@ import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
+import io.github.naveen11.placemap.ingest.source.BostonOpenSpace;
 import io.github.naveen11.placemap.ingest.source.OsmSource;
 import io.github.naveen11.placemap.ingest.source.OvertureSource;
 import io.github.naveen11.placemap.ingest.source.SourceAdapter;
@@ -90,6 +91,7 @@ class PlaceMatchingContainerTest {
     private Path osmFile;
     private Path overtureFile;
     private Path licenceFile;
+    private Path openSpaceFile;
     private long seedPlace;
 
     @BeforeAll
@@ -111,6 +113,7 @@ class PlaceMatchingContainerTest {
         osmFile = tmp.resolve("extract.osm");
         overtureFile = tmp.resolve("places.parquet");
         licenceFile = tmp.resolve("licences.csv");
+        openSpaceFile = tmp.resolve("open_space.geojson");
         writeOsm(List.of(
                 osmNode(1, CAFE, 0, "amenity", "cafe", "Corner Cafe", "12", "Main Street"),
                 osmNode(2, MARKET, 0, "shop", "supermarket", "Harbor Market", null, null),
@@ -241,6 +244,42 @@ class PlaceMatchingContainerTest {
                 .as("no duplicate place").isEqualTo(1);
     }
 
+    /**
+     * A large park: OSM's point for it is 300 m from the point inside the city's parcel, far beyond the 100 m radius,
+     * but inside the parcel's outline. The city's record must join OSM's place instead of creating a second one.
+     */
+    @Test
+    void aParkFromTheCitysOutlinesJoinsOsmsPlaceForIt() throws Exception {
+        double[] south = {-71.0950, 42.3000};
+        double north = south[1] + 800 * METRE;
+        double east = south[0] + 0.004; // about 330 m
+        writeOsm(List.of(osmNode(5, new double[] {south[0] + 0.002, south[1]}, 700, "leisure", "park", "Franklin Park",
+                null, null)));
+        Files.writeString(openSpaceFile, """
+                {"type": "FeatureCollection", "features": [{"type": "Feature",
+                  "properties": {"SITE_NAME": "Franklin Park", "TypeLong": "Parks, Playgrounds & Athletic Fields",
+                                 "OS_ID": "1001", "ZipCode": "02121"},
+                  "geometry": {"type": "Polygon", "coordinates": [[[%1$s, %2$s], [%3$s, %2$s], [%3$s, %4$s], [%1$s, %4$s],
+                                                                   [%1$s, %2$s]]]}}]}
+                """.formatted(south[0], south[1], east, north));
+
+        assertThat(run(OSM, false, 0.2)).isEqualTo(Outcome.COMPLETE);
+        assertThat(run(BostonOpenSpace.ID, false, 0.2)).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(placeOf(BostonOpenSpace.ID, "1001")).isEqualTo(placeOf(OSM, "node/5"));
+        assertThat(method(BostonOpenSpace.ID, "1001")).isEqualTo("score");
+        assertThat(jdbc.sql("""
+                        SELECT ST_GeometryType(outline::geometry) FROM place.source_record
+                        WHERE source = ? AND source_key = '1001'
+                        """).param(BostonOpenSpace.ID).query(String.class).single()).isEqualTo("ST_MultiPolygon");
+
+        // A later OSM run loads the city's outline into its index: still one place, and the ids stay.
+        Map<String, Long> before = links();
+        assertThat(run(OSM, true, 0.2)).isEqualTo(Outcome.COMPLETE);
+        assertThat(links()).isEqualTo(before);
+        assertThat(liveCategories()).filteredOn("park"::equals).hasSize(1); // besides the seed café
+    }
+
     // ---------------------------------------------------------------------------------------------- helpers
 
     private void runAll() {
@@ -270,14 +309,15 @@ class PlaceMatchingContainerTest {
                 super.fetch(withUrl(source, "https://example.test/extract.osm"), target, http);
             }
         };
-        return new SourceAdapter[] {overture, osm, new BostonActiveFoodLicenses()};
+        return new SourceAdapter[] {overture, osm, new BostonActiveFoodLicenses(), new BostonOpenSpace()};
     }
 
     private HttpDownloader http() {
         return new OfflineHttp() {
             @Override
             public void download(URI uri, Path target) throws IOException {
-                Path file = "data.boston.gov".equals(uri.getHost()) ? licenceFile : osmFile;
+                Path file = !"data.boston.gov".equals(uri.getHost()) ? osmFile
+                        : uri.getPath().endsWith(".geojson") ? openSpaceFile : licenceFile;
                 Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
             }
         };

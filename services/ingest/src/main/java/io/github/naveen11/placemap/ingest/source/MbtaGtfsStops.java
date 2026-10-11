@@ -5,14 +5,11 @@ import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.Writer;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -20,7 +17,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 import org.springframework.stereotype.Component;
 
@@ -100,15 +96,7 @@ public class MbtaGtfsStops implements SourceAdapter {
                 }
             }
         }
-        rows.sort(Comparator.comparing(r -> r.getFirst()));
-        Path part = target.resolveSibling(target.getFileName() + ".part");
-        try (Writer out = Files.newBufferedWriter(part, StandardCharsets.UTF_8);
-                var printer = new CSVPrinter(out, CSVFormat.RFC4180.builder().setHeader(COLUMNS.toArray(String[]::new)).get())) {
-            for (List<String> row : rows) {
-                printer.printRecord(row);
-            }
-        }
-        Files.move(part, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        SnapshotFiles.writeSorted(target, COLUMNS, rows);
     }
 
     @Override

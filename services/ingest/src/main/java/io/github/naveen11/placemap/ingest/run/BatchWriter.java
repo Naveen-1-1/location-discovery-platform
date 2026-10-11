@@ -44,10 +44,10 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
     private static final String UPSERT_RECORD = """
             INSERT INTO place.source_record AS r
                 (source, source_key, name, category, geom, address, postcode, phone, website, attrs, row_hash,
-                 created_run, changed_run)
-            VALUES (?, ?, ?, ?, ST_GeogFromText(?), ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?)
+                 created_run, changed_run, outline)
+            VALUES (?, ?, ?, ?, ST_GeogFromText(?), ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ST_GeogFromText(?))
             ON CONFLICT (source, source_key) DO UPDATE SET
-                name = EXCLUDED.name, category = EXCLUDED.category, geom = EXCLUDED.geom,
+                name = EXCLUDED.name, category = EXCLUDED.category, geom = EXCLUDED.geom, outline = EXCLUDED.outline,
                 address = EXCLUDED.address, postcode = EXCLUDED.postcode, phone = EXCLUDED.phone,
                 website = EXCLUDED.website, attrs = EXCLUDED.attrs, row_hash = EXCLUDED.row_hash,
                 changed_run = EXCLUDED.changed_run, retired_at = NULL
@@ -154,7 +154,8 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
                     upsert.setString(p++, json.writeValueAsString(row.attrs()));
                     upsert.setString(p++, row.rowHash());
                     upsert.setLong(p++, runId);
-                    upsert.setLong(p, runId);
+                    upsert.setLong(p++, runId);
+                    upsert.setString(p, row.outlineEwkt());
                     upsert.addBatch();
                 }
                 upsert.executeBatch();

@@ -16,6 +16,8 @@ import java.util.TreeMap;
  *
  * @param lon WGS84 longitude, or null with {@code lat} when the source gives no location
  * @param attrs source-specific fields, sorted so the hash does not depend on insertion order
+ * @param outline the place's outline as WGS84 MULTIPOLYGON WKT (a park), or null; matching then compares other
+ *     records with the outline instead of the point
  */
 public record SourceRow(
         String key,
@@ -28,7 +30,8 @@ public record SourceRow(
         String phone,
         String website,
         SortedMap<String, String> attrs,
-        String rowHash) {
+        String rowHash,
+        String outline) {
 
     public SourceRow {
         Objects.requireNonNull(key, "key");
@@ -47,8 +50,14 @@ public record SourceRow(
                 sorted.put(k, v);
             }
         });
-        String hash = hash(name, category, lon, lat, address, postcode, phone, website, sorted);
-        return new SourceRow(key, name, category, lon, lat, address, postcode, phone, website, sorted, hash);
+        String hash = hash(name, category, lon, lat, address, postcode, phone, website, sorted, null);
+        return new SourceRow(key, name, category, lon, lat, address, postcode, phone, website, sorted, hash, null);
+    }
+
+    /** This record with an outline; the hash then covers it too. */
+    public SourceRow withOutline(String outlineWkt) {
+        String hash = hash(name, category, lon, lat, address, postcode, phone, website, attrs, outlineWkt);
+        return new SourceRow(key, name, category, lon, lat, address, postcode, phone, website, attrs, hash, outlineWkt);
     }
 
     /** EWKT for PostGIS, or null without a location. */
@@ -56,13 +65,21 @@ public record SourceRow(
         return lon == null ? null : "SRID=4326;POINT(" + lon + " " + lat + ")";
     }
 
+    /** EWKT of the outline for PostGIS, or null. */
+    public String outlineEwkt() {
+        return outline == null ? null : "SRID=4326;" + outline;
+    }
+
     private static String hash(String name, String category, Double lon, Double lat, String address, String postcode,
-            String phone, String website, SortedMap<String, String> attrs) {
+            String phone, String website, SortedMap<String, String> attrs, String outline) {
         var text = new StringBuilder();
         for (Object field : new Object[] {name, category, lon, lat, address, postcode, phone, website}) {
             text.append(field == null ? "\u0000" : field.toString()).append('\u001f');
         }
         attrs.forEach((k, v) -> text.append(k).append('=').append(v).append('\u001f'));
+        if (outline != null) { // only when set, so records without one keep the hashes they were stored with
+            text.append("outline=").append(outline).append('\u001f');
+        }
         return sha256Hex(text.toString());
     }
 

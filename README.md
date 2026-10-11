@@ -40,8 +40,10 @@ tools/dev.sh migrate && tools/dev.sh tiles
 **First import** (OSM first, so it can corroborate Overture's less certain places; then the official lists match
 both):
 ```bash
-tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses boston_food_inspections cambridge_food_establishment_permits cambridge_sanitary_inspections bluebikes_station_information mbta_gtfs
+tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses boston_food_inspections cambridge_food_establishment_permits cambridge_sanitary_inspections bluebikes_station_information mbta_gtfs massgis_hospitals fdic_bank_locations boston_open_space boston_bcyf_community_centers boston_public_libraries afdc_alt_fuel_stations
 ```
+EV chargers (`afdc_alt_fuel_stations`) need a free key from [developer.nlr.gov](https://developer.nlr.gov/signup/)
+in `.env` as `NLR_API_KEY`; without it the importer skips that source and says so once.
 
 **Then use three terminals:**
 ```bash

@@ -234,11 +234,10 @@ sources:
     category_scope: [park]
     role: existence
     access:
-      method: ckan_csv
-      url: https://data.boston.gov/dataset/66a3324e-066f-4caf-897b-a2b4dcb8bc42/resource/61c0239f-c8fd-47de-8375-2405382ef37c/download/open_space.csv
-      # shape_wkt is empty in this CSV. For polygons use the GeoJSON resource
-      # ccc038ce-5602-42d0-b4c6-87f60c116ea3:
-      # https://data.boston.gov/dataset/66a3324e-066f-4caf-897b-a2b4dcb8bc42/resource/ccc038ce-5602-42d0-b4c6-87f60c116ea3/download/open_space.geojson
+      method: geojson
+      # The GeoJSON resource, for the outlines; the CSV resource 61c0239f-c8fd-47de-8375-2405382ef37c has an empty
+      # shape_wkt. The download redirects to a signed S3 URL.
+      url: https://data.boston.gov/dataset/66a3324e-066f-4caf-897b-a2b4dcb8bc42/resource/ccc038ce-5602-42d0-b4c6-87f60c116ea3/download/open_space.geojson
       api_key_env: null
       rate_limit: null
     cadence: weekly             # harvested from Boston's ArcGIS Online; last refresh 2026-10-04
@@ -305,7 +304,8 @@ sources:
     role: existence
     access:
       method: ckan_csv
-      url: https://data.boston.gov/dataset/552df2e4-0db0-4fd6-b20f-4535695f17a4/resource/b48474af-b5b8-42d3-8205-a5f110a0ade8/download/public_libraries.csv
+      url: https://data.boston.gov/datastore/dump/b48474af-b5b8-42d3-8205-a5f110a0ade8
+      # filestore: https://data.boston.gov/dataset/552df2e4-0db0-4fd6-b20f-4535695f17a4/resource/b48474af-b5b8-42d3-8205-a5f110a0ade8/download/public_libraries.csv
       api_key_env: null
       rate_limit: null
     cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04 (26 rows)
@@ -327,7 +327,8 @@ sources:
     role: existence
     access:
       method: ckan_csv
-      url: https://data.boston.gov/dataset/33f63508-d3d0-4cea-a6bf-94c487ad745e/resource/002b5f37-b10c-419d-ab77-1542f75f7cd2/download/community_centers.csv
+      url: https://data.boston.gov/datastore/dump/002b5f37-b10c-419d-ab77-1542f75f7cd2
+      # filestore: https://data.boston.gov/dataset/33f63508-d3d0-4cea-a6bf-94c487ad745e/resource/002b5f37-b10c-419d-ab77-1542f75f7cd2/download/community_centers.csv
       api_key_env: null
       rate_limit: null
     cadence: weekly             # ArcGIS harvest; last refresh 2026-10-04 (35 rows)
@@ -517,7 +518,7 @@ sources:
       api_key_env: null
       rate_limit: "no rate limit documented; maxRecordCount 2000"
     cadence: quarterly          # updated irregularly when DPH sends changes; poll quarterly
-    crs: EPSG:26986
+    crs: EPSG:4326              # requested with outSR=4326; the layer itself is EPSG:26986
     join_keys: [DPH_FACILITY_ID, MAD_ID]
     licence: custom
     licence_url: https://www.mass.gov/info-details/massgis-frequently-asked-questions

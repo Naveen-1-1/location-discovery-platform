@@ -26,10 +26,6 @@ import java.util.stream.Stream;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.LinearRing;
-import org.locationtech.jts.geom.Polygon;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,7 +55,6 @@ public class OsmSource implements SourceAdapter {
     public static final String ID = "osm_geofabrik_massachusetts";
 
     private static final Logger log = LoggerFactory.getLogger(OsmSource.class);
-    private static final GeometryFactory GEOMETRY = new GeometryFactory();
     private static final double ENVELOPE_MARGIN_DEGREES = 0.005; // ~500 m
     private static final long OSMIUM_TIMEOUT_MINUTES = 30;
 
@@ -190,17 +185,7 @@ public class OsmSource implements SourceAdapter {
 
     /** The node itself, or a point guaranteed to lie inside the outline (a centroid can fall outside an L-shape). */
     static Coordinate representativePoint(JsonNode geometry) {
-        JsonNode coordinates = geometry.required("coordinates");
-        return switch (geometry.required("type").asString()) {
-            case "Point" -> position(coordinates);
-            case "Polygon" -> polygon(coordinates).getInteriorPoint().getCoordinate();
-            case "MultiPolygon" -> {
-                List<Polygon> parts = coordinates.values().stream().map(OsmSource::polygon).toList();
-                Geometry multi = GEOMETRY.createMultiPolygon(parts.toArray(Polygon[]::new));
-                yield multi.getInteriorPoint().getCoordinate();
-            }
-            default -> throw new IllegalStateException("unexpected geometry " + geometry.get("type"));
-        };
+        return GeoJson.representativePoint(GeoJson.read(geometry));
     }
 
     @Override
@@ -291,17 +276,6 @@ public class OsmSource implements SourceAdapter {
     private static String round(double degrees) {
         // OSM stores 7 decimals; rounding keeps interior points from carrying float noise into the snapshot.
         return BigDecimal.valueOf(degrees).setScale(7, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
-    }
-
-    private static Coordinate position(JsonNode p) {
-        return new Coordinate(p.get(0).asDouble(), p.get(1).asDouble());
-    }
-
-    private static Polygon polygon(JsonNode rings) {
-        List<LinearRing> parsed = rings.values().stream()
-                .map(ring -> GEOMETRY.createLinearRing(ring.values().stream().map(OsmSource::position).toArray(Coordinate[]::new)))
-                .toList();
-        return GEOMETRY.createPolygon(parsed.getFirst(), parsed.subList(1, parsed.size()).toArray(LinearRing[]::new));
     }
 
     private static Map<String, String> linked(String... pairs) {

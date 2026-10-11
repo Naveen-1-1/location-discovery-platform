@@ -3,6 +3,7 @@ package io.github.naveen11.placemap.ingest;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Map;
 
 /**
  * A downloader for tests that must not touch the network: subclasses serve downloads from local files, and the
@@ -13,6 +14,11 @@ public abstract class OfflineHttp extends HttpDownloader {
     @Override
     public String getText(URI uri) throws IOException {
         throw new IOException("offline test: no metadata for " + uri.getHost());
+    }
+
+    @Override
+    public String getText(URI uri, Map<String, String> headers) throws IOException {
+        return getText(uri);
     }
 
     @Override

@@ -31,6 +31,35 @@ public final class ParseContext {
         return reprojector.toWgs84(crs, x, y);
     }
 
+    /** A point read by {@link #readPoint}: {@code failure} is null when the point is usable. */
+    public record ReadPoint(double lon, double lat, RowResult failure) {
+    }
+
+    /**
+     * Reads a WGS84 point from two text values. Missing or unreadable values and the defects {@link #pointProblem}
+     * finds are rejections. A valid point outside the four towns is a skip: statewide and regional lists are valid,
+     * just not ours.
+     */
+    public ReadPoint readPoint(String lonText, String latText) {
+        if (lonText == null || latText == null) {
+            return new ReadPoint(0, 0, RowResult.rejected("missing coordinates"));
+        }
+        double lon;
+        double lat;
+        try {
+            lon = Double.parseDouble(lonText);
+            lat = Double.parseDouble(latText);
+        } catch (NumberFormatException e) {
+            return new ReadPoint(0, 0, RowResult.rejected("unreadable coordinates"));
+        }
+        Optional<String> problem = pointProblem(lon, lat);
+        if (problem.isEmpty()) {
+            return new ReadPoint(lon, lat, null);
+        }
+        return new ReadPoint(lon, lat, OUTSIDE_AREA.equals(problem.get())
+                ? RowResult.skipped(problem.get()) : RowResult.rejected(problem.get()));
+    }
+
     /**
      * Why a WGS84 point is unusable, or empty if it is fine. Catches the usual defects in official lists: (0,0),
      * out-of-range values, latitude and longitude swapped, and points outside the four towns.

@@ -34,19 +34,21 @@ categories:
     label: Parks
     overture: { basic_category: [park] }
     osm: { leisure: [park] }
-    official: { boston_open_space: {} }
+    official:
+      boston_open_space: { TypeLong: ["Parks, Playgrounds & Athletic Fields", "Parkways, Reservations & Beaches",
+                                      "Urban Wilds", "Community Gardens"] }
   bank:
     label: Banks & credit unions
     overture: { basic_category: [bank_or_credit_union] }
     osm: { amenity: [bank] }
-    official: { fdic_bank_locations: { SERVTYPE_DESC_prefix: ["FULL SERVICE"] } }
+    official: { fdic_bank_locations: { SERVTYPE: [11, 12] } }   # full service: brick and mortar, retail (not home banking)
   atm:
     label: ATMs
     overture: { basic_category: [atm] }
     osm: { amenity: [atm] }
   ev_charging:
     label: EV charging
-    official: { afdc_alt_fuel_stations: { fuel_type: [ELEC], access_code: [public], status_code: [E] } }
+    official: { afdc_alt_fuel_stations: { fuel_type_code: [ELEC], access_code: [public], status_code: [E] } }
   bike_share:
     label: Bike share
     official: { bluebikes_station_information: {} }

@@ -5,6 +5,7 @@ import io.github.naveen11.placemap.ingest.source.SourceRow;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.locationtech.jts.io.WKTReader;
 
 /**
  * Decides, for one record, which place it belongs to (ADR 0022, gate G1 rules from ADR 0032):
@@ -12,7 +13,8 @@ import java.util.Set;
  * <ol>
  *   <li>Already linked: keep the place.
  *   <li>Score every live place within 100 m as 0.45·name + 0.25·address + 0.2·distance + 0.1·category. The best
- *       one at 0.80 or above is a match.
+ *       one at 0.80 or above is a match. Distances to and from an outline (a park) are measured from its edge, 0 m
+ *       inside it.
  *   <li>A low-confidence Overture record may also join a nearby place of the same category with a name similarity
  *       of at least 0.85, if another existence source backs that place (corroboration).
  *   <li>Best score 0.60–0.80: review list, record stays unlinked.
@@ -47,7 +49,10 @@ public final class Matcher {
         }
         String name = Similarity.normalizeName(record.name());
         Similarity.Address address = Similarity.normalizeAddress(record.address());
-        List<PlaceIndex.Nearby> nearby = index.near(record.lon(), record.lat(), RADIUS_METERS);
+        // A park is compared by its outline: an OSM park's point lies inside it, however far from this record's point.
+        List<PlaceIndex.Nearby> nearby = record.outline() == null
+                ? index.near(record.lon(), record.lat(), RADIUS_METERS)
+                : index.nearOutline(PlaceIndex.read(new WKTReader(), record.outline()), RADIUS_METERS);
 
         PlaceIndex.Nearby best = null;
         double bestScore = -1;

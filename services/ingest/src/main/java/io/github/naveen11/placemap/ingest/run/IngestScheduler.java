@@ -8,6 +8,7 @@ import io.github.naveen11.placemap.ingest.source.SourceAdapters;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,6 +47,7 @@ public class IngestScheduler implements SmartLifecycle {
             Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("ingest-run-", 1).factory());
     private final Semaphore slots;
     private final Map<String, RunControl> active = new ConcurrentHashMap<>();
+    private final Set<String> reportedNotReady = ConcurrentHashMap.newKeySet();
     private volatile boolean running;
 
     public IngestScheduler(IngestProperties properties, SourceCatalog catalog, SourceAdapters adapters,
@@ -108,6 +110,14 @@ public class IngestScheduler implements SmartLifecycle {
         if (!source.isEnabled()) {
             return false;
         }
+        Optional<String> notReady = adapters.get(sourceId).notReady(source);
+        if (notReady.isPresent()) {
+            if (reportedNotReady.add(sourceId)) {
+                log.warn("ingest scheduler: skipping {}: {}", sourceId, notReady.get());
+            }
+            return false;
+        }
+        reportedNotReady.remove(sourceId);
         if (runs.findOpen(sourceId).isPresent()) {
             return true; // resume
         }
