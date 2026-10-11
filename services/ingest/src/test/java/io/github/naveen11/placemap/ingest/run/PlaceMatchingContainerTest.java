@@ -244,6 +244,31 @@ class PlaceMatchingContainerTest {
                 .as("no duplicate place").isEqualTo(1);
     }
 
+    /** What the filters read, refreshed at each completion for the places the run touched (ADR 0042). */
+    @Test
+    void eachPlaceGetsTheFactsTheFiltersRead() throws Exception {
+        writeOsm(List.of(
+                osmNode(1, CAFE, 0, "amenity", "cafe", "Corner Cafe", "12", "Main Street")
+                        .replace("</node>", "<tag k=\"opening_hours\" v=\"Mo-Fr 08:00-18:00\"/></node>"),
+                osmNode(2, MARKET, 0, "shop", "supermarket", "Harbor Market", null, null)));
+        runAll();
+
+        Map<String, Object> cafe = jdbc.sql("""
+                        SELECT active_licence, accepts_snap, hours, hours_source,
+                               open_week @> 600 AS open_monday_10am, open_week @> (6 * 1440 + 600) AS open_sunday_10am
+                        FROM place.place_facts WHERE place_id = ?
+                        """).param(seedPlace).query().singleRow();
+        assertThat(cafe).containsEntry("active_licence", true).containsEntry("accepts_snap", false)
+                .containsEntry("hours", "Mon–Fri 08:00–18:00; Sat–Sun closed").containsEntry("hours_source", "osm")
+                .containsEntry("open_monday_10am", true).containsEntry("open_sunday_10am", false);
+        assertThat(jdbc.sql("SELECT active_licence FROM place.place_facts WHERE place_id = ?")
+                .param(placeOf(OSM, "node/2")).query(Boolean.class).single()).isFalse();
+        assertThat(jdbc.sql("""
+                        SELECT count(*) FROM place.place p
+                        WHERE p.retired_at IS NULL AND NOT EXISTS (SELECT 1 FROM place.place_facts f WHERE f.place_id = p.place_id)
+                        """).query(Integer.class).single()).as("every live place has facts").isZero();
+    }
+
     /**
      * A large park: OSM's point for it is 300 m from the point inside the city's parcel, far beyond the 100 m radius,
      * but inside the parcel's outline. The city's record must join OSM's place instead of creating a second one.

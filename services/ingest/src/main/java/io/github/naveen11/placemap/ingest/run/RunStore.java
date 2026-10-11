@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.ingest.run;
 
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
+import io.github.naveen11.placemap.ingest.facts.PlaceFacts;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HashSet;
@@ -217,6 +218,7 @@ public class RunStore {
                     """).params(source, runId).update();
             refreshPlaces(tx, source, roles);
             refreshInspectionSummary(tx, source);
+            PlaceFacts.refresh(c, source);
             // Reviews this run did not repeat are stale: the record is linked now, or no longer borderline.
             tx.sql("DELETE FROM place.match_review WHERE source = ? AND run_id <> ?").params(source, runId).update();
             String checksum = checksum(tx, source);
@@ -293,6 +295,19 @@ public class RunStore {
                 WHERE i.source = ?
                 GROUP BY i.source, i.source_key
                 """).param(source).update();
+        // Failed checks of the latest inspection (Cambridge's way of saying whether it passed; ADR 0042).
+        tx.sql("""
+                UPDATE place.inspection_summary s
+                SET latest_failed_checks = latest.failed
+                FROM (SELECT i.source_key, count(v.line_hash) FILTER (WHERE v.status = 'Fail') AS failed
+                      FROM place.inspection i
+                      JOIN place.inspection_summary s2 ON s2.source = i.source AND s2.source_key = i.source_key
+                                                      AND s2.latest_at = i.inspected_at
+                      LEFT JOIN place.inspection_violation v ON v.inspection_id = i.inspection_id
+                      WHERE i.source = ?
+                      GROUP BY i.source_key) latest
+                WHERE s.source = ? AND s.source_key = latest.source_key
+                """).params(source, source).update();
     }
 
     /**

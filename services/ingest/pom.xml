@@ -41,6 +41,11 @@
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-csv</artifactId>
     </dependency>
+    <!-- OSM opening_hours, for the "open now" filter (MIT). -->
+    <dependency>
+      <groupId>ch.poole</groupId>
+      <artifactId>OpeningHoursParser</artifactId>
+    </dependency>
     <!-- The geocoder's rate limit (ADR 0010: resilience parts come from libraries). -->
     <dependency>
       <groupId>io.github.resilience4j</groupId>
