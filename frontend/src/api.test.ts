@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isochroneUrl, nearbyUrl, routeUrl } from "./api";
+import { isochroneUrl, nearbyUrl, NO_FILTERS, routeUrl } from "./api";
 import { formatDuration } from "./categories";
+import { safeWebsite } from "./PlaceFactsView";
 
 describe("nearbyUrl", () => {
   it("rounds coordinates and sorts categories so equal queries share a cache key", () => {
@@ -19,6 +20,28 @@ describe("nearbyUrl", () => {
   it("sends the mode instead of a radius for a travel-time search", () => {
     const url = nearbyUrl({ lat: 42.35, lon: -71.06, mode: "bike", radius: 1500, categories: [] });
     expect(url).toBe("/api/places/nearby?lat=42.35000&lon=-71.06000&mode=bike&limit=100");
+  });
+});
+
+describe("nearbyUrl filters", () => {
+  it("adds only the filters that are on, in a fixed order", () => {
+    const url = nearbyUrl({
+      lat: 42.35, lon: -71.06, mode: null, radius: 500, categories: [],
+      filters: { ...NO_FILTERS, openNow: true, passedInspection: true },
+    });
+    expect(url).toBe("/api/places/nearby?lat=42.35000&lon=-71.06000&radius=500&limit=100&open=now&inspection=passed");
+    expect(nearbyUrl({ lat: 42.35, lon: -71.06, mode: null, radius: 500, categories: [], filters: NO_FILTERS })).toBe(
+      "/api/places/nearby?lat=42.35000&lon=-71.06000&radius=500&limit=100",
+    );
+  });
+});
+
+describe("safeWebsite", () => {
+  it("links only http and https addresses from the open data", () => {
+    expect(safeWebsite("https://tatte.com/")).toBe("https://tatte.com/");
+    expect(safeWebsite("javascript:alert(1)")).toBeNull();
+    expect(safeWebsite("tatte.com")).toBeNull();
+    expect(safeWebsite(null)).toBeNull();
   });
 });
 

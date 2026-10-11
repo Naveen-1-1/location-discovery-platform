@@ -11,6 +11,9 @@ import io.github.naveen11.placemap.api.live.LiveHubClient;
 import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,9 +41,17 @@ class NearbyControllerTest {
 
     private static final JsonMapper JSON = new JsonMapper();
 
+    /** Monday 12 October 2026, 14:02 in Boston (EDT): minute 842 of the week. */
+    static final Instant MONDAY_1402 = Instant.parse("2026-10-12T18:02:00Z");
+
     @TestConfiguration
     @EnableConfigurationProperties(NearbyProperties.class)
     static class Properties {
+
+        @Bean
+        Clock clock() {
+            return Clock.fixed(MONDAY_1402, ZoneOffset.UTC);
+        }
     }
 
     @Autowired
@@ -215,6 +227,50 @@ class NearbyControllerTest {
 
         assertThat(result).bodyJson().extractingPath("$.live").isNull();
         verify(live, never()).fetch(any(), any());
+    }
+
+    @Test
+    void filtersBecomePartOfTheSharedQueryAndOpenNowIsBucketedToFiveMinutes() {
+        answer("straight_line", null);
+
+        assertThat(mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&snap=true&inspection=passed&open=now"))
+                .hasStatusOk();
+
+        assertThat(askedQuery().filters()).isEqualTo(new PlaceFilters(true, false, true, 840));
+    }
+
+    @Test
+    void withoutFiltersTheQueryHasNone() {
+        answer("straight_line", null);
+
+        assertThat(mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656")).hasStatusOk();
+
+        assertThat(askedQuery().filters()).isEqualTo(PlaceFilters.NONE);
+    }
+
+    @Test
+    void rejectsUnknownFilterValues() {
+        assertThat(mvc.get().uri("/api/places/nearby?lat=42.35&lon=-71.06&open=tomorrow")).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(mvc.get().uri("/api/places/nearby?lat=42.35&lon=-71.06&inspection=failed"))
+                .hasStatus(HttpStatus.BAD_REQUEST);
+        verify(nearby, never()).nearby(any(), any());
+    }
+
+    @Test
+    void openNowIsJudgedForEachAnswerNotTakenFromTheSharedResult() {
+        // Monday 14:00–14:30 only, and a place with unknown hours.
+        var halfHour = new PlaceFacts(true, true, "passed", null, OpenWeek.parse("{[840,870)}"));
+        answer("straight_line", null,
+                new NearbyPlace(1, "Cafe", "food", null, 42.356, -71.066, 50, null, null, null, null, halfHour),
+                new NearbyPlace(2, "Unknown", "food", null, 42.356, -71.066, 60, null, null));
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656").exchange();
+
+        assertThat(result).bodyJson().extractingPath("$.places[0].facts.openNow").isEqualTo(true);
+        assertThat(result).bodyJson().extractingPath("$.places[0].facts.acceptsSnap").isEqualTo(true);
+        assertThat(result).bodyJson().extractingPath("$.places[0].facts.inspection").isEqualTo("passed");
+        assertThat(result).bodyJson().as("the week is not sent").doesNotHavePath("$.places[0].facts.week");
+        assertThat(result).bodyJson().extractingPath("$.places[1].facts.openNow").isNull();
     }
 
     private static NearbyPlace dock(long id, String liveKey) {

@@ -173,4 +173,73 @@ class PlaceRepositoryContainerTest {
         assertThat(repository.nearby(BOSTON_COMMON_LAT, BOSTON_COMMON_LON, RADIUS_M, List.of(), 200))
                 .allSatisfy(place -> assertThat(place.liveKey()).isNull());
     }
+
+    @Test
+    void filtersKeepOnlyPlacesWhoseFactsPassAndDetailsShowThem() {
+        // Two cafes at Kenmore, far from the places above: one open on weekday mornings and SNAP-registered.
+        long open = jdbc.sql("""
+                        INSERT INTO place.place (name, category, geom, address)
+                        VALUES ('Morning Cafe', 'food', ST_SetSRID(ST_MakePoint(-71.0950, 42.3488), 4326)::geography,
+                                '1 Beacon St')
+                        RETURNING place_id
+                        """).query(Long.class).single();
+        long other = jdbc.sql("""
+                        INSERT INTO place.place (name, category, geom)
+                        VALUES ('Evening Bar', 'food', ST_SetSRID(ST_MakePoint(-71.0951, 42.3489), 4326)::geography)
+                        RETURNING place_id
+                        """).query(Long.class).single();
+        jdbc.sql("""
+                INSERT INTO place.place_facts (place_id, accepts_snap, active_licence, inspection, park_features, hours,
+                                               hours_source, open_week)
+                VALUES (:open, true, true, 'passed', 'Playground:1', 'Mon–Fri 07:00–11:00; Sat–Sun closed', 'osm',
+                        '{[420,660),[1860,2100),[3300,3540),[4740,4980),[6180,6420)}'),
+                       (:other, false, true, 'failed', null, null, null, null)
+                """).param("open", open).param("other", other).update();
+
+        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), PlaceFilters.NONE, 10)).hasSize(2);
+        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), new PlaceFilters(false, true, false, null), 10))
+                .hasSize(2);
+        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), new PlaceFilters(true, false, true, 480), 10))
+                .singleElement().satisfies(p -> {
+                    assertThat(p.id()).isEqualTo(open);
+                    assertThat(p.facts().acceptsSnap()).isTrue();
+                    assertThat(p.facts().week().openAt(480)).isTrue();
+                });
+        assertThat(repository.nearby(42.3488, -71.0950, 100, List.of(), new PlaceFilters(false, false, false, 720), 10))
+                .as("Monday noon: closed, and the bar's hours are unknown").isEmpty();
+        assertThat(repository.unknownHours(42.3488, -71.0950, 100, List.of(), new PlaceFilters(false, false, false, 720)))
+                .as("the bar, left out for unknown hours").isEqualTo(1);
+        assertThat(repository.unknownHours(42.3488, -71.0950, 100, List.of(), new PlaceFilters(true, false, false, 720)))
+                .as("and not counted when another filter would drop it anyway").isZero();
+
+        PlaceDetails details = repository.details(open, 480).orElseThrow();
+        assertThat(details.facts().hours()).isEqualTo(new PlaceDetails.Hours("Mon–Fri 07:00–11:00; Sat–Sun closed",
+                "osm", true));
+        assertThat(details.facts().parkFeatures()).containsExactly(new PlaceDetails.Feature("Playground", 1));
+        assertThat(repository.details(other, 480).orElseThrow().facts().hours()).isNull();
+    }
+
+    @Test
+    void filteredQueriesCanStillUseTheSpatialIndex() {
+        var url = "jdbc:postgresql://%s:%d/placemap".formatted(POSTGIS.getHost(), POSTGIS.getMappedPort(5432));
+        var single = new SingleConnectionDataSource(url, "postgres", "test", true);
+        try {
+            var session = JdbcClient.create(single);
+            session.sql("SET enable_seqscan = off").update();
+            var plan = session.sql("EXPLAIN " + PlaceRepository.nearbySql(true, new PlaceFilters(true, true, true, 600)))
+                    .param("lat", BOSTON_COMMON_LAT)
+                    .param("lon", BOSTON_COMMON_LON)
+                    .param("radius", RADIUS_M)
+                    .param("limit", 50)
+                    .param("categories", List.of("food"))
+                    .param("openAt", 600)
+                    .param("liveSources", List.copyOf(LiveSources.TOPICS.keySet()))
+                    .query(String.class)
+                    .list();
+
+            assertThat(String.join("\n", plan)).contains("Index Scan using place_geom_live_gist");
+        } finally {
+            single.destroy();
+        }
+    }
 }

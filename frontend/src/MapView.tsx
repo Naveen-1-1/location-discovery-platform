@@ -12,10 +12,11 @@ import Map, {
   type MapLayerMouseEvent,
   type MapRef,
 } from "react-map-gl/maplibre";
-import type { IsochroneCollection, NearbyPlace, RouteFeature, TravelMode } from "./api";
+import type { IsochroneCollection, NearbyPlace, PlaceDetails, RouteFeature, TravelMode } from "./api";
 import { Departures } from "./Departures";
 import type { StopAlerts, Vehicle } from "./live";
 import { LiveLine, type PlaceLive } from "./LiveLine";
+import { PlaceDetailsView } from "./PlaceFactsView";
 import {
   CATEGORY_COLORS,
   FALLBACK_COLOR,
@@ -69,6 +70,8 @@ type Props = {
   credits: { id: string; html: string }[];
   /** The selected place's live data, if it has any. */
   selectedLive: PlaceLive | null;
+  /** The selected place's details, once they arrive. */
+  details: PlaceDetails | undefined;
   /** MBTA vehicles to draw; empty unless asked for. */
   vehicles: Vehicle[];
   onPickOrigin: (lat: number, lon: number) => void;
@@ -217,6 +220,7 @@ export function MapView(props: Props) {
               alerts={props.selectedLive?.topic === "alerts" ? (props.selectedLive.item as StopAlerts) : null}
             />
           )}
+          {props.details && <PlaceDetailsView details={props.details} />}
           <div className="muted">
             {selected.travelSeconds !== null && resultMode
               ? `${formatDuration(selected.travelSeconds)} ${MODE_VERBS[resultMode]}, `

@@ -6,6 +6,21 @@ export type Category = { code: string; label: string };
 
 export type TravelMode = "walk" | "bike" | "drive";
 
+/** What the filters know about a place (ADR 0042). */
+export type PlaceFacts = {
+  acceptsSnap: boolean;
+  /** Holds an active Boston or Cambridge food or premises licence. */
+  licensed: boolean;
+  /** The latest inspection; null if never inspected. */
+  inspection: "passed" | "failed" | "other" | null;
+  /** By the place's regular week, at the time of the answer; null when its hours are unknown. */
+  openNow: boolean | null;
+};
+
+export type PlaceFilters = { openNow: boolean; snap: boolean; licensed: boolean; passedInspection: boolean };
+
+export const NO_FILTERS: PlaceFilters = { openNow: false, snap: false, licensed: false, passedInspection: false };
+
 export type NearbyPlace = {
   id: number;
   name: string;
@@ -22,6 +37,30 @@ export type NearbyPlace = {
   liveKey: string | null;
   /** The live data at the time of the search; the live stream keeps it current after that. */
   live: DockStatus | StopAlerts | null;
+  facts: PlaceFacts;
+};
+
+/** One place's panel (GET /api/places/{id}). */
+export type PlaceDetails = {
+  id: number;
+  name: string;
+  category: string;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  lat: number;
+  lon: number;
+  liveKey: string | null;
+  facts: {
+    acceptsSnap: boolean;
+    licensed: boolean;
+    inspection: { result: "passed" | "failed" | "other"; at: string | null; failedChecks12m: number | null } | null;
+    /** source: "osm" (published), "cambridge_permit", or "boston_licence" (the latest the licence allows). */
+    hours: { text: string; source: "osm" | "cambridge_permit" | "boston_licence"; openNow: boolean } | null;
+    parkFeatures: { name: string; count: number }[];
+  };
+  /** Ids from data/sources.yaml, for credits. */
+  sources: string[];
 };
 
 /** How the search's live data went. */
@@ -47,6 +86,8 @@ export type NearbyResponse = {
   places: NearbyPlace[];
   /** Null when no place in the answer has live data. */
   live: LiveSummary | null;
+  /** With "open now" on, places nearby left out because their hours are unknown; null otherwise. */
+  hiddenForUnknownHours: number | null;
 };
 
 export type NearbyQuery = {
@@ -56,6 +97,7 @@ export type NearbyQuery = {
   mode: TravelMode | null;
   radius: number;
   categories: readonly string[];
+  filters?: PlaceFilters;
   limit?: number;
 };
 
@@ -90,6 +132,11 @@ export function nearbyUrl(q: NearbyQuery): string {
   else params.set("radius", String(q.radius));
   params.set("limit", String(q.limit ?? 100));
   for (const c of [...q.categories].sort()) params.append("category", c);
+  const f = q.filters ?? NO_FILTERS;
+  if (f.openNow) params.set("open", "now");
+  if (f.snap) params.set("snap", "true");
+  if (f.licensed) params.set("licensed", "true");
+  if (f.passedInspection) params.set("inspection", "passed");
   return `/api/places/nearby?${params}`;
 }
 
@@ -124,6 +171,8 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 export const fetchCategories = (signal?: AbortSignal) => getJson<Category[]>("/api/categories", signal);
 
 export const fetchNearby = (q: NearbyQuery, signal?: AbortSignal) => getJson<NearbyResponse>(nearbyUrl(q), signal);
+
+export const fetchPlace = (id: number, signal?: AbortSignal) => getJson<PlaceDetails>(`/api/places/${id}`, signal);
 
 export const fetchRoute = (origin: Origin, placeId: number, mode: TravelMode, signal?: AbortSignal) =>
   getJson<RouteFeature>(routeUrl(origin, placeId, mode), signal);

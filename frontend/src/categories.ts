@@ -44,3 +44,24 @@ export const ROUTING_CREDIT = 'Routing © <a href="https://openrouteservice.org"
 /** Credits for display-only sources (ADR 0029), shown while their places are on screen. */
 export const BIKE_SHARE_CREDIT = 'Bike share data © <a href="https://bluebikes.com/system-data">Bluebikes</a>';
 export const TRANSIT_CREDIT = 'Data provided by <a href="https://www.mbta.com/developers">MassDOT / MBTA</a>';
+
+/** Credits the sources ask for, shown while their data is on screen (data/sources.yaml "attribution"). */
+export const SNAP_CREDIT =
+  'SNAP retailers: <a href="https://www.fns.usda.gov/snap/retailer-locator">USDA Food and Nutrition Service</a>, ' +
+  '<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, modified';
+export const MASSGIS_CREDIT =
+  'Hospitals: <a href="https://www.mass.gov/orgs/massgis-bureau-of-geographic-information">MassGIS</a>, Commonwealth of Massachusetts EOTSS';
+
+export const FILTER_LABELS = {
+  openNow: "Open now",
+  snap: "Accepts SNAP/EBT",
+  licensed: "Licensed",
+  passedInspection: "Passed inspection",
+} as const;
+
+/** Where a place's hours come from; licensed hours are the latest it may stay open, not when it is open. */
+export const HOURS_SOURCES = {
+  osm: "Opening hours from OpenStreetMap",
+  cambridge_permit: "Hours on its Cambridge food permit",
+  boston_licence: "Licensed hours (Boston Licensing Board): the latest it may stay open",
+} as const;

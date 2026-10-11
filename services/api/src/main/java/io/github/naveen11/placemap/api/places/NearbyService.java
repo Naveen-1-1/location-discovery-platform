@@ -97,9 +97,15 @@ public class NearbyService implements AutoCloseable {
     private NearbyResult load(NearbyQuery query) {
         SnappedOrigin origin = query.origin();
         List<NearbyPlace> candidates;
+        Integer hidden;
         try {
-            candidates = database.executeSupplier(() -> places.nearby(origin.lat(), origin.lon(), query.radiusMeters(),
-                    query.categories(), CANDIDATES));
+            Found found = database.executeSupplier(() -> new Found(
+                    places.nearby(origin.lat(), origin.lon(), query.radiusMeters(), query.categories(), query.filters(),
+                            CANDIDATES),
+                    query.filters().openAt() == null ? null : places.unknownHours(origin.lat(), origin.lon(),
+                            query.radiusMeters(), query.categories(), query.filters())));
+            candidates = found.places();
+            hidden = found.hiddenForUnknownHours();
         } catch (BulkheadFullException e) {
             // Expected under overload and answered with a 503: counted, not logged.
             registry.counter("placemap.nearby.rejected", "reason", "database_busy").increment();
@@ -109,19 +115,22 @@ public class NearbyService implements AutoCloseable {
             throw e;
         }
         if (query.mode() == null) {
-            return loaded(query, STRAIGHT_LINE, null, candidates);
+            return loaded(query, STRAIGHT_LINE, null, candidates, hidden);
         }
         if (candidates.isEmpty()) {
-            return loaded(query, routing.engine(), null, candidates);
+            return loaded(query, routing.engine(), null, candidates, hidden);
         }
         List<GeoPoint> targets = candidates.stream().map(p -> new GeoPoint(p.lat(), p.lon())).toList();
         try {
             List<Leg> legs = routing.call(travelTimeTimeout,
                     engine -> engine.travelTimes(query.origin().point(), targets, query.mode()));
-            return loaded(query, routing.engine(), null, byTravelTime(candidates, legs));
+            return loaded(query, routing.engine(), null, byTravelTime(candidates, legs), hidden);
         } catch (GuardedRouting.Refused refused) {
-            return loaded(query, STRAIGHT_LINE, refused.reason(), candidates);
+            return loaded(query, STRAIGHT_LINE, refused.reason(), candidates, hidden);
         }
+    }
+
+    private record Found(List<NearbyPlace> places, Integer hiddenForUnknownHours) {
     }
 
     static List<NearbyPlace> byTravelTime(List<NearbyPlace> candidates, List<Leg> legs) {
@@ -136,10 +145,11 @@ public class NearbyService implements AutoCloseable {
         return List.copyOf(timed);
     }
 
-    private NearbyResult loaded(NearbyQuery query, String source, String fallback, List<NearbyPlace> found) {
+    private NearbyResult loaded(NearbyQuery query, String source, String fallback, List<NearbyPlace> found,
+            Integer hiddenForUnknownHours) {
         String outcome = fallback != null ? fallback : query.mode() == null ? "not_requested" : "none";
         registry.counter("placemap.nearby.loads", "travel_time_source", source, "fallback", outcome).increment();
-        return new NearbyResult(query, source, fallback, found);
+        return new NearbyResult(query, source, fallback, found, hiddenForUnknownHours);
     }
 
     /** How long the query's result stays shared; empty while it is still loading or once it is gone. For tests. */

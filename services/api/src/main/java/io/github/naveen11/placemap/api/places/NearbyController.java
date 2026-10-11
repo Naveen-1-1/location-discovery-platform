@@ -9,6 +9,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,14 +44,16 @@ public class NearbyController {
     private final CategoryCatalog catalog;
     private final NearbyProperties properties;
     private final LiveHubClient live;
+    private final Clock clock;
 
     public NearbyController(NearbyService nearby, OriginSnapper snapper, CategoryCatalog catalog,
-            NearbyProperties properties, LiveHubClient live) {
+            NearbyProperties properties, LiveHubClient live, Clock clock) {
         this.nearby = nearby;
         this.snapper = snapper;
         this.catalog = catalog;
         this.properties = properties;
         this.live = live;
+        this.clock = clock;
     }
 
     /**
@@ -69,6 +72,7 @@ public class NearbyController {
      * @param fallback why a search with a mode has no travel times; null otherwise
      * @param driveWithoutTraffic drive times assume empty roads (ADR 0006)
      * @param live how the live data went; null when no place shown has any
+     * @param hiddenForUnknownHours with {@code open=now}: places nearby left out because their hours are unknown
      */
     public record NearbyResponse(
             String snappedCell,
@@ -81,12 +85,17 @@ public class NearbyController {
             String fallback,
             boolean driveWithoutTraffic,
             List<NearbyPlace> places,
-            LiveSummary live) {}
+            LiveSummary live,
+            Integer hiddenForUnknownHours) {}
 
     /**
      * Places near a point. Without {@code mode}: the nearest within {@code radius}, by straight-line distance. With
      * {@code mode}: the nearest candidates within the mode's search radius (capped by {@code radius} if given), sorted
      * by travel time.
+     *
+     * <p>Filters (ADR 0042): {@code snap=true} accepts SNAP/EBT, {@code licensed=true} holds an active licence,
+     * {@code inspection=passed} passed its latest inspection, {@code open=now} is open now by its regular hours
+     * (places with unknown hours are left out).
      */
     @GetMapping("/places/nearby")
     public NearbyResponse nearby(
@@ -95,8 +104,21 @@ public class NearbyController {
             @RequestParam(required = false) String mode,
             @RequestParam(required = false) @Min(50) @Max(20_000) Integer radius,
             @RequestParam(name = "category", required = false) List<String> categories,
-            @RequestParam(defaultValue = "50") @Min(1) @Max(NearbyService.CANDIDATES) int limit) {
+            @RequestParam(defaultValue = "50") @Min(1) @Max(NearbyService.CANDIDATES) int limit,
+            @RequestParam(defaultValue = "false") boolean snap,
+            @RequestParam(defaultValue = "false") boolean licensed,
+            @RequestParam(required = false) String inspection,
+            @RequestParam(required = false) String open) {
         Deadline deadline = Deadline.after(properties.deadline());
+        if (inspection != null && !inspection.equals("passed")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "inspection must be 'passed'");
+        }
+        if (open != null && !open.equals("now")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "open must be 'now'");
+        }
+        int minuteOfWeek = BostonTime.minuteOfWeek(clock);
+        var filters = new PlaceFilters(snap, licensed, inspection != null, open == null ? null
+                : minuteOfWeek - minuteOfWeek % PlaceFilters.OPEN_AT_STEP_MINUTES);
         TravelMode travelMode = parseMode(mode);
         var wanted = categories == null ? List.<String>of() : categories;
         var unknown = wanted.stream().filter(c -> !catalog.isKnown(c)).collect(Collectors.toCollection(TreeSet::new));
@@ -106,11 +128,14 @@ public class NearbyController {
         int searchRadius = travelMode == null
                 ? (radius == null ? DEFAULT_RADIUS : radius)
                 : Math.min(radius == null ? Integer.MAX_VALUE : radius, NearbyService.searchRadius(travelMode));
-        var query = new NearbyQuery(snapper.snap(lat, lon), travelMode, wanted, searchRadius);
+        var query = new NearbyQuery(snapper.snap(lat, lon), travelMode, wanted, searchRadius, filters);
 
         NearbyResult result = await(nearby.nearby(query, deadline));
 
-        List<NearbyPlace> shown = result.places().subList(0, Math.min(limit, result.places().size()));
+        // "Open now" for this minute, not the shared result's: it is worked out per answer, like live data.
+        List<NearbyPlace> shown = result.places().subList(0, Math.min(limit, result.places().size())).stream()
+                .map(p -> p.at(minuteOfWeek))
+                .toList();
         LiveSummary liveSummary = null;
         List<String> liveKeys = shown.stream().map(NearbyPlace::liveKey).filter(Objects::nonNull).distinct().toList();
         if (!liveKeys.isEmpty()) {
@@ -126,6 +151,7 @@ public class NearbyController {
                 .addKeyValue("mode", travelMode == null ? "straight_line" : travelMode.param())
                 .addKeyValue("radius_m", searchRadius)
                 .addKeyValue("categories", wanted.isEmpty() ? "all" : String.join(",", query.categories()))
+                .addKeyValue("filters", filters.names())
                 .addKeyValue("travel_time_source", result.travelTimeSource())
                 .addKeyValue("fallback", result.fallback() == null ? "none" : result.fallback())
                 .addKeyValue("results", shown.size())
@@ -134,7 +160,7 @@ public class NearbyController {
         SnappedOrigin origin = query.origin();
         return new NearbyResponse(origin.cell(), origin.lat(), origin.lon(), origin.maxErrorMeters(),
                 travelMode == null ? null : travelMode.param(), searchRadius, result.travelTimeSource(),
-                result.fallback(), travelMode == TravelMode.DRIVE, shown, liveSummary);
+                result.fallback(), travelMode == TravelMode.DRIVE, shown, liveSummary, result.hiddenForUnknownHours());
     }
 
     @GetMapping("/categories")

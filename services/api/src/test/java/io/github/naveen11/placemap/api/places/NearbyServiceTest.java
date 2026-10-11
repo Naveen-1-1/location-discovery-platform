@@ -2,6 +2,7 @@ package io.github.naveen11.placemap.api.places;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -81,7 +82,7 @@ class NearbyServiceTest {
         }
 
         assertThat(engine.calls).hasValue(1);
-        verify(places, times(1)).nearby(anyDouble(), anyDouble(), anyInt(), anyList(), anyInt());
+        verify(places, times(1)).nearby(anyDouble(), anyDouble(), anyInt(), anyList(), any(PlaceFilters.class), anyInt());
     }
 
     @Test
@@ -105,7 +106,7 @@ class NearbyServiceTest {
     void withTheDatabaseBulkheadFullTheNextSearchIsRejectedInUnderTenMilliseconds() throws Exception {
         var release = new CountDownLatch(1);
         var inside = new CountDownLatch(10);
-        when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), anyInt())).thenAnswer(invocation -> {
+        when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), any(PlaceFilters.class), anyInt())).thenAnswer(invocation -> {
             inside.countDown();
             release.await();
             return List.of();
@@ -203,7 +204,7 @@ class NearbyServiceTest {
 
     @Test
     void placesAreSortedByTravelTimeWithUnreachableOnesLast() {
-        when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), anyInt())).thenReturn(List.of(
+        when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), any(PlaceFilters.class), anyInt())).thenReturn(List.of(
                 place(1, 100), place(2, 200), place(3, 300), place(4, 400)));
         engine.travelTimes = targets -> {
             var legs = new ArrayList<RoutingClient.Leg>();
@@ -232,6 +233,20 @@ class NearbyServiceTest {
         assertThat(result.travelTimeSource()).isEqualTo(NearbyService.STRAIGHT_LINE);
         assertThat(result.fallback()).isNull();
         assertThat(engine.calls).hasValue(0);
+    }
+
+    @Test
+    void withOpenNowTheResultSaysHowManyPlacesHadUnknownHours() {
+        returnPlaces(2);
+        when(places.unknownHours(anyDouble(), anyDouble(), anyInt(), anyList(), any(PlaceFilters.class))).thenReturn(7);
+        service = service(DEFAULTS);
+
+        NearbyResult open = search(new NearbyQuery(COMMON, null, List.of(), 800, new PlaceFilters(false, false, false, 840)));
+        NearbyResult plain = search(straightLine(800));
+
+        assertThat(open.hiddenForUnknownHours()).isEqualTo(7);
+        assertThat(plain.hiddenForUnknownHours()).isNull();
+        verify(places, times(1)).unknownHours(anyDouble(), anyDouble(), anyInt(), anyList(), any(PlaceFilters.class));
     }
 
     @Test
@@ -277,7 +292,7 @@ class NearbyServiceTest {
         for (int i = 1; i <= count; i++) {
             found.add(place(i, i * 100L));
         }
-        when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), anyInt())).thenReturn(found);
+        when(places.nearby(anyDouble(), anyDouble(), anyInt(), anyList(), any(PlaceFilters.class), anyInt())).thenReturn(found);
     }
 
     private static NearbyPlace place(long id, long meters) {

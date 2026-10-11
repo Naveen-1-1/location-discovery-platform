@@ -1,17 +1,31 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { fetchCategories, fetchIsochrones, fetchNearby, fetchRoute, type NearbyPlace, type TravelMode } from "./api";
+import {
+  fetchCategories,
+  fetchIsochrones,
+  fetchNearby,
+  fetchPlace,
+  fetchRoute,
+  NO_FILTERS,
+  type NearbyPlace,
+  type PlaceFilters,
+  type TravelMode,
+} from "./api";
 import {
   BIKE_SHARE_CREDIT,
   CATEGORY_COLORS,
   FALLBACK_COLOR,
+  FILTER_LABELS,
   formatDistance,
   formatDuration,
   ISOCHRONE_MINUTES,
+  MASSGIS_CREDIT,
   MODE_LABELS,
   MODE_VERBS,
+  SNAP_CREDIT,
   TRANSIT_CREDIT,
 } from "./categories";
+import { FactsLine } from "./PlaceFactsView";
 import { useLive, type Vehicle } from "./live";
 import { LiveLine, liveFor } from "./LiveLine";
 import { MapView } from "./MapView";
@@ -26,6 +40,7 @@ export function App() {
   const [mode, setMode] = useState<TravelMode | null>("walk");
   const [radius, setRadius] = useState(1500);
   const [chosen, setChosen] = useState<string[]>([]);
+  const [filters, setFilters] = useState<PlaceFilters>(NO_FILTERS);
   /** By id: the place's travel time comes from whichever result is on screen, never from an older one. */
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
@@ -34,9 +49,14 @@ export function App() {
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: ({ signal }) => fetchCategories(signal) });
   const nearby = useQuery({
-    queryKey: ["nearby", origin.lat, origin.lon, mode, mode ? null : radius, chosen],
-    queryFn: ({ signal }) => fetchNearby({ ...origin, mode, radius, categories: chosen }, signal),
+    queryKey: ["nearby", origin.lat, origin.lon, mode, mode ? null : radius, chosen, filters],
+    queryFn: ({ signal }) => fetchNearby({ ...origin, mode, radius, categories: chosen, filters }, signal),
     placeholderData: (previous) => previous,
+  });
+  const details = useQuery({
+    queryKey: ["place", selectedId],
+    queryFn: ({ signal }) => fetchPlace(selectedId!, signal),
+    enabled: selectedId !== null,
   });
   const route = useQuery({
     queryKey: ["route", origin.lat, origin.lon, routeTo, mode],
@@ -62,6 +82,8 @@ export function App() {
     ...(places.some((p) => p.category === "transit") || vehicles.length > 0
       ? [{ id: "transit-credit", html: TRANSIT_CREDIT }]
       : []),
+    ...(places.some((p) => p.facts.acceptsSnap) ? [{ id: "snap-credit", html: SNAP_CREDIT }] : []),
+    ...(places.some((p) => p.category === "hospital") ? [{ id: "massgis-credit", html: MASSGIS_CREDIT }] : []),
   ];
   const liveOf = (p: NearbyPlace) => liveFor(p, live, result);
 
@@ -146,11 +168,30 @@ export function App() {
           ))}
         </div>
 
+        <div className="chips" role="group" aria-label="Filters">
+          {(Object.keys(FILTER_LABELS) as (keyof PlaceFilters)[]).map((key) => (
+            <button
+              key={key}
+              className={filters[key] ? "chip filter on" : "chip filter"}
+              aria-pressed={filters[key]}
+              onClick={() => setFilters((cur) => ({ ...cur, [key]: !cur[key] }))}
+            >
+              {FILTER_LABELS[key]}
+            </button>
+          ))}
+        </div>
+
         {nearby.isError && <p className="error">Could not load places: {(nearby.error as Error).message}</p>}
         {area.isError && <p className="error">Reachable area unavailable: {(area.error as Error).message}</p>}
         <SearchSummary searching={nearby.isFetching} count={places.length} mode={result?.mode ?? null}
           routed={routed} fallback={result?.fallback ?? null} snapMeters={result?.maxSnapErrorMeters}
           withoutTraffic={result?.driveWithoutTraffic ?? false} />
+        {!!result?.hiddenForUnknownHours && (
+          <p className="muted">
+            {result.hiddenForUnknownHours} {result.hiddenForUnknownHours === 1 ? "place" : "places"} nearby hidden: their
+            hours are unknown.
+          </p>
+        )}
         {result?.live?.status === "unavailable" && !live.connected && (
           <p className="muted warn">Live bike counts are unavailable right now.</p>
         )}
@@ -171,6 +212,7 @@ export function App() {
                 </span>
               )}
               <LiveLine live={liveOf(p)} />
+              <FactsLine facts={p.facts} />
             </li>
           ))}
         </ol>
@@ -191,6 +233,7 @@ export function App() {
           credits={credits}
           vehicles={vehicles}
           selectedLive={selected ? liveOf(selected) : null}
+          details={details.data?.id === selected?.id ? details.data : undefined}
           onPickOrigin={moveTo}
           onSelect={(p) => {
             setSelectedId(p?.id ?? null);
