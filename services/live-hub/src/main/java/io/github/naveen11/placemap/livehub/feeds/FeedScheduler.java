@@ -46,10 +46,23 @@ public final class FeedScheduler implements AutoCloseable {
     private final ExecutorService polls = Executors.newThreadPerTaskExecutor(
             Thread.ofVirtual().name("live-poll-", 0).factory());
 
-    /** Polls {@code feed} now, then on its own cadence until {@link #close()}. */
-    public void start(PolledFeed feed) {
+    /**
+     * Polls {@code feed} now, then on its own cadence until {@link #close()}.
+     *
+     * @return asks for one extra poll now, unless one is running; the cadence stays as it is
+     */
+    public Runnable start(PolledFeed feed) {
         var scheduled = new Scheduled(Objects.requireNonNull(feed, "feed"));
         triggers.execute(() -> fire(scheduled));
+        return () -> {
+            if (scheduled.polling.compareAndSet(false, true)) {
+                try {
+                    polls.execute(() -> poll(scheduled));
+                } catch (RejectedExecutionException e) {
+                    scheduled.polling.set(false); // shutting down
+                }
+            }
+        };
     }
 
     private void fire(Scheduled s) {

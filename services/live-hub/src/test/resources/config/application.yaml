@@ -18,3 +18,5 @@ placemap:
   live:
     bluebikes:
       url: http://localhost:1/unused   # each test that needs the feed points it at its own WireMock server
+    mbta:
+      enabled: false

@@ -12,7 +12,7 @@ import {
   MODE_VERBS,
   TRANSIT_CREDIT,
 } from "./categories";
-import { useLive } from "./live";
+import { useLive, type Vehicle } from "./live";
 import { LiveLine, liveFor } from "./LiveLine";
 import { MapView } from "./MapView";
 
@@ -30,6 +30,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [routeTo, setRouteTo] = useState<number | null>(null);
   const [showArea, setShowArea] = useState(false);
+  const [showVehicles, setShowVehicles] = useState(false);
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: ({ signal }) => fetchCategories(signal) });
   const nearby = useQuery({
@@ -48,14 +49,19 @@ export function App() {
     enabled: showArea && mode !== null,
   });
 
-  const live = useLive();
+  const live = useLive(showVehicles ? ["bikes", "alerts", "vehicles"] : ["bikes", "alerts"]);
+  const vehicles = showVehicles
+    ? [...live.items].filter(([key]) => key.startsWith("vehicles:")).map(([, v]) => v as Vehicle)
+    : [];
   const result = nearby.data;
   const places = result?.places ?? [];
   const selected = places.find((p) => p.id === selectedId) ?? null;
   const routed = result?.mode != null && result.fallback === null;
   const credits = [
-    ...(places.some((p) => p.category === "bike_share") ? [BIKE_SHARE_CREDIT] : []),
-    ...(places.some((p) => p.category === "transit") ? [TRANSIT_CREDIT] : []),
+    ...(places.some((p) => p.category === "bike_share") ? [{ id: "bike-share-credit", html: BIKE_SHARE_CREDIT }] : []),
+    ...(places.some((p) => p.category === "transit") || vehicles.length > 0
+      ? [{ id: "transit-credit", html: TRANSIT_CREDIT }]
+      : []),
   ];
   const liveOf = (p: NearbyPlace) => liveFor(p, live, result);
 
@@ -121,6 +127,11 @@ export function App() {
           )}
         </div>
 
+        <label className="toggle">
+          <input type="checkbox" checked={showVehicles} onChange={(e) => setShowVehicles(e.target.checked)} />
+          Show buses and trains
+        </label>
+
         <div className="chips" role="group" aria-label="Categories">
           {categories.data?.map((c) => (
             <button
@@ -178,6 +189,7 @@ export function App() {
           isochrones={showArea && mode !== null ? area.data : undefined}
           routingCredit={routed || (showArea && area.data !== undefined) || route.data !== undefined}
           credits={credits}
+          vehicles={vehicles}
           selectedLive={selected ? liveOf(selected) : null}
           onPickOrigin={moveTo}
           onSelect={(p) => {

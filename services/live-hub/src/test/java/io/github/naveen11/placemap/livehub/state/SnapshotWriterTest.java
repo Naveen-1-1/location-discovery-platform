@@ -135,6 +135,18 @@ class SnapshotWriterTest {
         assertThat(registry.get("placemap.live.updates.dropped").tag("topic", "bikes").counter().count()).isEqualTo(1);
     }
 
+    @Test
+    void aTopicThatIsNotStreamedIsKeptButNeverSentToClients() {
+        writer.apply(new FeedUpdate.Replace(Topic.DEPARTURES,
+                Map.of("place-harsq", "{\"id\":\"place-harsq\",\"next\":[]}".getBytes(StandardCharsets.UTF_8)),
+                millis.get(), Duration.ofSeconds(15)));
+        writer.tick();
+        assertThat(delivered).isEmpty();
+        assertThat(writer.current().topic(Topic.DEPARTURES).items()).containsOnlyKeys("place-harsq");
+        assertThat(writer.current().topic(Topic.DEPARTURES).stale()).isFalse();
+        assertThat(writer.current().topic(Topic.DEPARTURES).snapshotEvent()).isEmpty();
+    }
+
     private FeedUpdate.Replace replace(Map<String, String> items) {
         var bytes = new LinkedHashMap<String, byte[]>();
         items.forEach((id, json) -> bytes.put(id, json.getBytes(StandardCharsets.UTF_8)));

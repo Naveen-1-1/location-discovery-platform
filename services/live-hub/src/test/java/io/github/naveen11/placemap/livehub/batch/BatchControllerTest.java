@@ -32,7 +32,7 @@ class BatchControllerTest {
         var publisher = new SnapshotPublisher<LiveSnapshot, LiveKey, Frame>(snapshot, LiveSnapshot::version);
         var properties = new LiveProperties(Duration.ofMillis(250), 10, Duration.ofSeconds(1), 3, null, 1, 8, 10, 2,
                 Duration.ofSeconds(10), Duration.ofSeconds(15), Duration.ofSeconds(1), Duration.ofSeconds(2),
-                Duration.ofSeconds(7), 4, null);
+                Duration.ofSeconds(7), 4, null, null);
         mvc = MockMvcBuilders.standaloneSetup(new BatchController(publisher, properties)).build();
     }
 

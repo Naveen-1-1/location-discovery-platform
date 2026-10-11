@@ -1,7 +1,8 @@
 // Live data from live-hub over one Server-Sent Events stream per browser tab (ADR 0018). In development Vite proxies
-// /live to localhost:8081. The stream starts with a snapshot of every topic, then sends only what changed; after a
-// reconnect (the browser's own, a few seconds later) the server sends a fresh snapshot, so nothing needs replaying.
-import { useSyncExternalStore } from "react";
+// /live to localhost:8081. The stream starts with a snapshot of every topic it asks for, then sends only what
+// changed; after a reconnect (the browser's own, a few seconds later) the server sends a fresh snapshot, so nothing
+// needs replaying. Components say which topics they need; the stream reopens when that set changes.
+import { useEffect, useSyncExternalStore } from "react";
 
 /** One Bluebikes dock's counts, as live-hub sends them. */
 export type DockStatus = {
@@ -14,6 +15,25 @@ export type DockStatus = {
   returning: boolean;
 };
 
+export type StopAlert = { id: string; effect: string | null; detail: string | null; severity: string | null; header: string | null };
+
+/** The MBTA alerts in effect at one stop or station. */
+export type StopAlerts = { id: string; elevator: boolean; escalator: boolean; alerts: StopAlert[] };
+
+export type Vehicle = {
+  id: string;
+  route: string | null;
+  label: string | null;
+  lat: number;
+  lon: number;
+  bearing: number | null;
+  status: string | null;
+  stop: string | null;
+  updated: number;
+};
+
+export type LiveItem = DockStatus | StopAlerts | Vehicle;
+
 export type TopicHealth = { stale: boolean; updated: number | null };
 
 export type LiveState = {
@@ -22,14 +42,14 @@ export type LiveState = {
   /** Per topic ("bikes"), whether its feed is out of date. Missing until the first snapshot. */
   topics: Readonly<Record<string, TopicHealth>>;
   /** Live key ("bikes:<station_id>", the api's liveKey) → the item. */
-  items: ReadonlyMap<string, DockStatus>;
+  items: ReadonlyMap<string, LiveItem>;
 };
 
 export const EMPTY_LIVE: LiveState = { connected: false, topics: {}, items: new Map() };
 
-type SnapshotEvent = { topic: string; stale: boolean; updated: number | null; items: DockStatus[] };
+type SnapshotEvent = { topic: string; stale: boolean; updated: number | null; items: LiveItem[] };
 type StatusEvent = { topic: string; stale: boolean; updated: number | null };
-type ItemEvent = (DockStatus & { removed?: false }) | { id: string; removed: true };
+type ItemEvent = (LiveItem & { removed?: false }) | { id: string; removed: true };
 
 // ---- Pure updates (tested in live.test.ts) ----
 
@@ -58,18 +78,27 @@ export function describeDock(d: DockStatus): string {
   return d.returning ? `${bikes} · ${docksText(d.docks)}` : `${bikes} · no returns`;
 }
 
+/** "Elevator out · 2 alerts": the outages first, because they decide whether someone can use the station at all. */
+export function describeAlerts(a: StopAlerts): string {
+  const parts = [a.elevator && "Elevator out", a.escalator && "Escalator out"].filter(Boolean) as string[];
+  const others = a.alerts.filter((x) => x.detail !== "ELEVATOR_CLOSURE" && x.detail !== "ESCALATOR_CLOSURE").length;
+  if (others > 0) parts.push(`${others} ${others === 1 ? "alert" : "alerts"}`);
+  return parts.join(" · ");
+}
+
 function docksText(docks: number): string {
   return `${docks} free ${docks === 1 ? "dock" : "docks"}`;
 }
 
 // ---- The one stream per tab ----
 
-const TOPICS = ["bikes"];
-
 let state: LiveState = EMPTY_LIVE;
 let source: EventSource | null = null;
+let openTopics = "";
 let pending: LiveState | null = null;
 const listeners = new Set<() => void>();
+/** How many mounted components want each topic. */
+const wanted = new Map<string, number>();
 
 /** Changes arrive in bursts (a poll changes dozens of docks); repaint once per frame, not once per event. */
 function update(next: LiveState) {
@@ -88,31 +117,55 @@ function current(): LiveState {
   return pending ?? state;
 }
 
-function open() {
-  source = new EventSource(`/live?topics=${TOPICS.join(",")}`);
-  source.onopen = () => update({ ...current(), connected: true });
-  source.onerror = () => update({ ...current(), connected: false }); // the browser retries after the server's retry:
-  source.addEventListener("snapshot", (e) => update(applySnapshot(current(), JSON.parse(e.data) as SnapshotEvent)));
-  source.addEventListener("status", (e) => update(applyStatus(current(), JSON.parse(e.data) as StatusEvent)));
-  for (const topic of TOPICS) {
-    source.addEventListener(topic, (e) => update(applyItem(current(), topic, JSON.parse(e.data) as ItemEvent)));
+/** (Re)opens the stream for exactly the wanted topics; closes it when none are wanted. */
+function reconcile() {
+  const topics = [...wanted.keys()].sort().join(",");
+  if (topics === openTopics) return;
+  source?.close();
+  source = null;
+  openTopics = topics;
+  const keep = new Set(wanted.keys());
+  update({
+    connected: false,
+    topics: Object.fromEntries(Object.entries(current().topics).filter(([t]) => keep.has(t))),
+    items: new Map([...current().items].filter(([key]) => keep.has(key.slice(0, key.indexOf(":"))))),
+  });
+  if (topics === "") return;
+  const es = new EventSource(`/live?topics=${topics}`);
+  source = es;
+  es.onopen = () => update({ ...current(), connected: true });
+  es.onerror = () => update({ ...current(), connected: false }); // the browser retries after the server's retry:
+  es.addEventListener("snapshot", (e) => update(applySnapshot(current(), JSON.parse(e.data) as SnapshotEvent)));
+  es.addEventListener("status", (e) => update(applyStatus(current(), JSON.parse(e.data) as StatusEvent)));
+  for (const topic of wanted.keys()) {
+    es.addEventListener(topic, (e) => update(applyItem(current(), topic, JSON.parse(e.data) as ItemEvent)));
   }
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  if (source === null) open();
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) {
-      source?.close();
-      source = null;
-      state = EMPTY_LIVE;
-    }
-  };
+  return () => listeners.delete(listener);
 }
 
-/** The live state, re-rendering when it changes. Every component shares the tab's one stream. */
-export function useLive(): LiveState {
+/**
+ * The live state for {@code topics}, re-rendering when it changes. Every component shares the tab's one stream, which
+ * carries the union of what mounted components ask for.
+ */
+export function useLive(topics: readonly string[]): LiveState {
+  const key = [...topics].sort().join(",");
+  useEffect(() => {
+    const mine = key === "" ? [] : key.split(",");
+    for (const t of mine) wanted.set(t, (wanted.get(t) ?? 0) + 1);
+    reconcile();
+    return () => {
+      for (const t of mine) {
+        const n = (wanted.get(t) ?? 1) - 1;
+        if (n === 0) wanted.delete(t);
+        else wanted.set(t, n);
+      }
+      // After this render's effects settle, so a topic set that merely changed reopens the stream once, not twice.
+      queueMicrotask(reconcile);
+    };
+  }, [key]);
   return useSyncExternalStore(subscribe, () => state, () => EMPTY_LIVE);
 }

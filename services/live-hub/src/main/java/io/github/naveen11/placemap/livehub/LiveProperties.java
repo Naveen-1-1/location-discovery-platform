@@ -40,7 +40,8 @@ public record LiveProperties(
         @DefaultValue("2s") Duration retryMin,
         @DefaultValue("7s") Duration retryMax,
         @DefaultValue("500") int maxBatchKeys,
-        @DefaultValue Bluebikes bluebikes) {
+        @DefaultValue Bluebikes bluebikes,
+        @DefaultValue Mbta mbta) {
 
     /**
      * The Bluebikes {@code station_status} feed.
@@ -55,5 +56,22 @@ public record LiveProperties(
             @DefaultValue("10s") Duration timeout,
             @DefaultValue("15s") Duration minInterval,
             @DefaultValue("5m") Duration maxInterval) {
+    }
+
+    /**
+     * MBTA's keyless GTFS-Realtime JSON files and the static GTFS zip they are read with (ADR 0041).
+     *
+     * @param departuresDemand trip updates are polled only this long after someone last asked for departures
+     */
+    public record Mbta(
+            @DefaultValue("true") boolean enabled,
+            @DefaultValue("https://cdn.mbta.com/realtime/") String realtimeUrl,
+            @DefaultValue("https://cdn.mbta.com/MBTA_GTFS.zip") String gtfsUrl,
+            @DefaultValue("30s") Duration alertsInterval,
+            @DefaultValue("15s") Duration vehiclesInterval,
+            @DefaultValue("15s") Duration departuresInterval,
+            @DefaultValue("2m") Duration departuresDemand,
+            @DefaultValue("5s") Duration connectTimeout,
+            @DefaultValue("20s") Duration timeout) {
     }
 }

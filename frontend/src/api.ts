@@ -1,6 +1,6 @@
 // Typed client for the api service. In development Vite proxies /api to localhost:8080.
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from "geojson";
-import type { DockStatus, TopicHealth } from "./live";
+import type { DockStatus, StopAlerts, TopicHealth } from "./live";
 
 export type Category = { code: string; label: string };
 
@@ -21,7 +21,7 @@ export type NearbyPlace = {
   /** Set for places with live data, e.g. "bikes:<station_id>"; the same key as in the live stream. */
   liveKey: string | null;
   /** The live data at the time of the search; the live stream keeps it current after that. */
-  live: DockStatus | null;
+  live: DockStatus | StopAlerts | null;
 };
 
 /** How the search's live data went. */

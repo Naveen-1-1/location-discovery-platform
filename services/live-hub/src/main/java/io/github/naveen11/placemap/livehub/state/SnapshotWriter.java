@@ -220,10 +220,15 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         long version = current.version() + 1;
         long nowMillis = millisClock.getAsLong();
         var frames = new LinkedHashMap<LiveKey, Frame>();
-        changes.forEach((key, json) ->
-                frames.put(key, new Frame(version, started, deltaEvent(version, nowMillis, key, json))));
+        changes.forEach((key, json) -> {
+            if (key.topic().streamed()) {
+                frames.put(key, new Frame(version, started, deltaEvent(version, nowMillis, key, json)));
+            }
+        });
         for (Topic topic : changedStatus) {
-            frames.put(LiveKey.status(topic), new Frame(version, started, statusEvent(version, topic)));
+            if (topic.streamed()) {
+                frames.put(LiveKey.status(topic), new Frame(version, started, statusEvent(version, topic)));
+            }
         }
         var views = new EnumMap<>(current.topics());
         for (Topic topic : changedTopics) {
@@ -240,6 +245,9 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
     private TopicView view(Topic topic) {
         Health h = health.get(topic);
         var copy = Collections.unmodifiableMap(new TreeMap<>(items.get(topic)));
+        if (!topic.streamed()) {
+            return new TopicView(topic, copy, h.stale, h.updatedMillis, new byte[0]);
+        }
         var out = new ByteArrayOutputStream(64 + copy.size() * 160);
         out.writeBytes(utf8("event: snapshot\ndata: {\"topic\":\"" + topic.wire() + "\",\"stale\":" + h.stale
                 + ",\"updated\":" + updated(h) + ",\"items\":["));

@@ -10,7 +10,9 @@ import java.util.Optional;
 public final class LiveSources {
 
     /** Source id in {@code data/sources.yaml} → live-hub topic. */
-    public static final Map<String, String> TOPICS = Map.of("bluebikes_station_information", "bikes");
+    public static final Map<String, String> TOPICS = Map.of(
+            "bluebikes_station_information", "bikes",
+            "mbta_gtfs", "alerts");
 
     private LiveSources() {
     }

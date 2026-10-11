@@ -1,14 +1,20 @@
 package io.github.naveen11.placemap.livehub;
 
 import io.github.naveen11.placemap.concurrent.SnapshotPublisher;
+import io.github.naveen11.placemap.livehub.departures.Demand;
+import io.github.naveen11.placemap.livehub.departures.PollNow;
 import io.github.naveen11.placemap.livehub.feeds.BluebikesFeed;
 import io.github.naveen11.placemap.livehub.feeds.FeedScheduler;
+import io.github.naveen11.placemap.livehub.feeds.MbtaParsers;
+import io.github.naveen11.placemap.livehub.feeds.MbtaRealtimeFeed;
+import io.github.naveen11.placemap.livehub.feeds.MbtaStatic;
 import io.github.naveen11.placemap.livehub.sse.LiveHub;
 import io.github.naveen11.placemap.livehub.sse.LiveServlet;
 import io.github.naveen11.placemap.livehub.state.Frame;
 import io.github.naveen11.placemap.livehub.state.LiveKey;
 import io.github.naveen11.placemap.livehub.state.LiveSnapshot;
 import io.github.naveen11.placemap.livehub.state.SnapshotWriter;
+import io.github.naveen11.placemap.livehub.state.Topic;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationPredicate;
 import java.net.http.HttpClient;
@@ -28,6 +34,7 @@ import org.springframework.web.client.RestClient;
 public class LiveConfig {
 
     private static final Logger log = LoggerFactory.getLogger(LiveConfig.class);
+    private static final String USER_AGENT = "place-discovery-map-live-hub (+https://github.com/Naveen-1-1/place-discovery-map)";
 
     @Bean
     LiveMetrics liveMetrics(MeterRegistry registry) {
@@ -66,13 +73,23 @@ public class LiveConfig {
         return new FeedScheduler();
     }
 
+    @Bean
+    Demand departuresDemand(LiveProperties properties) {
+        return new Demand(properties.mbta().departuresDemand(), System::currentTimeMillis);
+    }
+
+    @Bean
+    PollNow departuresPollNow() {
+        return new PollNow();
+    }
+
     /**
      * Starts the writer and the feeds once the web server is up, and on shutdown stops them and closes every stream
      * first: an open stream never ends by itself, so graceful shutdown would otherwise wait out its timeout.
      */
     @Bean
     SmartLifecycle liveLifecycle(SnapshotWriter writer, FeedScheduler scheduler, LiveHub hub, LiveProperties p,
-            RestClient.Builder http, LiveMetrics metrics) {
+            RestClient.Builder http, LiveMetrics metrics, Demand departuresDemand, PollNow departuresPollNow) {
         return new SmartLifecycle() {
             private volatile boolean running;
 
@@ -83,12 +100,33 @@ public class LiveConfig {
                 if (bluebikes.enabled()) {
                     RestClient client = http.clone()
                             .requestFactory(jdk(bluebikes.connectTimeout(), bluebikes.timeout()))
-                            .defaultHeader("User-Agent", "place-discovery-map-live-hub (+https://github.com/Naveen-1-1/place-discovery-map)")
+                            .defaultHeader("User-Agent", USER_AGENT)
                             .build();
                     scheduler.start(new BluebikesFeed(client, bluebikes.url(), bluebikes.minInterval(),
                             bluebikes.maxInterval(), writer, metrics, System::currentTimeMillis));
                 } else {
                     log.warn("bluebikes feed disabled (placemap.live.bluebikes.enabled=false)");
+                }
+                LiveProperties.Mbta mbta = p.mbta();
+                if (mbta.enabled()) {
+                    RestClient client = http.clone()
+                            .requestFactory(jdk(mbta.connectTimeout(), mbta.timeout()))
+                            .defaultHeader("User-Agent", USER_AGENT)
+                            .build();
+                    var names = new MbtaStatic(client, mbta.gtfsUrl());
+                    scheduler.start(names);
+                    scheduler.start(new MbtaRealtimeFeed(client, mbta.realtimeUrl() + "Alerts_enhanced.json",
+                            Topic.ALERTS, mbta.alertsInterval(), MbtaParsers.alerts(names::names), () -> true, writer,
+                            metrics, System::currentTimeMillis));
+                    scheduler.start(new MbtaRealtimeFeed(client, mbta.realtimeUrl() + "VehiclePositions_enhanced.json",
+                            Topic.VEHICLES, mbta.vehiclesInterval(), MbtaParsers.vehicles(), () -> true, writer,
+                            metrics, System::currentTimeMillis));
+                    departuresPollNow.connect(scheduler.start(new MbtaRealtimeFeed(client,
+                            mbta.realtimeUrl() + "TripUpdates_enhanced.json", Topic.DEPARTURES,
+                            mbta.departuresInterval(), MbtaParsers.departures(names::names), departuresDemand::recent,
+                            writer, metrics, System::currentTimeMillis)));
+                } else {
+                    log.warn("MBTA feeds disabled (placemap.live.mbta.enabled=false)");
                 }
                 running = true;
             }
@@ -117,7 +155,7 @@ public class LiveConfig {
     @Bean
     ObservationPredicate noObservationsForLiveStreams() {
         return (name, context) -> !(context instanceof ServerRequestObservationContext request
-                && request.getCarrier().getRequestURI().startsWith("/live"));
+                && request.getCarrier().getRequestURI().equals("/live"));
     }
 
     static JdkClientHttpRequestFactory jdk(Duration connectTimeout, Duration timeout) {

@@ -10,10 +10,12 @@ class LiveServletTest {
 
     @Test
     void readsTheTopicsParameter() {
-        assertThat(LiveServlet.topics(null)).contains(EnumSet.allOf(Topic.class));
-        assertThat(LiveServlet.topics("")).contains(EnumSet.allOf(Topic.class));
+        var streamed = EnumSet.of(Topic.BIKES, Topic.ALERTS, Topic.VEHICLES);
+        assertThat(LiveServlet.topics(null)).contains(streamed);
+        assertThat(LiveServlet.topics("")).contains(streamed);
         assertThat(LiveServlet.topics("bikes")).contains(EnumSet.of(Topic.BIKES));
-        assertThat(LiveServlet.topics(" bikes , bikes")).contains(EnumSet.of(Topic.BIKES));
+        assertThat(LiveServlet.topics(" bikes , alerts")).contains(EnumSet.of(Topic.BIKES, Topic.ALERTS));
         assertThat(LiveServlet.topics("bikes,trains")).isEmpty();
+        assertThat(LiveServlet.topics("departures")).as("too big to stream; asked for per stop").isEmpty();
     }
 }

@@ -13,6 +13,8 @@ import Map, {
   type MapRef,
 } from "react-map-gl/maplibre";
 import type { IsochroneCollection, NearbyPlace, RouteFeature, TravelMode } from "./api";
+import { Departures } from "./Departures";
+import type { StopAlerts, Vehicle } from "./live";
 import { LiveLine, type PlaceLive } from "./LiveLine";
 import {
   CATEGORY_COLORS,
@@ -63,10 +65,12 @@ type Props = {
   isochrones: IsochroneCollection | undefined;
   /** Whether anything on screen came from the routing engine, which then needs its credit. */
   routingCredit: boolean;
-  /** Credits for display-only sources whose places are on screen (ADR 0029). */
-  credits: string[];
+  /** Credits for display-only sources whose places are on screen (ADR 0029); each id names its map source. */
+  credits: { id: string; html: string }[];
   /** The selected place's live data, if it has any. */
   selectedLive: PlaceLive | null;
+  /** MBTA vehicles to draw; empty unless asked for. */
+  vehicles: Vehicle[];
   onPickOrigin: (lat: number, lon: number) => void;
   onSelect: (place: NearbyPlace | null) => void;
   onShowRoute: (place: NearbyPlace) => void;
@@ -103,6 +107,18 @@ export function MapView(props: Props) {
       })),
     }),
     [places],
+  );
+
+  const vehicleDots = useMemo<FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features: props.vehicles.map((v) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+        properties: { color: routeColor(v.route) },
+      })),
+    }),
+    [props.vehicles],
   );
 
   // Largest area first, so each smaller one is drawn on top of it.
@@ -160,6 +176,13 @@ export function MapView(props: Props) {
           }}
         />
       </Source>
+      <Source id="vehicles" type="geojson" data={vehicleDots}>
+        <Layer
+          id="vehicles"
+          type="circle"
+          paint={{ "circle-radius": 4, "circle-color": ["get", "color"], "circle-stroke-width": 1, "circle-stroke-color": "#111827" }}
+        />
+      </Source>
       {/* Puts the routing engine's credit in the attribution while anything on screen comes from it. MapLibre only
           credits sources a visible layer uses, hence the empty, transparent layer. */}
       {routingCredit && (
@@ -167,9 +190,9 @@ export function MapView(props: Props) {
           <Layer id="routing-credit" type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
         </Source>
       )}
-      {props.credits.map((credit, i) => (
-        <Source key={credit} id={`credit-${i}`} type="geojson" data={EMPTY} attribution={credit}>
-          <Layer id={`credit-${i}`} type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
+      {props.credits.map((credit) => (
+        <Source key={credit.id} id={credit.id} type="geojson" data={EMPTY} attribution={credit.html}>
+          <Layer id={credit.id} type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
         </Source>
       ))}
       <Marker latitude={origin.lat} longitude={origin.lon} color="#111827" />
@@ -183,10 +206,16 @@ export function MapView(props: Props) {
         >
           <strong>{selected.name}</strong>
           {selected.address && <div>{selected.address}</div>}
-          {props.selectedLive && (
+          {props.selectedLive && props.selectedLive.topic === "bikes" && (
             <div>
               <LiveLine live={props.selectedLive} />
             </div>
+          )}
+          {selected.category === "transit" && selected.liveKey && (
+            <Departures
+              stop={selected.liveKey.slice(selected.liveKey.indexOf(":") + 1)}
+              alerts={props.selectedLive?.topic === "alerts" ? (props.selectedLive.item as StopAlerts) : null}
+            />
           )}
           <div className="muted">
             {selected.travelSeconds !== null && resultMode
@@ -210,4 +239,16 @@ export function MapView(props: Props) {
       )}
     </Map>
   );
+}
+
+/** MBTA line colours; buses yellow, commuter rail purple, ferries teal. */
+function routeColor(route: string | null): string {
+  if (!route) return "#9ca3af";
+  if (route === "Red" || route === "Mattapan") return "#da291c";
+  if (route === "Orange") return "#ed8b00";
+  if (route === "Blue") return "#003da5";
+  if (route.startsWith("Green")) return "#00843d";
+  if (route.startsWith("CR-")) return "#80276c";
+  if (route.startsWith("Boat-")) return "#008eaa";
+  return "#ffc72c";
 }

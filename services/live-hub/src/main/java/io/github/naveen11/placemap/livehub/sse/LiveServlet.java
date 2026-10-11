@@ -37,7 +37,7 @@ public final class LiveServlet extends HttpServlet {
         Optional<Set<Topic>> topics = topics(request.getParameter("topics"));
         if (topics.isEmpty()) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "topics must be a comma-separated list of "
-                    + EnumSet.allOf(Topic.class).stream().map(Topic::wire).toList());
+                    + streamed().stream().map(Topic::wire).toList());
             return;
         }
         String client = clientIds.of(request.getRemoteAddr()); // the real client behind a trusted proxy (ADR 0028)
@@ -72,7 +72,14 @@ public final class LiveServlet extends HttpServlet {
 
             @Override
             public void onError(AsyncEvent event) {
+                // The client went away. End the response here, or Tomcat would dispatch its error page into a
+                // stream that is already broken; a write still under way fails, and the drain stops on that.
                 session.close(ClientSession.End.CLIENT_GONE);
+                try {
+                    event.getAsyncContext().complete();
+                } catch (IllegalStateException e) {
+                    // already completed
+                }
             }
 
             @Override
@@ -81,19 +88,29 @@ public final class LiveServlet extends HttpServlet {
         });
     }
 
-    /** The topics asked for, all of them if none; empty if any name is unknown. */
+    /** The topics asked for, every streamed one if none; empty if any name is unknown or not streamed. */
     static Optional<Set<Topic>> topics(String parameter) {
         if (parameter == null || parameter.isBlank()) {
-            return Optional.of(EnumSet.allOf(Topic.class));
+            return Optional.of(streamed());
         }
         var topics = EnumSet.noneOf(Topic.class);
         for (String name : parameter.split(",")) {
-            Optional<Topic> topic = Topic.fromWire(name.strip());
+            Optional<Topic> topic = Topic.fromWire(name.strip()).filter(Topic::streamed);
             if (topic.isEmpty()) {
                 return Optional.empty();
             }
             topics.add(topic.get());
         }
         return Optional.of(topics);
+    }
+
+    private static EnumSet<Topic> streamed() {
+        var topics = EnumSet.noneOf(Topic.class);
+        for (Topic topic : Topic.values()) {
+            if (topic.streamed()) {
+                topics.add(topic);
+            }
+        }
+        return topics;
     }
 }

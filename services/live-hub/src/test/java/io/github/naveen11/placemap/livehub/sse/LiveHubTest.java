@@ -41,19 +41,19 @@ class LiveHubTest {
 
     @Test
     void limitsStreamsPerClientAndInTotal() throws Exception {
-        ClientSession first = hub.open("alice", EnumSet.allOf(Topic.class), new RecordingSink());
-        hub.open("alice", EnumSet.allOf(Topic.class), new RecordingSink());
-        assertThatThrownBy(() -> hub.open("alice", EnumSet.allOf(Topic.class), new RecordingSink()))
+        ClientSession first = hub.open("alice", EnumSet.of(Topic.BIKES), new RecordingSink());
+        hub.open("alice", EnumSet.of(Topic.BIKES), new RecordingSink());
+        assertThatThrownBy(() -> hub.open("alice", EnumSet.of(Topic.BIKES), new RecordingSink()))
                 .isInstanceOfSatisfying(LiveHub.RefusedException.class,
                         e -> assertThat(e.refusal()).isEqualTo(LiveHub.Refusal.CLIENT_FULL));
-        hub.open("bob", EnumSet.allOf(Topic.class), new RecordingSink());
-        assertThatThrownBy(() -> hub.open("carol", EnumSet.allOf(Topic.class), new RecordingSink()))
+        hub.open("bob", EnumSet.of(Topic.BIKES), new RecordingSink());
+        assertThatThrownBy(() -> hub.open("carol", EnumSet.of(Topic.BIKES), new RecordingSink()))
                 .isInstanceOfSatisfying(LiveHub.RefusedException.class,
                         e -> assertThat(e.refusal()).isEqualTo(LiveHub.Refusal.HUB_FULL));
         assertThat(hub.openSessions()).isEqualTo(3);
 
         first.close(ClientSession.End.CLIENT_GONE);
-        hub.open("alice", EnumSet.allOf(Topic.class), new RecordingSink()); // both limits freed a slot
+        hub.open("alice", EnumSet.of(Topic.BIKES), new RecordingSink()); // both limits freed a slot
         assertThat(hub.openSessions()).isEqualTo(3);
         assertThat(registry.get("placemap.live.connections").tag("result", "client_full").counter().count()).isEqualTo(1);
         assertThat(registry.get("placemap.live.connections").tag("result", "hub_full").counter().count()).isEqualTo(1);
@@ -65,8 +65,8 @@ class LiveHubTest {
     void everyOpenSessionGetsPublishedChangesUntilItCloses() throws Exception {
         var one = new RecordingSink();
         var two = new RecordingSink();
-        ClientSession first = hub.open("alice", EnumSet.allOf(Topic.class), one);
-        hub.open("bob", EnumSet.allOf(Topic.class), two);
+        ClientSession first = hub.open("alice", EnumSet.of(Topic.BIKES), one);
+        hub.open("bob", EnumSet.of(Topic.BIKES), two);
         await("both have the snapshot", () -> one.text().contains("\"v\":1") && two.text().contains("\"v\":1"));
 
         publisher.publish(snapshot(2, ""), Map.of(key("a"), frame(2, "a", 3)));
@@ -79,11 +79,11 @@ class LiveHubTest {
     @Test
     void shutdownClosesEverySessionAndRefusesNewOnes() throws Exception {
         var sink = new RecordingSink();
-        ClientSession session = hub.open("alice", EnumSet.allOf(Topic.class), sink);
+        ClientSession session = hub.open("alice", EnumSet.of(Topic.BIKES), sink);
         hub.close();
         assertThat(session.end()).isEqualTo(ClientSession.End.SHUTDOWN);
         await("the response is ended", () -> sink.completes.get() == 1);
-        assertThatThrownBy(() -> hub.open("bob", EnumSet.allOf(Topic.class), new RecordingSink()))
+        assertThatThrownBy(() -> hub.open("bob", EnumSet.of(Topic.BIKES), new RecordingSink()))
                 .isInstanceOfSatisfying(LiveHub.RefusedException.class,
                         e -> assertThat(e.refusal()).isEqualTo(LiveHub.Refusal.CLOSING));
         assertThat(hub.openSessions()).isZero();
