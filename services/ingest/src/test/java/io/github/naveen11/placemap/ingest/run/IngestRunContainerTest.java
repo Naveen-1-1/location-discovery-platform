@@ -151,6 +151,8 @@ class IngestRunContainerTest {
         assertThat(checksum()).isEqualTo(first);
         assertThat(latestRun()).containsEntry("result_checksum", first);
         assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND changed_run <> 1")).isZero();
+        assertThat(jdbc.sql("SELECT DISTINCT run_id FROM ingest.batch_done").query(Long.class).list())
+                .as("the first run's checkpoints are pruned once the second completes").containsExactly(2L);
     }
 
     /**

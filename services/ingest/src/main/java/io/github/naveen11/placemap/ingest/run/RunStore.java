@@ -192,7 +192,19 @@ public class RunStore {
                         .param(source)
                         .update();
                 tx.sql("UPDATE ingest.batch_done SET keys = NULL WHERE run_id = ?").param(runId).update();
+                // Earlier runs' rejects and checkpoints have served their purpose. Without this the reject table
+                // would grow every day by the same rows (Boston's history alone rejects a few thousand) on a 1 GB
+                // database. The run rows themselves stay as the import log.
+                tx.sql("""
+                        DELETE FROM ingest.reject
+                        WHERE run_id IN (SELECT run_id FROM ingest.run WHERE source = ? AND run_id < ?)
+                        """).params(source, runId).update();
+                tx.sql("""
+                        DELETE FROM ingest.batch_done
+                        WHERE run_id IN (SELECT run_id FROM ingest.run WHERE source = ? AND run_id < ?)
+                        """).params(source, runId).update();
                 refreshPlaces(tx, source, roles);
+                refreshInspectionSummary(tx, source);
                 // Reviews this run did not repeat are stale: the record is linked now, or no longer borderline.
                 tx.sql("DELETE FROM place.match_review WHERE source = ? AND run_id <> ?").params(source, runId).update();
                 String checksum = checksum(tx, source);
@@ -245,6 +257,29 @@ public class RunStore {
                 .params(source, source)
                 .query(String.class)
                 .single();
+    }
+
+    /**
+     * Rebuilds the source's per-establishment inspection summary that the map's filters read (ADR 0034): latest
+     * result and date, number of inspections, and violation lines marked Fail in the last 12 months. A no-op for
+     * sources without inspections. Readers keep seeing the old rows until the run's transaction commits.
+     */
+    private static void refreshInspectionSummary(JdbcClient tx, String source) {
+        tx.sql("DELETE FROM place.inspection_summary WHERE source = ?").param(source).update();
+        tx.sql("""
+                INSERT INTO place.inspection_summary
+                    (source, source_key, latest_result, latest_at, inspections, failed_checks_12m)
+                SELECT i.source, i.source_key,
+                       (array_agg(i.result ORDER BY i.inspected_at DESC, i.result))[1],
+                       max(i.inspected_at),
+                       count(DISTINCT i.inspection_id),
+                       count(v.line_hash) FILTER (WHERE v.status = 'Fail')
+                FROM place.inspection i
+                LEFT JOIN place.inspection_violation v
+                       ON v.inspection_id = i.inspection_id AND i.inspected_at > now() - interval '12 months'
+                WHERE i.source = ?
+                GROUP BY i.source, i.source_key
+                """).param(source).update();
     }
 
     /**

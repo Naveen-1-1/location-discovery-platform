@@ -22,6 +22,7 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>Upsert the records, sorted by key so concurrent batches lock rows in the same order. Unchanged rows (same
  *       hash) are not rewritten.
  *   <li>Apply the matching decisions: new links, new places, review entries.
+ *   <li>Add any inspection history the batch carries.
  *   <li>Insert the rejects and the {@code batch_done} checkpoint.
  *   <li>Commit, then mark the batch in the watermark.
  * </ol>
@@ -144,6 +145,7 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
                 upsert.executeBatch();
             }
             applyDecisions(c, matched, byKey);
+            InspectionWriter.write(c, source, runId, batch.inspections());
             try (var reject = c.prepareStatement(INSERT_REJECT)) {
                 for (ParsedBatch.Reject r : batch.rejects()) {
                     reject.setLong(1, runId);
