@@ -40,17 +40,21 @@ tools/dev.sh migrate && tools/dev.sh tiles
 **First import** (OSM first, so it can corroborate Overture's less certain places; then the official lists match
 both):
 ```bash
-tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses boston_food_inspections cambridge_food_establishment_permits cambridge_sanitary_inspections
+tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses boston_food_inspections cambridge_food_establishment_permits cambridge_sanitary_inspections bluebikes_station_information mbta_gtfs
 ```
 
-**Then use two terminals:**
+**Then use three terminals:**
 ```bash
 tools/dev.sh api    # http://localhost:8080
+tools/dev.sh live   # http://localhost:8081: live bikes, MBTA alerts, vehicles and departures
 tools/dev.sh web    # http://localhost:5173  ← open this
 ```
 Travel times, routes and reachable areas come from openrouteservice and need `ORS_API_KEY` in `.env` (a free
 account). Without it the map still works and sorts by straight-line distance
 ([ADR 0040](docs/adr/0040-travel-time-search-in-development.md)).
+
+Live data needs no key: Bluebikes and MBTA's realtime files are open. Without `live` running, the map still works
+and simply shows no live counts ([ADR 0041](docs/adr/0041-live-hub-in-development.md)).
 
 **Importer (Phase 2):** imports official and open data into the database on each source's cadence and resumes
 any import that was interrupted (see [ADR 0020](docs/adr/0020-import-crash-safety.md) and

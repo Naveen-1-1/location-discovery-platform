@@ -134,7 +134,20 @@ function reconcile() {
   const es = new EventSource(`/live?topics=${topics}`);
   source = es;
   es.onopen = () => update({ ...current(), connected: true });
-  es.onerror = () => update({ ...current(), connected: false }); // the browser retries after the server's retry:
+  es.onerror = () => {
+    update({ ...current(), connected: false });
+    // The browser retries a dropped stream by itself, after the server's retry: delay. But an error answer, such as a
+    // proxy's 502 while live-hub restarts, ends the EventSource for good. Reopen it after a random 2-7 s, the same
+    // spread the server asks for, so a restart does not bring every tab back at once.
+    if (es.readyState === EventSource.CLOSED) {
+      setTimeout(() => {
+        if (source === es) {
+          openTopics = "";
+          reconcile();
+        }
+      }, 2_000 + Math.random() * 5_000);
+    }
+  };
   es.addEventListener("snapshot", (e) => update(applySnapshot(current(), JSON.parse(e.data) as SnapshotEvent)));
   es.addEventListener("status", (e) => update(applyStatus(current(), JSON.parse(e.data) as StatusEvent)));
   for (const topic of wanted.keys()) {

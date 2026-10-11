@@ -1,0 +1,28 @@
+# promtool test rules infra/observability/alerts/live.rules.test.yaml
+rule_files:
+  - live.rules.yaml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # Bluebikes goes quiet at minute 5 and answers again at minute 15.
+      - series: 'placemap_live_feed_stale{job="placemap/live-hub", topic="bikes"}'
+        values: '0x4 1x9 0x10'
+      # Departures are stale whenever nobody is looking: never an alert.
+      - series: 'placemap_live_feed_stale{job="placemap/live-hub", topic="departures"}'
+        values: '1x25'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: LiveFeedStale
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LiveFeedStale
+        exp_alerts:
+          - exp_labels: {severity: ticket, topic: bikes}
+            exp_annotations:
+              summary: "the live bikes feed is stale"
+              description: "live-hub has had no answer from the bikes feed for over 3x its ttl, for 2 minutes. The map marks that data out of date and keeps showing the last values."
+              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/live-feed-stale.md"
+      - eval_time: 16m
+        alertname: LiveFeedStale
+        exp_alerts: []
