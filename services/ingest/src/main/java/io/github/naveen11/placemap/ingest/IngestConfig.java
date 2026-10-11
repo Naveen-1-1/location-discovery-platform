@@ -49,7 +49,7 @@ class IngestConfig {
 
     @Bean
     SnapshotStore snapshotStore(IngestProperties properties) {
-        return new SnapshotStore(properties.rawDir(), new HttpDownloader());
+        return new SnapshotStore(properties.rawDir(), new HttpDownloader(), properties.pinnedSnapshot());
     }
 
     @Bean

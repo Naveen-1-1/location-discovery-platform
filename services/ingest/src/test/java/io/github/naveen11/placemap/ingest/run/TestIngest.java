@@ -25,7 +25,8 @@ final class TestIngest {
         Path data = TestData.REPO.resolve("data");
         return new IngestProperties(data.resolve("sources.yaml"), data.resolve("categories.yaml"),
                 data.resolve("source-priority.yaml"), data.resolve("area/area.geojson"), rawDir, batchSize, 2, 2, 2, 1,
-                Duration.ofMinutes(1), Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02, maxRetireShare, null, false);
+                Duration.ofMinutes(1), Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02, maxRetireShare, null, false,
+                null);
     }
 
     static RunCoordinator coordinator(DataSource dataSource, Path rawDir, int batchSize, HttpDownloader http,

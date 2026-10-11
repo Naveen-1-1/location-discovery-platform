@@ -13,8 +13,10 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Ingest metrics for the Ingest dashboard. Labels are only {@code source}, {@code stage}, {@code queue} and
- * {@code outcome}, all low-cardinality, to stay far below Grafana Cloud's free series limit.
+ * Ingest metrics for the Ingest dashboard and alerts. Labels are only {@code source}, {@code stage}, {@code queue},
+ * {@code outcome}, {@code decision} and {@code limit}, all low-cardinality, to stay far below Grafana Cloud's free series
+ * limit. No two meters may map to the same Prometheus name: a counter {@code x} is exported as {@code x_total}, so no
+ * gauge may be called {@code x.total}.
  */
 public class IngestMetrics {
 
@@ -26,6 +28,11 @@ public class IngestMetrics {
 
     void runFinished(String source, RunCoordinator.Outcome outcome) {
         registry.counter("placemap.ingest.runs", "source", source, "outcome", outcome.name().toLowerCase()).increment();
+    }
+
+    /** @param limit the safety limit that failed the run at completion: "rejects" or "retirements" */
+    void limitTripped(String source, String limit) {
+        registry.counter("placemap.ingest.limit.trips", "source", source, "limit", limit).increment();
     }
 
     RunMetrics forRun(String source) {
@@ -40,6 +47,7 @@ public class IngestMetrics {
         private final Counter skipped;
         private final Counter batches;
         private final Counter retries;
+        private final Counter recommits;
         private final List<Gauge> gauges = new ArrayList<>();
 
         private RunMetrics(String source) {
@@ -49,6 +57,7 @@ public class IngestMetrics {
             this.skipped = registry.counter("placemap.ingest.rows", "source", source, "outcome", "skipped");
             this.batches = registry.counter("placemap.ingest.batches", "source", source);
             this.retries = registry.counter("placemap.ingest.batch.retries", "source", source);
+            this.recommits = registry.counter("placemap.ingest.batch.recommits", "source", source);
         }
 
         void committed(MatchedBatch matched) {
@@ -65,6 +74,11 @@ public class IngestMetrics {
 
         void retried() {
             retries.increment();
+        }
+
+        /** A retried batch turned out to be committed already: its acknowledgement was lost, not the commit. */
+        void recommitted() {
+            recommits.increment();
         }
 
         StageListener stage(String stage) {
@@ -101,11 +115,12 @@ public class IngestMetrics {
         }
 
         void watchProgress(ContiguousWatermark watermark, int totalBatches) {
-            gauges.add(Gauge.builder("placemap.ingest.batches.committed", watermark, w -> w.current() + 1)
+            gauges.add(Gauge.builder("placemap.ingest.run.batches.done", watermark, w -> w.current() + 1)
                     .description("Batches 0..N-1 all committed (the contiguous watermark)")
                     .tags("source", source)
                     .register(registry));
-            gauges.add(Gauge.builder("placemap.ingest.batches.total", () -> totalBatches)
+            gauges.add(Gauge.builder("placemap.ingest.run.batches", () -> totalBatches)
+                    .description("Batches in the current run")
                     .tags("source", source)
                     .register(registry));
         }

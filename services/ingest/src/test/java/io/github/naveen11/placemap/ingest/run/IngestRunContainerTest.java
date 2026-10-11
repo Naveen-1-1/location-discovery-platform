@@ -179,6 +179,26 @@ class IngestRunContainerTest {
         assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ?")).isEqualTo(40);
     }
 
+    /**
+     * Crash test C2 in miniature: the third commit reaches the database but its acknowledgement is lost, as when the
+     * connection drops right after COMMIT is sent. The writer retries the batch, finds it committed already, and the
+     * run completes on its first attempt with the clean checksum and no duplicates.
+     */
+    @Test
+    void aLostCommitAcknowledgementIsRetriedWithoutDuplicates() {
+        run();
+        String golden = checksum();
+        emptyTables();
+
+        Outcome outcome = coordinator(losingCommitAcknowledgement(3)).run(SOURCE, new RunControl(), false);
+
+        assertThat(outcome).isEqualTo(Outcome.COMPLETE);
+        assertThat(latestRun()).containsEntry("status", "COMPLETE").containsEntry("attempts", 1);
+        assertThat(checksum()).isEqualTo(golden);
+        assertThat(jdbc.sql("SELECT count(*) FROM ingest.batch_done").query(Integer.class).single()).isEqualTo(6);
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ?")).isEqualTo(40);
+    }
+
     @Test
     void retiresRecordsThatDisappearAndRevivesThemWhenTheyReturn() throws Exception {
         List<String> lines = Files.readAllLines(TestData.BOSTON_LICENCES);
@@ -297,6 +317,26 @@ class IngestRunContainerTest {
 
     /** A data source whose n-th commit (counted across all connections) rolls back and throws instead. */
     private static DataSource failingOnCommit(int n) {
+        return onCommit(n, real -> {
+            real.rollback();
+            throw new SQLException("injected commit failure", "XX000");
+        });
+    }
+
+    /** A data source whose n-th commit goes through, then throws as if the connection dropped before the reply. */
+    private static DataSource losingCommitAcknowledgement(int n) {
+        return onCommit(n, real -> {
+            real.commit();
+            throw new SQLException("injected: connection lost after COMMIT was sent", "08006");
+        });
+    }
+
+    private interface CommitFault {
+        void apply(Connection real) throws SQLException;
+    }
+
+    /** A data source that replaces the n-th commit, counted across all its connections, with a fault. */
+    private static DataSource onCommit(int n, CommitFault fault) {
         var commits = new AtomicInteger();
         return new DelegatingDataSource(dataSource) {
             @Override
@@ -305,8 +345,8 @@ class IngestRunContainerTest {
                 return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
                         new Class<?>[] {Connection.class}, (proxy, method, args) -> {
                             if (method.getName().equals("commit") && commits.incrementAndGet() == n) {
-                                real.rollback();
-                                throw new SQLException("injected commit failure", "XX000");
+                                fault.apply(real);
+                                return null;
                             }
                             try {
                                 return method.invoke(real, args);

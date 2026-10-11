@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naveen11.placemap.concurrent.BoundedChannel;
+import io.github.naveen11.placemap.ingest.OfflineHttp;
 import io.github.naveen11.placemap.ingest.TestData;
+import io.github.naveen11.placemap.ingest.pipeline.StageListener;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
+import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -50,6 +54,23 @@ class SnapshotTest {
     }
 
     @Test
+    void aPinnedSnapshotIsCopiedInsteadOfDownloaded() throws Exception {
+        var store = new SnapshotStore(dir.resolve("raw"), new OfflineHttp() {
+            @Override
+            public void download(URI uri, Path target) throws IOException {
+                throw new IOException("a pinned run must not download " + uri);
+            }
+        }, TestData.BOSTON_LICENCES);
+
+        Snapshot snapshot = store.fetch(adapter, TestData.catalog().get(adapter.sourceId()), 7);
+
+        assertThat(store.pinned()).isTrue();
+        assertThat(Files.mismatch(snapshot.file(), TestData.BOSTON_LICENCES)).isEqualTo(-1);
+        assertThat(snapshot.sha256()).isEqualTo(SnapshotStore.sha256(TestData.BOSTON_LICENCES));
+        assertThat(Files.readString(snapshot.file().resolveSibling("manifest.json"))).contains("file:");
+    }
+
+    @Test
     void cutsTheSameBatchesEveryTimeAndSkipsCommittedOnes() throws Exception {
         SnapshotScan scan = SnapshotScan.of(TestData.BOSTON_LICENCES, adapter);
 
@@ -72,14 +93,15 @@ class SnapshotTest {
         int[] calls = {0};
 
         new BatchReader(TestData.BOSTON_LICENCES, adapter.columns(), 6, scan, Set.of())
-                .readInto(out, () -> ++calls[0] > 3);
+                .readInto(out, () -> ++calls[0] > 3, StageListener.NONE);
 
         assertThat(out.size()).isEqualTo(3);
     }
 
     private List<RawBatch> readAll(SnapshotScan scan, Set<Integer> done) throws Exception {
         var out = new BoundedChannel<RawBatch>(100);
-        new BatchReader(TestData.BOSTON_LICENCES, adapter.columns(), 6, scan, done).readInto(out, () -> false);
+        new BatchReader(TestData.BOSTON_LICENCES, adapter.columns(), 6, scan, done)
+                .readInto(out, () -> false, StageListener.NONE);
         out.close();
         var batches = new ArrayList<RawBatch>();
         for (RawBatch b; (b = out.take()) != null; ) {

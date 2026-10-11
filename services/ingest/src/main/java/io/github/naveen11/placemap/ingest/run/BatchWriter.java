@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.IntStream;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -30,9 +32,12 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Deadlocks, serialization failures and lost connections are retried with jittered backoff, at most 5 attempts.
  * Every statement is safe to repeat, so a retry after a commit whose acknowledgement was lost changes nothing: the
  * upsert is idempotent, links and checkpoints ignore rows that exist, and a place is only created if the record
- * has no link yet.
+ * has no link yet. Such a repeat is visible: its checkpoint already exists. It is logged and counted, which is how crash
+ * test C2 shows that it really cut connections between a commit and its acknowledgement.
  */
 final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
+
+    private static final Logger log = LoggerFactory.getLogger(BatchWriter.class);
 
     static final int MAX_ATTEMPTS = 5;
 
@@ -97,9 +102,14 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
 
     @Override
     public Void process(MatchedBatch matched) throws SQLException, InterruptedException {
+        int seq = matched.batch().seq();
         for (int attempt = 1; ; attempt++) {
             try {
-                write(matched);
+                if (!write(matched)) {
+                    metrics.recommitted();
+                    log.info("ingest {}: batch {} of run {} was already committed by an earlier attempt whose "
+                            + "acknowledgement was lost; repeating it changed nothing", source, seq, runId);
+                }
                 break;
             } catch (SQLException e) {
                 if (!isRetryable(e) || attempt == MAX_ATTEMPTS) {
@@ -107,21 +117,26 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
                 }
                 metrics.retried();
                 discardConnection(); // after a lost connection the old one is useless; after a deadlock it is cheap
-                Thread.sleep(backoffMillis(attempt));
+                long backoff = backoffMillis(attempt);
+                log.warn("ingest {}: batch {} of run {} failed on attempt {} of {} ({}); retrying in {} ms", source, seq,
+                        runId, attempt, MAX_ATTEMPTS, e.toString(), backoff);
+                Thread.sleep(backoff);
             }
         }
-        watermark.markDone(matched.batch().seq());
+        watermark.markDone(seq);
         metrics.committed(matched);
         return null;
     }
 
-    private void write(MatchedBatch matched) throws SQLException {
+    /** Writes and commits the batch; false if its checkpoint already existed (an earlier attempt committed it). */
+    private boolean write(MatchedBatch matched) throws SQLException {
         ParsedBatch batch = matched.batch();
         List<SourceRow> records = batch.records();
         List<Integer> byKey = IntStream.range(0, records.size()).boxed()
                 .sorted(Comparator.comparing(i -> records.get(i).key()))
                 .toList();
         Connection c = connection();
+        boolean inserted;
         try {
             try (var upsert = c.prepareStatement(UPSERT_RECORD)) {
                 for (int i : byKey) {
@@ -165,9 +180,10 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
                 done.setInt(5, batch.skipped());
                 done.setString(6, batch.checksum());
                 done.setArray(7, c.createArrayOf("text", byKey.stream().map(i -> records.get(i).key()).toArray()));
-                done.executeUpdate();
+                inserted = done.executeUpdate() == 1;
             }
             c.commit();
+            return inserted;
         } catch (SQLException | RuntimeException e) {
             rollbackQuietly(c);
             throw e;

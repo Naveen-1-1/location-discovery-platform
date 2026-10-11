@@ -19,15 +19,16 @@ public class RunStore {
             finished_at
             """;
 
-    /** What completing a run did. {@code error} is set when a safety limit failed the run instead. */
-    public record Completion(boolean complete, int rejected, int retired, String checksum, String error) {
+    /**
+     * What completing a run did. When a safety limit failed the run instead, {@code limit} names it ("rejects" or
+     * "retirements") and {@code error} explains.
+     */
+    public record Completion(boolean complete, int rejected, int retired, String checksum, String limit, String error) {
     }
 
-    private final DataSource dataSource;
     private final JdbcClient jdbc;
 
     public RunStore(DataSource dataSource) {
-        this.dataSource = dataSource;
         this.jdbc = JdbcClient.create(dataSource);
     }
 
@@ -110,14 +111,22 @@ public class RunStore {
     }
 
     public void markFailed(long runId, String error) {
-        jdbc.sql("UPDATE ingest.run SET status = 'FAILED', error = ?, finished_at = now() WHERE run_id = ?")
+        jdbc.sql("""
+                        UPDATE ingest.run SET status = 'FAILED', error = ?, finished_at = now()
+                        WHERE run_id = ? AND status IN ('FETCHING', 'RUNNING')
+                        """)
                 .params(error, runId)
                 .update();
     }
 
-    /** Notes an error on a run that stays open, to be resumed on a later tick. */
+    /**
+     * Notes an error on a run that stays open, to be resumed on a later tick. Like {@link #markFailed}, it leaves a
+     * finished run alone: an error can arrive after a commit that went through but whose acknowledgement was lost.
+     */
     public void recordError(long runId, String error) {
-        jdbc.sql("UPDATE ingest.run SET error = ? WHERE run_id = ?").params(error, runId).update();
+        jdbc.sql("UPDATE ingest.run SET error = ? WHERE run_id = ? AND status IN ('FETCHING', 'RUNNING')")
+                .params(error, runId)
+                .update();
     }
 
     public Set<Integer> doneBatches(long runId) {
@@ -133,95 +142,99 @@ public class RunStore {
      * checksum of the source's live records. Two safety limits fail the run instead of finishing it: too many
      * rejected rows, or a snapshot that would retire too large a share of the live records (a truncated download
      * looks exactly like that).
+     *
+     * @param c the connection holding the source's lock ({@link SourceLock#connection()}). If it drops, Postgres
+     *     releases the lock and rolls this transaction back together, so a run only completes while its process still
+     *     holds the lock. The connection stays open, in auto-commit mode, afterwards.
      */
-    public Completion complete(long runId, String source, double maxRejectShare, double maxRetireShare,
+    public Completion complete(Connection c, long runId, String source, double maxRejectShare, double maxRetireShare,
             List<SourcePriority.Role> roles) throws SQLException {
-        try (Connection c = dataSource.getConnection()) {
-            c.setAutoCommit(false);
-            try {
-                var tx = JdbcClient.create(new SingleConnectionDataSource(c, true));
-                // Skipped rows (out of scope by design, e.g. Overture places in Newton) are not part of the share.
-                var totals = tx.sql("""
-                                SELECT coalesce(sum(rows - skipped), 0) AS rows, coalesce(sum(rejected), 0) AS rejected
-                                FROM ingest.batch_done WHERE run_id = ?
-                                """)
-                        .param(runId)
-                        .query((rs, i) -> new int[] {rs.getInt("rows"), rs.getInt("rejected")})
-                        .single();
-                int rows = totals[0];
-                int rejected = totals[1];
-                if (rejected > maxRejectShare * rows) {
-                    String error = "%d of %d rows rejected, above the %.0f%% limit; see ingest.reject"
-                            .formatted(rejected, rows, maxRejectShare * 100);
-                    failInTransaction(tx, runId, rejected, error);
-                    c.commit();
-                    return new Completion(false, rejected, 0, null, error);
-                }
-
-                tx.sql("CREATE TEMP TABLE seen_key (source_key text PRIMARY KEY) ON COMMIT DROP").update();
-                tx.sql("""
-                                INSERT INTO seen_key
-                                SELECT DISTINCT k FROM ingest.batch_done, unnest(keys) AS k WHERE run_id = ?
-                                """)
-                        .param(runId)
-                        .update();
-                int live = tx.sql("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")
-                        .param(source)
-                        .query(Integer.class)
-                        .single();
-                int missing = tx.sql("""
-                                SELECT count(*) FROM place.source_record r
-                                WHERE r.source = ? AND r.retired_at IS NULL
-                                  AND NOT EXISTS (SELECT 1 FROM seen_key s WHERE s.source_key = r.source_key)
-                                """)
-                        .param(source)
-                        .query(Integer.class)
-                        .single();
-                if (missing > maxRetireShare * live) {
-                    String error = "would retire %d of %d live records, above the %.0f%% limit; check the source"
-                            .formatted(missing, live, maxRetireShare * 100);
-                    failInTransaction(tx, runId, rejected, error);
-                    c.commit();
-                    return new Completion(false, rejected, 0, null, error);
-                }
-                int retired = tx.sql("""
-                                UPDATE place.source_record r SET retired_at = now()
-                                WHERE r.source = ? AND r.retired_at IS NULL
-                                  AND NOT EXISTS (SELECT 1 FROM seen_key s WHERE s.source_key = r.source_key)
-                                """)
-                        .param(source)
-                        .update();
-                tx.sql("UPDATE ingest.batch_done SET keys = NULL WHERE run_id = ?").param(runId).update();
-                // Earlier runs' rejects and checkpoints have served their purpose. Without this the reject table
-                // would grow every day by the same rows (Boston's history alone rejects a few thousand) on a 1 GB
-                // database. The run rows themselves stay as the import log.
-                tx.sql("""
-                        DELETE FROM ingest.reject
-                        WHERE run_id IN (SELECT run_id FROM ingest.run WHERE source = ? AND run_id < ?)
-                        """).params(source, runId).update();
-                tx.sql("""
-                        DELETE FROM ingest.batch_done
-                        WHERE run_id IN (SELECT run_id FROM ingest.run WHERE source = ? AND run_id < ?)
-                        """).params(source, runId).update();
-                refreshPlaces(tx, source, roles);
-                refreshInspectionSummary(tx, source);
-                // Reviews this run did not repeat are stale: the record is linked now, or no longer borderline.
-                tx.sql("DELETE FROM place.match_review WHERE source = ? AND run_id <> ?").params(source, runId).update();
-                String checksum = checksum(tx, source);
-                tx.sql("""
-                                UPDATE ingest.run
-                                SET status = 'COMPLETE', rejected_rows = ?, result_checksum = ?, error = NULL,
-                                    finished_at = now()
-                                WHERE run_id = ?
-                                """)
-                        .params(rejected, checksum, runId)
-                        .update();
+        c.setAutoCommit(false);
+        try {
+            var tx = JdbcClient.create(new SingleConnectionDataSource(c, true));
+            // Skipped rows (out of scope by design, e.g. Overture places in Newton) are not part of the share.
+            var totals = tx.sql("""
+                            SELECT coalesce(sum(rows - skipped), 0) AS rows, coalesce(sum(rejected), 0) AS rejected
+                            FROM ingest.batch_done WHERE run_id = ?
+                            """)
+                    .param(runId)
+                    .query((rs, i) -> new int[] {rs.getInt("rows"), rs.getInt("rejected")})
+                    .single();
+            int rows = totals[0];
+            int rejected = totals[1];
+            if (rejected > maxRejectShare * rows) {
+                String error = "%d of %d rows rejected, above the %.0f%% limit; see ingest.reject"
+                        .formatted(rejected, rows, maxRejectShare * 100);
+                failInTransaction(tx, runId, rejected, error);
                 c.commit();
-                return new Completion(true, rejected, retired, checksum, null);
-            } catch (SQLException | RuntimeException e) {
-                c.rollback();
-                throw e;
+                return new Completion(false, rejected, 0, null, "rejects", error);
             }
+
+            tx.sql("CREATE TEMP TABLE seen_key (source_key text PRIMARY KEY) ON COMMIT DROP").update();
+            tx.sql("""
+                            INSERT INTO seen_key
+                            SELECT DISTINCT k FROM ingest.batch_done, unnest(keys) AS k WHERE run_id = ?
+                            """)
+                    .param(runId)
+                    .update();
+            int live = tx.sql("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")
+                    .param(source)
+                    .query(Integer.class)
+                    .single();
+            int missing = tx.sql("""
+                            SELECT count(*) FROM place.source_record r
+                            WHERE r.source = ? AND r.retired_at IS NULL
+                              AND NOT EXISTS (SELECT 1 FROM seen_key s WHERE s.source_key = r.source_key)
+                            """)
+                    .param(source)
+                    .query(Integer.class)
+                    .single();
+            if (missing > maxRetireShare * live) {
+                String error = "would retire %d of %d live records, above the %.0f%% limit; check the source"
+                        .formatted(missing, live, maxRetireShare * 100);
+                failInTransaction(tx, runId, rejected, error);
+                c.commit();
+                return new Completion(false, rejected, 0, null, "retirements", error);
+            }
+            int retired = tx.sql("""
+                            UPDATE place.source_record r SET retired_at = now()
+                            WHERE r.source = ? AND r.retired_at IS NULL
+                              AND NOT EXISTS (SELECT 1 FROM seen_key s WHERE s.source_key = r.source_key)
+                            """)
+                    .param(source)
+                    .update();
+            tx.sql("UPDATE ingest.batch_done SET keys = NULL WHERE run_id = ?").param(runId).update();
+            // Earlier runs' rejects and checkpoints have served their purpose. Without this the reject table
+            // would grow every day by the same rows (Boston's history alone rejects a few thousand) on a 1 GB
+            // database. The run rows themselves stay as the import log.
+            tx.sql("""
+                    DELETE FROM ingest.reject
+                    WHERE run_id IN (SELECT run_id FROM ingest.run WHERE source = ? AND run_id < ?)
+                    """).params(source, runId).update();
+            tx.sql("""
+                    DELETE FROM ingest.batch_done
+                    WHERE run_id IN (SELECT run_id FROM ingest.run WHERE source = ? AND run_id < ?)
+                    """).params(source, runId).update();
+            refreshPlaces(tx, source, roles);
+            refreshInspectionSummary(tx, source);
+            // Reviews this run did not repeat are stale: the record is linked now, or no longer borderline.
+            tx.sql("DELETE FROM place.match_review WHERE source = ? AND run_id <> ?").params(source, runId).update();
+            String checksum = checksum(tx, source);
+            tx.sql("""
+                            UPDATE ingest.run
+                            SET status = 'COMPLETE', rejected_rows = ?, result_checksum = ?, error = NULL,
+                                finished_at = now()
+                            WHERE run_id = ?
+                            """)
+                    .params(rejected, checksum, runId)
+                    .update();
+            c.commit();
+            return new Completion(true, rejected, retired, checksum, null, null);
+        } catch (SQLException | RuntimeException e) {
+            c.rollback();
+            throw e;
+        } finally {
+            restoreAutoCommit(c);
         }
     }
 
@@ -354,6 +367,14 @@ public class RunStore {
                                   JOIN place.source_record r ON r.source = l.source AND r.source_key = l.source_key
                                   WHERE l.place_id = p.place_id AND r.retired_at IS NULL)
                 """).update();
+    }
+
+    private static void restoreAutoCommit(Connection c) {
+        try {
+            c.setAutoCommit(true);
+        } catch (SQLException ignored) {
+            // the connection is gone, and the lock with it; the caller already has the error
+        }
     }
 
     private static void failInTransaction(JdbcClient tx, long runId, int rejected, String error) {

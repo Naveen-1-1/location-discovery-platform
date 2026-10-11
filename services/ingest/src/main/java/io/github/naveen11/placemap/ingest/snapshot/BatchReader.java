@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.ingest.snapshot;
 
 import io.github.naveen11.placemap.concurrent.BoundedChannel;
+import io.github.naveen11.placemap.ingest.pipeline.StageListener;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -14,7 +15,8 @@ import org.apache.commons.csv.CSVRecord;
 /**
  * Cuts a snapshot into consecutive batches of {@code batchSize} rows and hands them to the parse stage. Batches that
  * are already committed are read past but not sent. When the channel is full, {@code put} blocks and reading pauses:
- * that is the backpressure that keeps memory flat when the database is slow.
+ * that is the backpressure that keeps memory flat when the database is slow. The listener sees both: the time spent
+ * reading each batch, and the time spent waiting for room.
  */
 public final class BatchReader {
 
@@ -33,7 +35,8 @@ public final class BatchReader {
     }
 
     /** Sends every pending batch, stopping early (between batches) if asked to. Does not close the channel. */
-    public void readInto(BoundedChannel<RawBatch> out, BooleanSupplier stopRequested) throws IOException, InterruptedException {
+    public void readInto(BoundedChannel<RawBatch> out, BooleanSupplier stopRequested, StageListener listener)
+            throws IOException, InterruptedException {
         try (var parser = SnapshotCsv.open(file)) {
             SnapshotCsv.checkHeader(parser, columns, file);
             Iterator<CSVRecord> records = parser.iterator();
@@ -42,6 +45,7 @@ public final class BatchReader {
                 if (stopRequested.getAsBoolean()) {
                     return;
                 }
+                long start = System.nanoTime();
                 int firstRow = row;
                 var rows = new ArrayList<CsvRow>(batchSize);
                 while (rows.size() < batchSize && records.hasNext()) {
@@ -55,7 +59,11 @@ public final class BatchReader {
                 for (int i = 0; i < roles.length; i++) {
                     roles[i] = scan.role(firstRow + i);
                 }
-                out.put(new RawBatch(seq, firstRow, List.copyOf(rows), roles));
+                var batch = new RawBatch(seq, firstRow, List.copyOf(rows), roles);
+                long putStart = System.nanoTime();
+                listener.processed(putStart - start);
+                out.put(batch);
+                listener.blocked(System.nanoTime() - putStart);
             }
             if (row != scan.rows()) {
                 throw new SnapshotException("snapshot " + file + " changed while being read: " + row + " rows, scan saw "

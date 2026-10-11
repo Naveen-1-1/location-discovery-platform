@@ -13,6 +13,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param matchWorkers 0 means half the CPU cores, as the plan sizes the match stage
  * @param once run (or resume) this one source, then exit; empty means service mode with the scheduler
  * @param force import even if the download is identical to the last successful one
+ * @param pinnedSnapshot once mode only: import this local snapshot file instead of downloading (crash tests and
+ *     benchmarks need the same input every time)
  */
 @ConfigurationProperties("placemap.ingest")
 public record IngestProperties(
@@ -33,7 +35,15 @@ public record IngestProperties(
         @DefaultValue("0.02") double maxRejectShare,
         @DefaultValue("0.2") double maxRetireShare,
         String once,
-        @DefaultValue("false") boolean force) {
+        @DefaultValue("false") boolean force,
+        Path pinnedSnapshot) {
+
+    public IngestProperties {
+        if (pinnedSnapshot != null && (once == null || once.isBlank())) {
+            throw new IllegalArgumentException("placemap.ingest.pinned-snapshot needs once mode: the scheduler would "
+                    + "import the same file for every source");
+        }
+    }
 
     public int parseWorkerCount() {
         return parseWorkers > 0 ? parseWorkers : halfTheCores();

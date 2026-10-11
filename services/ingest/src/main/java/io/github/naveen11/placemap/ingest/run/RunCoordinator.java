@@ -13,6 +13,7 @@ import io.github.naveen11.placemap.ingest.match.PlaceIndex;
 import io.github.naveen11.placemap.ingest.pipeline.Pipeline;
 import io.github.naveen11.placemap.ingest.pipeline.PlatformThreads;
 import io.github.naveen11.placemap.ingest.pipeline.StageFailedException;
+import io.github.naveen11.placemap.ingest.pipeline.StageListener;
 import io.github.naveen11.placemap.ingest.snapshot.BatchReader;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import io.github.naveen11.placemap.ingest.snapshot.RawBatch;
@@ -117,12 +118,12 @@ public class RunCoordinator {
             log.info("ingest {}: another process is running this source; skipping", sourceId);
             return Outcome.LOCKED;
         }
-        try (SourceLock _ = lock.get()) {
+        try (SourceLock held = lock.get()) {
             RunRecord run = runs.findOpen(sourceId).map(runs::resume).orElseGet(() -> runs.create(sourceId));
             log.info("ingest {}: run {} {} (attempt {})", sourceId, run.runId(),
                     run.attempts() > 1 ? "resumed" : "started", run.attempts());
             try {
-                return execute(run, adapter, source, control, force);
+                return execute(run, adapter, source, held, control, force);
             } catch (InterruptedException e) {
                 log.info("ingest {}: run {} interrupted; it resumes on the next start", sourceId, run.runId());
                 return Outcome.STOPPED;
@@ -148,8 +149,8 @@ public class RunCoordinator {
         }
     }
 
-    private Outcome execute(RunRecord run, SourceAdapter adapter, SourceDefinition source, RunControl control,
-            boolean force) throws Exception {
+    private Outcome execute(RunRecord run, SourceAdapter adapter, SourceDefinition source, SourceLock lock,
+            RunControl control, boolean force) throws Exception {
         String sourceId = source.id();
         int batchSize = properties.batchSize();
         Snapshot snapshot;
@@ -161,7 +162,8 @@ public class RunCoordinator {
             Optional<RunRecord> last = runs.lastSuccessful(sourceId);
             // A changed place set means the records may now match differently, so it also forces a full run.
             boolean placesUnchanged = last.isPresent() && !runs.placesChangedSince(last.get().runId());
-            String version = sourceVersion(adapter, source, snapshots.http());
+            // A pinned snapshot (crash tests, benchmarks) has no publisher to ask.
+            String version = snapshots.pinned() ? null : sourceVersion(adapter, source, snapshots.http());
             if (!force && placesUnchanged && version != null && version.equals(last.get().sourceVersion())) {
                 runs.markUnchanged(run.runId(), last.get().snapshotSha256(), version);
                 snapshots.keepOnly(sourceId, run.runId());
@@ -214,10 +216,11 @@ public class RunCoordinator {
                     + " batches committed");
         }
 
-        RunStore.Completion completion = runs.complete(run.runId(), sourceId, properties.maxRejectShare(),
-                properties.maxRetireShare(), priority.roles());
+        RunStore.Completion completion = runs.complete(lock.connection(), run.runId(), sourceId,
+                properties.maxRejectShare(), properties.maxRetireShare(), priority.roles());
         snapshots.keepOnly(sourceId, run.runId());
         if (!completion.complete()) {
+            metrics.limitTripped(sourceId, completion.limit());
             log.error("ingest {}: run {} failed: {}", sourceId, run.runId(), completion.error());
             return Outcome.FAILED;
         }
@@ -279,13 +282,14 @@ public class RunCoordinator {
             runMetrics.watchQueue("match", parsed);
             runMetrics.watchQueue("upsert", matched);
             runMetrics.watchProgress(watermark, run.totalBatches());
+            StageListener readMetrics = runMetrics.stage("read");
 
             var pipeline = new Pipeline();
             // Reading the file is I/O-bound and pure Java, so a virtual thread suits it. Parsing and matching are CPU
             // work (matching also calls H3), and the upsert holds one JDBC connection per thread: all three get a
             // fixed number of platform threads.
             pipeline.source("read", Thread.ofVirtual().name("ingest-read-" + sourceId).factory(), raw,
-                    reader::readInto);
+                    (out, stopRequested) -> reader.readInto(out, stopRequested, readMetrics));
             pipeline.stage("parse", parseWorkers,
                     Thread.ofPlatform().name("ingest-parse-" + sourceId + "-", 1).factory(), raw, parsed,
                     () -> new ParseWorker(adapter, new ParseContext(categories, area.checker())),

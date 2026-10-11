@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,6 +23,9 @@ import tools.jackson.databind.json.JsonMapper;
  * Saved inputs under {@code <raw-dir>/<source>/<run_id>/} (ADR 0020): {@code snapshot.csv} plus a small
  * {@code manifest.json}. Batches are always cut from this file, so a resumed run sees exactly the rows it started
  * with. Only the latest run's snapshot is kept per source.
+ *
+ * <p>A pinned snapshot replaces the download: every run copies that local file instead of asking the publisher, so the
+ * crash tests and the backpressure benchmark import exactly the same input every time.
  */
 public class SnapshotStore {
 
@@ -29,11 +33,23 @@ public class SnapshotStore {
 
     private final Path rawDir;
     private final HttpDownloader http;
+    private final Path pinned;
     private final JsonMapper json = new JsonMapper();
 
     public SnapshotStore(Path rawDir, HttpDownloader http) {
+        this(rawDir, http, null);
+    }
+
+    /** @param pinned a snapshot file to copy instead of downloading, or null to download */
+    public SnapshotStore(Path rawDir, HttpDownloader http, Path pinned) {
         this.rawDir = rawDir;
         this.http = http;
+        this.pinned = pinned;
+    }
+
+    /** Whether runs copy a pinned local file instead of downloading. */
+    public boolean pinned() {
+        return pinned != null;
     }
 
     /** The client snapshots are downloaded with; also used to read publishers' version markers. */
@@ -47,7 +63,14 @@ public class SnapshotStore {
         Path dir = runDir(source.id(), runId);
         Files.createDirectories(dir);
         Path file = dir.resolve(FILE);
-        adapter.fetch(source, file, http);
+        if (pinned != null) {
+            // Same as a download: a partial copy never takes the snapshot's name.
+            Path part = dir.resolve(FILE + ".part");
+            Files.copy(pinned, part, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } else {
+            adapter.fetch(source, file, http);
+        }
         try (var parser = SnapshotCsv.open(file)) {
             SnapshotCsv.checkHeader(parser, adapter.columns(), file);
         }
@@ -55,7 +78,7 @@ public class SnapshotStore {
         var manifest = new LinkedHashMap<String, Object>();
         manifest.put("source", source.id());
         manifest.put("run_id", runId);
-        manifest.put("url", source.access().url());
+        manifest.put("url", pinned != null ? pinned.toAbsolutePath().toUri().toString() : source.access().url());
         manifest.put("columns", adapter.columns());
         manifest.put("bytes", snapshot.bytes());
         manifest.put("sha256", snapshot.sha256());
