@@ -29,7 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 public final class MatchEvaluation {
 
-    /** Every 0.05, and every 0.01 around today's 0.80, where the targets are decided. */
+    /** Every 0.05, and every 0.01 around the link threshold (0.81, before that 0.80), where the targets are decided. */
     static final double[] THRESHOLDS = {0.60, 0.65, 0.70, 0.75, 0.80, 0.81, 0.82, 0.83, 0.84, 0.85, 0.90};
 
     record Labelled(String caseId, String source, String band, double bestScore, int label) {

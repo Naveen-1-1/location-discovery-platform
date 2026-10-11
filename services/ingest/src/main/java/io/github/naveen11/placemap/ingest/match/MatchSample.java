@@ -30,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  * of <em>other</em> sources within 100 m that belong to a live place, best record per place. That is what the matcher
  * compares it with, since a place shows its best-ranked record's name and address; but never against the record itself
  * (a place it created would match it trivially). Its best three candidate places and its band by best score are kept:
- * {@code link} (0.80 and up, linked today), {@code near} (0.70–0.80), {@code review} (0.60–0.70) and {@code low} (below
+ * {@code link} (0.80 and up, the threshold when the sample was designed), {@code near} (0.70–0.80), {@code review} (0.60–0.70) and {@code low} (below
  * 0.60). A record with no candidate at all has nothing to judge and is only counted. The sample takes the same number
  * of cases from each band, so the rare high and borderline scores are well represented; the evaluation weights each
  * band back by its real size ({@code bands} in the meta file).
@@ -46,6 +46,8 @@ public final class MatchSample {
             "nppes_npi_pharmacies", "fdic_bank_locations", "boston_public_libraries", "boston_bcyf_community_centers");
     static final List<String> BANDS = List.of("link", "near", "review", "low");
     static final int CANDIDATES = 3;
+    /** The link band's floor: the threshold when the bands were drawn, kept so later samples compare with the first. */
+    static final double LINK_BAND = 0.80;
     static final int BLIND = 100;
 
     record Candidate(long placeId, String name, String address, String category, double meters, double score) {
@@ -55,7 +57,7 @@ public final class MatchSample {
 
         String band() {
             double best = candidates.getFirst().score();
-            return best >= Matcher.LINK_THRESHOLD ? "link" : best >= 0.70 ? "near" : best >= Matcher.REVIEW_THRESHOLD
+            return best >= LINK_BAND ? "link" : best >= 0.70 ? "near" : best >= Matcher.REVIEW_THRESHOLD
                     ? "review" : "low";
         }
     }

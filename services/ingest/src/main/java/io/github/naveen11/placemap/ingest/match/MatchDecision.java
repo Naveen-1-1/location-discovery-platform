@@ -11,7 +11,7 @@ public sealed interface MatchDecision {
     record Link(long placeId, double score, String method) implements MatchDecision {
     }
 
-    /** Borderline (0.60–0.80): stays unlinked and goes to the review list. */
+    /** Borderline (0.60 up to the link threshold): stays unlinked and goes to the review list. */
     record Review(long placeId, double score) implements MatchDecision {
     }
 

@@ -16,11 +16,11 @@ import org.locationtech.jts.io.WKTReader;
  *       key, and is never scored.
  *   <li>Score every live place within 100 m whose kind is compatible with the record's (ADR 0042: the same
  *       category, a listed pair such as food and grocery, or a record without a category) as 0.45·name +
- *       0.25·address + 0.2·distance + 0.1·category. The best one at 0.80 or above is a match. Distances to and from an outline (a park) are measured from its edge, 0 m
+ *       0.25·address + 0.2·distance + 0.1·category. The best one at 0.81 or above is a match. Distances to and from an outline (a park) are measured from its edge, 0 m
  *       inside it.
  *   <li>A low-confidence Overture record may also join a nearby place of the same category with a name similarity
  *       of at least 0.85, if another existence source backs that place (corroboration).
- *   <li>Best score 0.60–0.80: review list, record stays unlinked.
+ *   <li>Best score 0.60–0.81: review list, record stays unlinked.
  *   <li>Otherwise a new place, if this source may create one in this category; else unlinked.
  * </ol>
  *
@@ -29,7 +29,12 @@ import org.locationtech.jts.io.WKTReader;
 public final class Matcher {
 
     public static final double RADIUS_METERS = 100;
-    public static final double LINK_THRESHOLD = 0.80;
+    /**
+     * 0.81 since the Phase 5 evaluation (ADR 0042, docs/data/matching-evaluation.md): precision 0.957 and recall 0.860
+     * on the labelled sample, against 0.940 and 0.898 at the earlier 0.80. Every wrong link there was a different
+     * business at the same address.
+     */
+    public static final double LINK_THRESHOLD = 0.81;
     public static final double REVIEW_THRESHOLD = 0.60;
 
     private final PlaceIndex index;

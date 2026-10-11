@@ -86,7 +86,7 @@ class MatcherTest {
 
     @Test
     void aBorderlineMatchGoesToReviewAndCreatesNothing() {
-        // Similar name, other side of the block, no address on either side: 0.60–0.80.
+        // Similar name, other side of the block, no address on either side: between review and link.
         Matcher matcher = matcher(OSM, Map.of(), place(1, "Harbor Cafe", "food", 70, null, OVERTURE));
 
         MatchDecision decision = matcher.decide(record("n1", "Harbour Coffee", "food", 0, null, null));
