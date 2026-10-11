@@ -30,7 +30,8 @@ final class TestIngest {
                 data.resolve("source-priority.yaml"), data.resolve("area/area.geojson"), data.resolve("area.yaml"), rawDir,
                 batchSize, 2, 2, 2, 1, Duration.ofMinutes(1), Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02,
                 maxRetireShare, null, false, null,
-                new IngestProperties.Geocoder(URI.create("https://photon.invalid/api/"), 4, 100, Duration.ofSeconds(5)));
+                new IngestProperties.Geocoder(URI.create("https://photon.invalid/api/"), 4, 100, Duration.ofSeconds(5)),
+                new IngestProperties.Tool(null, null, null, 100, 1));
     }
 
     static RunCoordinator coordinator(DataSource dataSource, Path rawDir, int batchSize, HttpDownloader http,

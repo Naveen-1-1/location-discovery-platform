@@ -40,7 +40,23 @@ public record IngestProperties(
         String once,
         @DefaultValue("false") boolean force,
         Path pinnedSnapshot,
-        @DefaultValue Geocoder geocoder) {
+        @DefaultValue Geocoder geocoder,
+        @DefaultValue Tool tool) {
+
+    /**
+     * {@code placemap.ingest.tool.*}: run one tool instead of importing, then exit (tools/dev.sh match-sample,
+     * match-evaluate).
+     *
+     * @param name {@code match-sample} or {@code match-evaluate}; empty for the importer
+     * @param ownerLabels match-evaluate: the owner's blind labels, compared with the sample's
+     */
+    public record Tool(
+            String name,
+            @DefaultValue("data/eval/match-sample.csv") Path sample,
+            @DefaultValue("data/eval/match-labels-owner.csv") Path ownerLabels,
+            @DefaultValue("100") int perBand,
+            @DefaultValue("20261011") long seed) {
+    }
 
     /**
      * {@code placemap.ingest.geocoder.*}: Photon (ADR 0008), public during development (ADR 0033).
@@ -76,5 +92,9 @@ public record IngestProperties(
 
     public boolean onceMode() {
         return once != null && !once.isBlank();
+    }
+
+    public boolean toolMode() {
+        return tool != null && tool.name() != null && !tool.name().isBlank();
     }
 }

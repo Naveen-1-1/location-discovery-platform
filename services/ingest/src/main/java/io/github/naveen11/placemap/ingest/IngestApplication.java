@@ -1,7 +1,10 @@
 package io.github.naveen11.placemap.ingest;
 
+import io.github.naveen11.placemap.ingest.match.MatchEvaluation;
+import io.github.naveen11.placemap.ingest.match.MatchSample;
 import io.github.naveen11.placemap.ingest.run.IngestScheduler;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
+import javax.sql.DataSource;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -13,6 +16,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  *   <li>Service mode (default): the scheduler imports each source on its cadence and resumes unfinished runs.
  *   <li>Once mode ({@code --placemap.ingest.once=SOURCE}): run or resume one source, then exit with 0 if it completed
  *       or was unchanged, 1 otherwise. Used by tools/dev.sh ingest-once and the crash tests.
+ *   <li>Tool mode ({@code --placemap.ingest.tool.name=match-sample|match-evaluate}): draw the matching evaluation's
+ *       sample from the database, or report precision and recall from its labels, then exit.
  * </ul>
  */
 @SpringBootApplication
@@ -22,6 +27,10 @@ public class IngestApplication {
     public static void main(String[] args) {
         var context = SpringApplication.run(IngestApplication.class, args);
         var properties = context.getBean(IngestProperties.class);
+        if (properties.toolMode()) {
+            int code = runTool(properties.tool(), context.getBean(DataSource.class));
+            System.exit(SpringApplication.exit(context, () -> code));
+        }
         if (properties.onceMode()) {
             Outcome outcome = context.getBean(IngestScheduler.class).runOnce(properties.once());
             int code = outcome == Outcome.COMPLETE || outcome == Outcome.UNCHANGED ? 0 : 1;
@@ -29,6 +38,26 @@ public class IngestApplication {
             if (context.isActive()) {
                 System.exit(SpringApplication.exit(context, () -> code));
             }
+        }
+    }
+
+    private static int runTool(IngestProperties.Tool tool, DataSource dataSource) {
+        try {
+            switch (tool.name()) {
+                case "match-sample" -> {
+                    MatchSample.export(dataSource, tool.perBand(), tool.seed(), tool.sample());
+                    System.out.println("wrote " + tool.sample() + " and its meta file");
+                }
+                case "match-evaluate" -> System.out.print(MatchEvaluation.report(tool.sample(), tool.ownerLabels()));
+                default -> {
+                    System.err.println("unknown tool '" + tool.name() + "'; use match-sample or match-evaluate");
+                    return 2;
+                }
+            }
+            return 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 1;
         }
     }
 }

@@ -63,8 +63,8 @@ public class IngestScheduler implements SmartLifecycle {
     @Override
     public void start() {
         running = true;
-        if (properties.onceMode()) {
-            return; // the main thread drives the single run (IngestApplication)
+        if (properties.onceMode() || properties.toolMode()) {
+            return; // the main thread drives the single run or the tool (IngestApplication)
         }
         log.info("ingest scheduler: checking {} every {}", adapters.all().stream().map(SourceAdapter::sourceId).toList(),
                 properties.tick());

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Match labelling</title>
+<!--
+  The owner's blind check of the matching evaluation (ADR 0022, 0042). Open this file in a browser, choose
+  data/eval/match-sample.csv, and answer the 100 cases marked blind: which candidate, if any, is the same real place
+  as the record. Scores and Claude's labels are never shown. Download the answers as data/eval/match-labels-owner.csv,
+  then run tools/dev.sh match-evaluate. Everything stays in this page: nothing is sent anywhere.
+-->
+<style>
+  :root { --bg: #fff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb; --accent: #2563eb; --pick: #eff6ff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111827; --fg: #f3f4f6; --muted: #9ca3af; --line: #374151; --accent: #60a5fa; --pick: #1e3a8a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+  .record { border-width: 2px; }
+  .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .name { font-weight: 650; font-size: 1.05rem; }
+  .choices { display: grid; gap: 10px; }
+  button.choice { text-align: left; width: 100%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+  button.choice:hover, button.choice:focus-visible { border-color: var(--accent); outline: none; }
+  button.choice.picked { background: var(--pick); border-color: var(--accent); }
+  .key { display: inline-block; min-width: 1.6em; text-align: center; border: 1px solid var(--line); border-radius: 5px; margin-right: 8px; font-size: 0.85rem; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+  .bar button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: inherit; cursor: pointer; }
+  .bar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  progress { width: 160px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Is it the same place?</h1>
+  <p class="muted">For each record, pick the candidate that is the same real-world place, or "None". Keys: 1, 2, 3,
+    0 for none, ← to go back. Your answers are kept in this browser until you download them.</p>
+  <p><input type="file" id="file" accept=".csv"> <span class="muted" id="status">Choose data/eval/match-sample.csv</span></p>
+  <section id="case" hidden></section>
+  <div class="bar" id="bar" hidden>
+    <button id="back">← Back</button>
+    <progress id="progress" max="100" value="0"></progress>
+    <span class="muted" id="count"></span>
+    <button class="primary" id="download">Download labels</button>
+  </div>
+</main>
+<script>
+"use strict";
+const SOURCES = {
+  overture_places: "Overture Maps", boston_active_food_licenses: "Boston food licence",
+  boston_licensing_board_licenses: "Boston Licensing Board licence", cambridge_food_establishment_permits: "Cambridge food permit",
+  usda_snap_retailers: "USDA SNAP retailer list", nppes_npi_pharmacies: "NPPES pharmacy registry",
+  fdic_bank_locations: "FDIC bank branch list", boston_public_libraries: "Boston Public Library list",
+  boston_bcyf_community_centers: "BCYF centre list",
+};
+const STORE = "placemap-match-labels";
+let cases = [];
+let at = 0;
+let answers = {};
+
+/** RFC 4180 CSV: quoted fields may hold commas, quotes ("") and line breaks. */
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += ch;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  const [header, ...body] = rows;
+  return body.filter((r) => r.length === header.length).map((r) => Object.fromEntries(header.map((h, i) => [h, r[i]])));
+}
+
+function load() {
+  try { answers = JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { answers = {}; }
+}
+function save() {
+  try { localStorage.setItem(STORE, JSON.stringify(answers)); } catch { /* private window: answers live in memory */ }
+}
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => (k === "class" ? (node.className = v) : node.setAttribute(k, v)));
+  children.flat().forEach((c) => node.append(c instanceof Node ? c : document.createTextNode(c)));
+  return node;
+}
+
+function describe(name, category, address, extra) {
+  return [el("div", { class: "name" }, name || "(no name)"),
+          el("div", { class: "muted" }, [category, address, extra].filter(Boolean).join(" · "))];
+}
+
+function show() {
+  const section = document.getElementById("case");
+  section.hidden = false;
+  document.getElementById("bar").hidden = false;
+  const done = cases.filter((c) => answers[c.case_id] !== undefined).length;
+  document.getElementById("progress").max = cases.length;
+  document.getElementById("progress").value = done;
+  document.getElementById("count").textContent = `${done} of ${cases.length} answered`;
+  if (at >= cases.length) {
+    section.replaceChildren(el("div", { class: "card" }, "All cases answered. Download the labels and save them as ",
+      el("code", {}, "data/eval/match-labels-owner.csv"), "."));
+    return;
+  }
+  const c = cases[at];
+  const picked = answers[c.case_id];
+  const choices = [];
+  for (let k = 1; k <= 3; k++) {
+    if (!c[`cand${k}_place_id`]) continue;
+    const button = el("button", { class: picked === k ? "choice picked" : "choice" },
+      el("span", { class: "key" }, String(k)),
+      describe(c[`cand${k}_name`], c[`cand${k}_category`], c[`cand${k}_address`], `${Math.round(c[`cand${k}_meters`])} m away`));
+    button.onclick = () => answer(k);
+    choices.push(button);
+  }
+  const none = el("button", { class: picked === 0 ? "choice picked" : "choice" }, el("span", { class: "key" }, "0"), "None of these");
+  none.onclick = () => answer(0);
+  choices.push(none);
+  section.replaceChildren(
+    el("p", { class: "muted" }, `Case ${at + 1} of ${cases.length} (${c.case_id})`),
+    el("div", { class: "card record" }, el("div", { class: "label" }, SOURCES[c.source] || c.source),
+      describe(c.record_name, c.record_category, c.record_address)),
+    el("div", { class: "label" }, "Which of these is the same place?"),
+    el("div", { class: "choices" }, choices));
+}
+
+function answer(label) {
+  answers[cases[at].case_id] = label;
+  save();
+  at = Math.min(at + 1, cases.length);
+  show();
+}
+
+document.getElementById("file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  cases = parseCsv(await file.text()).filter((r) => r.blind === "1");
+  load();
+  at = Math.max(0, cases.findIndex((c) => answers[c.case_id] === undefined));
+  if (at < 0) at = cases.length;
+  document.getElementById("status").textContent = `${cases.length} blind cases loaded`;
+  show();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!cases.length || e.target instanceof HTMLInputElement) return;
+  if (["0", "1", "2", "3"].includes(e.key)) {
+    const k = Number(e.key);
+    if (k === 0 || (at < cases.length && cases[at][`cand${k}_place_id`])) answer(k);
+  } else if (e.key === "ArrowLeft") { at = Math.max(0, at - 1); show(); }
+});
+
+document.getElementById("back").onclick = () => { at = Math.max(0, at - 1); show(); };
+
+document.getElementById("download").onclick = () => {
+  const lines = ["case_id,label", ...cases.filter((c) => answers[c.case_id] !== undefined).map((c) => `${c.case_id},${answers[c.case_id]}`)];
+  const url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
+  const a = el("a", { href: url, download: "match-labels-owner.csv" });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+</script>
+</body>
+</html>

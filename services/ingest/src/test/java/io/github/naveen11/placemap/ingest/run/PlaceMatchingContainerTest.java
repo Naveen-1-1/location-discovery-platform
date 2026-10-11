@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import io.github.naveen11.placemap.ingest.OfflineHttp;
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
+import io.github.naveen11.placemap.ingest.match.MatchSample;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
@@ -242,6 +243,22 @@ class PlaceMatchingContainerTest {
         assertThat(liveCategories()).containsExactlyInAnyOrderElementsOf(goldenCategories);
         assertThat(jdbc.sql("SELECT count(*) FROM place.place WHERE name = 'New Bakery'").query(Integer.class).single())
                 .as("no duplicate place").isEqualTo(1);
+    }
+
+    /** The evaluation sample compares each record with other sources' records near it, never with its own source. */
+    @Test
+    void theEvaluationSampleScoresRecordsAgainstOtherSourcesRecords() throws Exception {
+        runAll();
+        Path sample = tmp.resolve("eval/match-sample.csv");
+
+        MatchSample.export(dataSource, 10, 1, sample);
+
+        List<String> lines = Files.readAllLines(sample);
+        assertThat(lines.getFirst()).startsWith("case_id,blind,source,source_key");
+        assertThat(lines).anySatisfy(line -> assertThat(line).contains("boston_active_food_licenses", "Corner Cafe"));
+        assertThat(lines.stream().filter(l -> l.contains(",overture_places,")).count()).as("Overture against OSM")
+                .isPositive();
+        assertThat(Files.readString(tmp.resolve("eval/match-sample-meta.json"))).contains("\"bands\"", "\"link\"");
     }
 
     /** What the filters read, refreshed at each completion for the places the run touched (ADR 0042). */

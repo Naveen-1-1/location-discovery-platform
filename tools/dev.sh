@@ -11,6 +11,9 @@
 #   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
 #   tools/dev.sh sizes     show the size of every table in the database (ADR 0034 asks to measure it)
 #   tools/dev.sh proofs c1|c2|backpressure   crash tests / backpressure benchmark on a throwaway local database
+#   tools/dev.sh match-sample     draw the matching evaluation's sample from the database (data/eval/match-sample.csv)
+#   tools/dev.sh match-evaluate   precision and recall from the labelled sample, and the owner's blind check
+#   tools/dev.sh coverage         write docs/data/coverage.md: places, sources, facts and geocodes in the database
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -111,6 +114,15 @@ case "${1:-help}" in
   proofs)
     shift
     exec python3 -I tools/ingest-proofs.py "$@"
+    ;;
+  match-sample|match-evaluate)
+    load_env
+    ./mvnw -q -B -pl services/ingest -am package -DskipTests
+    exec java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.tool.name="$1"
+    ;;
+  coverage)
+    load_env
+    exec python3 -I tools/coverage-report.py docs/data/coverage.md
     ;;
   web)
     cd frontend
