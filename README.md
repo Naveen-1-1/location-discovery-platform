@@ -37,9 +37,10 @@ tools/dev.sh migrate && tools/dev.sh tiles
 - `migrate` applies the database migrations to Neon.
 - `tiles` builds the Boston basemap file.
 
-**First import** (OSM first, so it can corroborate Overture's less certain places; then the licences match both):
+**First import** (OSM first, so it can corroborate Overture's less certain places; then the official lists match
+both):
 ```bash
-tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses
+tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses boston_food_inspections cambridge_food_establishment_permits cambridge_sanitary_inspections
 ```
 
 **Then use two terminals:**

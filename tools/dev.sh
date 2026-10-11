@@ -8,6 +8,7 @@
 #   tools/dev.sh drill     with the api running in drill mode: send failing requests to test alerting
 #   tools/dev.sh ingest    start the importer: imports each source on its cadence, resumes unfinished runs
 #   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
+#   tools/dev.sh sizes     show the size of every table in the database (ADR 0034 asks to measure it)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -89,12 +90,22 @@ case "${1:-help}" in
       java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.once="$source_id" --placemap.ingest.force="$force"
     done
     ;;
+  sizes)
+    load_env
+    psql -X -v ON_ERROR_STOP=1 -c "
+      SELECT n.nspname || '.' || c.relname AS table_name, c.reltuples::bigint AS approx_rows,
+             pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r' AND n.nspname IN ('place', 'ingest', 'app')
+      ORDER BY pg_total_relation_size(c.oid) DESC;" \
+      -c "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;"
+    ;;
   web)
     cd frontend
     [[ -d node_modules ]] || npm ci
     exec npm run dev
     ;;
   *)
-    sed -n '2,10p' "$0"
+    sed -n '2,11p' "$0"
     ;;
 esac
