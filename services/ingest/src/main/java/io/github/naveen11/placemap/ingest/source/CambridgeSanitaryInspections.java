@@ -12,6 +12,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Cambridge lists only the violations it found, so a line with a code is recorded as a failed check (Boston
  * instead lists every item checked, marked Pass or Fail).
+ *
+ * <p>Two source defects, seen 2026-10-11: 1,467 lines of complete cases lack the start date but carry the case's
+ * submission date, which every line of a case shares, so it stands in; 782 lines have no business, no date and no
+ * location at all, so they cannot be attributed and are skipped.
  */
 @Component
 public class CambridgeSanitaryInspections extends SocrataCsvSource {
@@ -19,8 +23,8 @@ public class CambridgeSanitaryInspections extends SocrataCsvSource {
     public static final String ID = "cambridge_sanitary_inspections";
 
     private static final List<String> COLUMNS = List.of(
-            "id", "business_name", "full_address", "mbl", "latitude", "longitude", "case_open_date", "case_closed_date",
-            "status", "code_number", "code_description", "date_corrected", "inpector_comments");
+            "id", "business_name", "full_address", "mbl", "latitude", "longitude", "case_open_date", "applicant_submit_date",
+            "case_closed_date", "status", "code_number", "code_description", "date_corrected", "inpector_comments");
 
     @Override
     public String sourceId() {
@@ -50,25 +54,29 @@ public class CambridgeSanitaryInspections extends SocrataCsvSource {
 
     @Override
     public String recordVersion(CsvRow row) {
-        return Optional.ofNullable(row.get("case_open_date")).orElse("");
+        return Optional.ofNullable(inspectionDate(row)).orElse("");
+    }
+
+    private static String inspectionDate(CsvRow row) {
+        return Optional.ofNullable(row.get("case_open_date")).orElse(row.get("applicant_submit_date"));
     }
 
     @Override
     public Optional<InspectionLine> inspection(CsvRow row) {
         String key = key(row);
         if (key == null) {
-            throw new IllegalArgumentException("missing business name");
+            return Optional.empty(); // an unattributable line; parse() skips it
         }
-        if (row.get("case_open_date") == null) {
+        if (inspectionDate(row) == null) {
             throw new IllegalArgumentException("missing inspection date");
         }
         InspectionLine.Violation violation = null;
         if (row.get("code_number") != null) {
             violation = new InspectionLine.Violation(row.get("code_number"), row.get("code_description"), null, "Fail",
-                    Timestamps.parse(row.get("case_open_date")), Timestamps.parse(row.get("date_corrected")),
+                    Timestamps.parse(inspectionDate(row)), Timestamps.parse(row.get("date_corrected")),
                     row.get("inpector_comments"));
         }
-        return Optional.of(new InspectionLine(key, Timestamps.parse(row.get("case_open_date")),
+        return Optional.of(new InspectionLine(key, Timestamps.parse(inspectionDate(row)),
                 Optional.ofNullable(row.get("status")).orElse("Open"), violation));
     }
 
@@ -76,7 +84,7 @@ public class CambridgeSanitaryInspections extends SocrataCsvSource {
     public RowResult parse(CsvRow row, ParseContext context) {
         String key = key(row);
         if (key == null) {
-            return RowResult.rejected("missing business name");
+            return RowResult.skipped("violation line with no business, date or location");
         }
         Double lat = null;
         Double lon = null;

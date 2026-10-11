@@ -80,16 +80,26 @@ class InspectionSourcesTest {
         List<InspectionLine> lines = rows.stream().map(r -> cambridge.inspection(r).orElseThrow()).toList();
 
         assertThat(records).containsExactly("Dado|955 Massachusetts Ave, Cambridge, MA 02139", "Lone Star Taco Bar|",
-                "Lone Star Taco Bar|635 Cambridge St, Cambridge, MA 02141");
-        assertThat(lines.stream().map(l -> l.recordKey() + l.inspectedAt()).distinct()).hasSize(6);
+                "Lone Star Taco Bar|635 Cambridge St, Cambridge, MA 02141",
+                "Ma Magoos Pizza|6 Concord Ln, Cambridge, MA 02138"); // its cases lack a start date: submission date used
+        assertThat(lines.stream().map(l -> l.recordKey() + l.inspectedAt()).distinct()).hasSize(9);
         assertThat(lines.stream().map(InspectionLine::violation).filter(v -> v != null))
-                .hasSize(9)
+                .hasSize(24)
                 .allSatisfy(v -> assertThat(v.status()).as("Cambridge lists only violations found").isEqualTo("Fail"));
         SourceRow lonestar = ((RowResult.Accepted) cambridge.parse(rows.get(IntStream.range(0, rows.size())
                 .filter(i -> scan.role(i) == RowRole.RECORD && cambridge.key(rows.get(i)).endsWith("02141"))
                 .findFirst().orElseThrow()), TestData.parseContext())).row();
         assertThat(lonestar).extracting(SourceRow::name, SourceRow::address, SourceRow::postcode)
                 .containsExactly("Lone Star Taco Bar", "635 Cambridge St", "02141");
+    }
+
+    @Test
+    void cambridgeLinesWithNoBusinessAreSkippedNotRejected() throws Exception {
+        String header = String.join(",", cambridge.columns());
+        CsvRow orphan = TestData.rows(header + "\n,,,,,,,,,,4-601.11,Equipment,,\n").getFirst();
+
+        assertThat(cambridge.inspection(orphan)).isEmpty();
+        assertThat(cambridge.parse(orphan, TestData.parseContext())).isInstanceOf(RowResult.Skipped.class);
     }
 
     @Test

@@ -35,7 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Inspection history through the real pipeline and migrations (ADR 0034): 36 real Boston lines (3 licences, 20
- * inspections, 23 violation lines) and 11 real Cambridge lines. Batches of 5 rows, so one licence's lines fall into
+ * inspections, 23 violation lines) and 26 real Cambridge lines (4 establishments, 9 inspections, 24 violations). Batches of 5 rows, so one licence's lines fall into
  * batches that commit in parallel. Needs Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -122,8 +122,8 @@ class InspectionHistoryContainerTest {
     void cambridgeCasesBecomeInspectionsWithFailedChecks() {
         assertThat(run(CambridgeSanitaryInspections.ID, dataSource, false)).isEqualTo(Outcome.COMPLETE);
 
-        assertThat(counts(CambridgeSanitaryInspections.ID)).containsEntry("records", 3)
-                .containsEntry("inspections", 6).containsEntry("violations", 9).containsEntry("summaries", 3);
+        assertThat(counts(CambridgeSanitaryInspections.ID)).containsEntry("records", 4)
+                .containsEntry("inspections", 9).containsEntry("violations", 24).containsEntry("summaries", 4);
         assertThat(jdbc.sql("SELECT count(*) FROM place.inspection_violation WHERE status <> 'Fail'")
                 .query(Integer.class).single()).isZero();
     }
