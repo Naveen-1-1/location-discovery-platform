@@ -326,12 +326,12 @@ public class RunStore {
      */
     private static void refreshPlaces(JdbcClient tx, String source, List<SourcePriority.Role> roles) {
         tx.sql("""
-                CREATE TEMP TABLE source_role (category text, source text, rank int, existence boolean,
+                CREATE TEMP TABLE source_role (category text, source text, rank int, existence boolean, name_rank int,
                                                PRIMARY KEY (category, source)) ON COMMIT DROP
                 """).update();
         for (SourcePriority.Role role : roles) {
-            tx.sql("INSERT INTO source_role VALUES (?, ?, ?, ?)")
-                    .params(role.category(), role.source(), role.rank(), role.existence())
+            tx.sql("INSERT INTO source_role VALUES (?, ?, ?, ?, ?)")
+                    .params(role.category(), role.source(), role.rank(), role.existence(), role.nameRank())
                     .update();
         }
         tx.sql("""
@@ -341,7 +341,8 @@ public class RunStore {
         tx.sql("""
                 WITH ranked AS (
                     SELECT l.place_id, r.source, r.source_key, r.name, r.category, r.geom, r.address, r.phone,
-                           r.website, coalesce(sr.rank, 1000) AS rank, coalesce(sr.existence, false) AS existence
+                           r.website, coalesce(sr.rank, 1000) AS rank, coalesce(sr.name_rank, 1000) AS name_rank,
+                           coalesce(sr.existence, false) AS existence
                     FROM touched t
                     JOIN place.place_source_link l ON l.place_id = t.place_id
                     JOIN place.source_record r ON r.source = l.source AND r.source_key = l.source_key
@@ -349,7 +350,7 @@ public class RunStore {
                     LEFT JOIN source_role sr ON sr.category = r.category AND sr.source = r.source),
                 best AS (
                     SELECT place_id,
-                           (array_agg(name ORDER BY rank, source, source_key))[1] AS name,
+                           (array_agg(name ORDER BY name_rank, rank, source, source_key))[1] AS name,
                            (array_agg(category ORDER BY rank, source, source_key)
                                FILTER (WHERE category IS NOT NULL))[1] AS category,
                            (array_agg(geom ORDER BY rank, source, source_key) FILTER (WHERE geom IS NOT NULL))[1] AS geom,

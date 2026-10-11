@@ -23,21 +23,32 @@ public final class SourcePriority {
     // The priority file names the two open sources by short names.
     private static final Map<String, String> ALIASES = Map.of("overture", OVERTURE, "osm", OSM);
 
-    private record CategoryRule(List<String> existence, List<String> enrich, List<String> overtureCorroborators) {
+    private record CategoryRule(List<String> existence, List<String> enrich, List<String> overtureCorroborators,
+            List<String> namesFrom) {
     }
 
-    /** One row for the completion step's temporary ranking table. */
-    public record Role(String category, String source, int rank, boolean existence) {
+    /**
+     * One row for the completion step's temporary ranking table. {@code nameRank} orders whose name a place shows: the
+     * category's {@code names_from} sources first (banks show Overture's or OSM's name, not FDIC's legal one), then
+     * {@code rank}.
+     */
+    public record Role(String category, String source, int rank, boolean existence, int nameRank) {
+
+        public Role(String category, String source, int rank, boolean existence) {
+            this(category, source, rank, existence, rank);
+        }
     }
 
     private final Map<String, CategoryRule> categories;
+    private final Set<Set<String>> compatible;
     private final double minConfidenceAlone;
     private final double corroborationRadiusMeters;
     private final double minCorroborationNameSimilarity;
 
-    private SourcePriority(Map<String, CategoryRule> categories, double minConfidenceAlone,
+    private SourcePriority(Map<String, CategoryRule> categories, Set<Set<String>> compatible, double minConfidenceAlone,
             double corroborationRadiusMeters, double minCorroborationNameSimilarity) {
         this.categories = categories;
+        this.compatible = compatible;
         this.minConfidenceAlone = minConfidenceAlone;
         this.corroborationRadiusMeters = corroborationRadiusMeters;
         this.minCorroborationNameSimilarity = minCorroborationNameSimilarity;
@@ -51,14 +62,28 @@ public final class SourcePriority {
         for (Map.Entry<String, JsonNode> entry : root.required("categories").properties()) {
             JsonNode rule = entry.getValue();
             categories.put(entry.getKey(), new CategoryRule(sources(rule.path("existence")), sources(rule.path("enrich")),
-                    sources(rule.path("overture_requires_corroboration_by"))));
+                    sources(rule.path("overture_requires_corroboration_by")), sources(rule.path("names_from"))));
         }
-        return new SourcePriority(Map.copyOf(categories), overture.required("min_confidence_alone").asDouble(),
+        var compatible = new LinkedHashSet<Set<String>>();
+        for (JsonNode pair : root.path("compatible_categories").values()) {
+            compatible.add(Set.of(pair.get(0).asString(), pair.get(1).asString()));
+        }
+        return new SourcePriority(Map.copyOf(categories), Set.copyOf(compatible),
+                overture.required("min_confidence_alone").asDouble(),
                 corroboration.required("radius_m").asDouble(), corroboration.required("min_name_similarity").asDouble());
     }
 
     private static List<String> sources(JsonNode list) {
         return list.values().stream().map(JsonNode::asString).map(s -> ALIASES.getOrDefault(s, s)).toList();
+    }
+
+    /**
+     * Whether a record of one category may be the same place as a place of another (ADR 0042): the same category, a
+     * pair listed under {@code compatible_categories}, or a record without a category (a licence of no app class).
+     */
+    public boolean compatible(String recordCategory, String placeCategory) {
+        return recordCategory == null || placeCategory == null || recordCategory.equals(placeCategory)
+                || compatible.contains(Set.of(recordCategory, placeCategory));
     }
 
     /** Whether records of this source may decide that a place in this category exists. */
@@ -113,14 +138,24 @@ public final class SourcePriority {
         var roles = new ArrayList<Role>();
         categories.forEach((category, rule) -> {
             for (int i = 0; i < rule.existence().size(); i++) {
-                roles.add(new Role(category, rule.existence().get(i), i, true));
+                String source = rule.existence().get(i);
+                roles.add(new Role(category, source, i, true, nameRank(rule, source, i)));
             }
             for (int i = 0; i < rule.enrich().size(); i++) {
-                if (!rule.existence().contains(rule.enrich().get(i))) {
-                    roles.add(new Role(category, rule.enrich().get(i), 100 + i, false));
+                String source = rule.enrich().get(i);
+                if (!rule.existence().contains(source)) {
+                    roles.add(new Role(category, source, 100 + i, false, nameRank(rule, source, 100 + i)));
                 }
             }
         });
         return roles;
+    }
+
+    private static int nameRank(CategoryRule rule, String source, int rank) {
+        if (rule.namesFrom().isEmpty()) {
+            return rank;
+        }
+        int listed = rule.namesFrom().indexOf(source);
+        return listed >= 0 ? listed : 1_000 + rank;
     }
 }

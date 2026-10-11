@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.ingest;
 
+import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.match.MatchEvaluation;
 import io.github.naveen11.placemap.ingest.match.MatchSample;
 import io.github.naveen11.placemap.ingest.run.IngestScheduler;
@@ -28,7 +29,7 @@ public class IngestApplication {
         var context = SpringApplication.run(IngestApplication.class, args);
         var properties = context.getBean(IngestProperties.class);
         if (properties.toolMode()) {
-            int code = runTool(properties.tool(), context.getBean(DataSource.class));
+            int code = runTool(properties.tool(), context.getBean(DataSource.class), context.getBean(SourcePriority.class));
             System.exit(SpringApplication.exit(context, () -> code));
         }
         if (properties.onceMode()) {
@@ -41,11 +42,11 @@ public class IngestApplication {
         }
     }
 
-    private static int runTool(IngestProperties.Tool tool, DataSource dataSource) {
+    private static int runTool(IngestProperties.Tool tool, DataSource dataSource, SourcePriority priority) {
         try {
             switch (tool.name()) {
                 case "match-sample" -> {
-                    MatchSample.export(dataSource, tool.perBand(), tool.seed(), tool.sample());
+                    MatchSample.export(dataSource, priority, tool.perBand(), tool.seed(), tool.sample());
                     System.out.println("wrote " + tool.sample() + " and its meta file");
                 }
                 case "match-evaluate" -> System.out.print(MatchEvaluation.report(tool.sample(), tool.ownerLabels()));

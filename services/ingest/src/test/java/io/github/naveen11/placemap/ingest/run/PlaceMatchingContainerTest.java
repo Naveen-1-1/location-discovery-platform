@@ -251,7 +251,7 @@ class PlaceMatchingContainerTest {
         runAll();
         Path sample = tmp.resolve("eval/match-sample.csv");
 
-        MatchSample.export(dataSource, 10, 1, sample);
+        MatchSample.export(dataSource, TestIngest.PRIORITY, 10, 1, sample);
 
         List<String> lines = Files.readAllLines(sample);
         assertThat(lines.getFirst()).startsWith("case_id,blind,source,source_key");

@@ -229,4 +229,41 @@ class MatcherTest {
         assertThat(matcher.decide(orphan)).as("no parcel place, and no fallback to scoring")
                 .isEqualTo(new MatchDecision.Unlinked("no boston_open_space place with this key"));
     }
+
+    @Test
+    void aDifferentKindOfPlaceNeitherLinksNorHoldsARecordBack() {
+        // MGH's medical library sits in the hospital and shares its name: before ADR 0042 the hospital went to review.
+        Matcher matcher = matcher("massgis_hospitals", Map.of(),
+                place(1, "Massachusetts General Hospital Library", "library", 20, "55 Fruit St", OSM));
+        SourceRow hospital = SourceRow.of("2168", "Massachusetts General Hospital", "hospital", LON, LAT, "55 Fruit Street",
+                null, null, null, Map.of());
+
+        assertThat(matcher.decide(hospital)).isEqualTo(new MatchDecision.Create());
+    }
+
+    @Test
+    void compatibleKindsStillMatchAndUncategorisedRecordsMatchAnything() {
+        // A deli counter's food licence describes the grocery store it is in.
+        Matcher licences = matcher(LICENCES, Map.of(), place(1, "Star Market", "grocery", 10, "45 Morrissey Blvd", OSM));
+        assertThat(licences.decide(record("l1", "Star Market", "food", 0, "45 Morrissey Blvd", null)))
+                .isInstanceOf(MatchDecision.Link.class);
+        assertThat(licences.decide(record("l2", "Star Market", null, 0, "45 Morrissey Blvd", null)))
+                .as("a licence of no app class").isInstanceOf(MatchDecision.Link.class);
+        assertThat(PRIORITY.compatible("food", "grocery")).isTrue();
+        assertThat(PRIORITY.compatible("grocery", "pharmacy")).isTrue();
+        assertThat(PRIORITY.compatible("hospital", "library")).isFalse();
+        assertThat(PRIORITY.compatible("wifi", "community_centre")).isFalse();
+    }
+
+    @Test
+    void banksShowTheNameOnTheDoorWhileFdicDecidesTheyExist() {
+        List<SourcePriority.Role> bank = PRIORITY.roles().stream().filter(r -> r.category().equals("bank")).toList();
+
+        assertThat(bank).filteredOn(r -> r.source().equals("fdic_bank_locations")).singleElement()
+                .satisfies(r -> assertThat(r.rank()).isZero());
+        assertThat(bank).filteredOn(r -> r.source().equals(OVERTURE)).singleElement()
+                .satisfies(r -> assertThat(r.nameRank()).isZero());
+        assertThat(bank).filteredOn(r -> r.source().equals("fdic_bank_locations")).singleElement()
+                .satisfies(r -> assertThat(r.nameRank()).isGreaterThan(1));
+    }
 }

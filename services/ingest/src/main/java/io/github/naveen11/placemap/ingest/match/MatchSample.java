@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.ingest.match;
 
+import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.source.SourceRow;
 import java.io.IOException;
 import java.io.Writer;
@@ -68,7 +69,8 @@ public final class MatchSample {
     }
 
     /** Writes {@code sample} (CSV) and its meta file next to it ({@code -meta.json}). */
-    public static void export(DataSource dataSource, int perBand, long seed, Path sample) throws IOException {
+    public static void export(DataSource dataSource, SourcePriority priority, int perBand, long seed, Path sample)
+            throws IOException {
         var jdbc = JdbcClient.create(dataSource);
         List<Member> members = jdbc.sql("""
                         SELECT l.place_id, r.source, r.name, r.address, r.category,
@@ -103,6 +105,9 @@ public final class MatchSample {
                 Similarity.Address address = Similarity.normalizeAddress(record.address());
                 var bestPerPlace = new LinkedHashMap<Long, Candidate>();
                 for (PlaceIndex.Nearby near : index.near(record.lon(), record.lat(), Matcher.RADIUS_METERS)) {
+                    if (!priority.compatible(record.category(), near.place().category())) {
+                        continue; // as the matcher: never a different kind of place
+                    }
                     Member m = members.get((int) near.place().placeId());
                     var candidate = new Candidate(m.placeId(), m.name(), m.address(), m.category(),
                             Math.round(near.meters() * 10) / 10.0, round(Matcher.score(record, name, address, near)));

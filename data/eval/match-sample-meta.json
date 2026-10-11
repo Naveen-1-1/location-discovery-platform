@@ -1,0 +1,76 @@
+{
+  "seed" : 20261011,
+  "radius_m" : 100.0,
+  "bands" : {
+    "link" : 9735,
+    "low" : 4181,
+    "near" : 2351,
+    "none" : 590,
+    "review" : 1917
+  },
+  "sampled" : {
+    "link" : 100,
+    "low" : 100,
+    "near" : 100,
+    "review" : 100
+  },
+  "by_source" : {
+    "boston_active_food_licenses" : {
+      "link" : 1858,
+      "low" : 468,
+      "near" : 576,
+      "none" : 46,
+      "review" : 314
+    },
+    "boston_bcyf_community_centers" : {
+      "link" : 22,
+      "low" : 5,
+      "near" : 1,
+      "none" : 1
+    },
+    "boston_licensing_board_licenses" : {
+      "link" : 1784,
+      "low" : 420,
+      "near" : 463,
+      "none" : 39,
+      "review" : 306
+    },
+    "boston_public_libraries" : {
+      "link" : 24,
+      "near" : 2
+    },
+    "cambridge_food_establishment_permits" : {
+      "link" : 707,
+      "low" : 484,
+      "near" : 255,
+      "none" : 87,
+      "review" : 169
+    },
+    "fdic_bank_locations" : {
+      "link" : 181,
+      "low" : 13,
+      "near" : 35,
+      "review" : 14
+    },
+    "nppes_npi_pharmacies" : {
+      "link" : 43,
+      "low" : 61,
+      "near" : 11,
+      "review" : 51
+    },
+    "overture_places" : {
+      "link" : 4717,
+      "low" : 2616,
+      "near" : 918,
+      "none" : 405,
+      "review" : 990
+    },
+    "usda_snap_retailers" : {
+      "link" : 399,
+      "low" : 114,
+      "near" : 90,
+      "none" : 12,
+      "review" : 73
+    }
+  }
+}
