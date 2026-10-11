@@ -2,11 +2,11 @@
   "seed" : 20261011,
   "radius_m" : 100.0,
   "bands" : {
-    "link" : 9735,
-    "low" : 4181,
-    "near" : 2351,
-    "none" : 590,
-    "review" : 1917
+    "link" : 9697,
+    "low" : 3271,
+    "near" : 2284,
+    "none" : 2052,
+    "review" : 1470
   },
   "sampled" : {
     "link" : 100,
@@ -16,61 +16,63 @@
   },
   "by_source" : {
     "boston_active_food_licenses" : {
-      "link" : 1858,
-      "low" : 468,
-      "near" : 576,
-      "none" : 46,
-      "review" : 314
+      "link" : 1853,
+      "low" : 473,
+      "near" : 567,
+      "none" : 140,
+      "review" : 229
     },
     "boston_bcyf_community_centers" : {
       "link" : 22,
-      "low" : 5,
+      "low" : 3,
       "near" : 1,
-      "none" : 1
+      "none" : 3
     },
     "boston_licensing_board_licenses" : {
-      "link" : 1784,
-      "low" : 420,
-      "near" : 463,
-      "none" : 39,
-      "review" : 306
+      "link" : 1786,
+      "low" : 416,
+      "near" : 460,
+      "none" : 64,
+      "review" : 286
     },
     "boston_public_libraries" : {
       "link" : 24,
       "near" : 2
     },
     "cambridge_food_establishment_permits" : {
-      "link" : 707,
-      "low" : 484,
-      "near" : 255,
-      "none" : 87,
-      "review" : 169
+      "link" : 706,
+      "low" : 370,
+      "near" : 248,
+      "none" : 232,
+      "review" : 146
     },
     "fdic_bank_locations" : {
-      "link" : 181,
-      "low" : 13,
-      "near" : 35,
-      "review" : 14
+      "link" : 177,
+      "low" : 11,
+      "near" : 34,
+      "none" : 11,
+      "review" : 10
     },
     "nppes_npi_pharmacies" : {
       "link" : 43,
-      "low" : 61,
-      "near" : 11,
-      "review" : 51
+      "low" : 65,
+      "near" : 9,
+      "none" : 32,
+      "review" : 17
     },
     "overture_places" : {
-      "link" : 4717,
-      "low" : 2616,
-      "near" : 918,
-      "none" : 405,
-      "review" : 990
+      "link" : 4680,
+      "low" : 1825,
+      "near" : 876,
+      "none" : 1545,
+      "review" : 720
     },
     "usda_snap_retailers" : {
-      "link" : 399,
-      "low" : 114,
-      "near" : 90,
-      "none" : 12,
-      "review" : 73
+      "link" : 406,
+      "low" : 108,
+      "near" : 87,
+      "none" : 25,
+      "review" : 62
     }
   }
 }
