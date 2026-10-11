@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isochroneUrl, nearbyUrl, NO_FILTERS, routeUrl } from "./api";
+import { isochroneUrl, nearbyUrl, NO_FILTERS, routeUrl, searchUrl } from "./api";
 import { formatDuration } from "./categories";
 import { safeWebsite } from "./PlaceFactsView";
 
@@ -32,6 +32,14 @@ describe("nearbyUrl filters", () => {
     expect(url).toBe("/api/places/nearby?lat=42.35000&lon=-71.06000&radius=500&limit=100&open=now&inspection=passed");
     expect(nearbyUrl({ lat: 42.35, lon: -71.06, mode: null, radius: 500, categories: [], filters: NO_FILTERS })).toBe(
       "/api/places/nearby?lat=42.35000&lon=-71.06000&radius=500&limit=100",
+    );
+  });
+});
+
+describe("searchUrl", () => {
+  it("trims the text and sends the map's position to three decimals", () => {
+    expect(searchUrl("  café vanille ", { lat: 42.35501, lon: -71.06568 })).toBe(
+      "/api/search?q=caf%C3%A9+vanille&lat=42.355&lon=-71.066",
     );
   });
 });

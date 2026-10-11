@@ -29,6 +29,7 @@ import { FactsLine } from "./PlaceFactsView";
 import { useLive, type Vehicle } from "./live";
 import { LiveLine, liveFor } from "./LiveLine";
 import { MapView } from "./MapView";
+import { SearchBox } from "./SearchBox";
 
 const BOSTON_COMMON = { lat: 42.355, lon: -71.0656 };
 const RADII = [500, 1000, 1500, 3000, 5000];
@@ -113,7 +114,15 @@ export function App() {
     <div className="layout">
       <aside className="panel">
         <h1>Boston Places</h1>
-        <p className="muted">Click the map to search from there.</p>
+        <SearchBox
+          near={origin}
+          onPlace={(p) => {
+            moveTo(p.lat, p.lon);
+            setSelectedId(p.id);
+          }}
+          onAddress={(a) => moveTo(a.lat, a.lon)}
+        />
+        <p className="muted">Or click the map to search from there.</p>
 
         <div className="segmented" role="radiogroup" aria-label="Sort by">
           {MODES.map((m) => (

@@ -32,6 +32,15 @@ button, select { font: inherit; }
 button.link { border: none; background: none; padding: 4px 0 0; color: var(--accent); cursor: pointer; font-size: 0.875rem; }
 button.link:disabled { color: var(--muted); cursor: default; }
 
+.search { position: relative; }
+.search input { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.search-results { position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.12); padding: 4px; display: grid; gap: 2px; max-height: 50dvh; overflow-y: auto; }
+.search-results button { display: grid; grid-template-columns: 14px 1fr; gap: 8px; align-items: baseline; text-align: left; border: none; background: none; padding: 6px; border-radius: 6px; cursor: pointer; }
+.search-results button:hover, .search-results button:focus-visible { background: #f3f4f6; }
+.search-results .dot { width: 10px; height: 10px; border-radius: 50%; }
+.search-results .pin { color: var(--muted); }
+.search-results p { padding: 4px 6px; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 2px solid; border-radius: 999px; background: var(--bg); padding: 3px 10px; cursor: pointer; font-size: 0.8125rem; }
 .chip.on { background: var(--fg); color: var(--bg); }

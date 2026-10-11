@@ -172,6 +172,22 @@ export const fetchCategories = (signal?: AbortSignal) => getJson<Category[]>("/a
 
 export const fetchNearby = (q: NearbyQuery, signal?: AbortSignal) => getJson<NearbyResponse>(nearbyUrl(q), signal);
 
+/** What the search box shows (GET /api/search). */
+export type SearchResult = {
+  places: { id: number; name: string; category: string; address: string | null; lat: number; lon: number; distanceMeters: number }[];
+  addresses: { label: string; lat: number; lon: number; kind: string }[];
+  /** "ok", "too_short" (under three letters), "busy", "timeout" or "unavailable". */
+  addressStatus: string;
+};
+
+export function searchUrl(query: string, near: Origin): string {
+  const params = new URLSearchParams({ q: query.trim(), lat: near.lat.toFixed(3), lon: near.lon.toFixed(3) });
+  return `/api/search?${params}`;
+}
+
+export const fetchSearch = (query: string, near: Origin, signal?: AbortSignal) =>
+  getJson<SearchResult>(searchUrl(query, near), signal);
+
 export const fetchPlace = (id: number, signal?: AbortSignal) => getJson<PlaceDetails>(`/api/places/${id}`, signal);
 
 export const fetchRoute = (origin: Origin, placeId: number, mode: TravelMode, signal?: AbortSignal) =>

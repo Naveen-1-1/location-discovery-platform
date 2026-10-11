@@ -242,4 +242,23 @@ class PlaceRepositoryContainerTest {
             single.destroy();
         }
     }
+
+    @Test
+    void nameSearchIgnoresAccentsAndCaseAndForgivesATypo() {
+        long cafe = jdbc.sql("""
+                        INSERT INTO place.place (name, category, geom)
+                        VALUES ('Café Vanille', 'food', ST_SetSRID(ST_MakePoint(-71.0705, 42.3580), 4326)::geography)
+                        RETURNING place_id
+                        """).query(Long.class).single();
+        jdbc.sql("""
+                INSERT INTO place.place (name, category, geom, retired_at)
+                VALUES ('Cafe Vanille (closed)', 'food', ST_SetSRID(ST_MakePoint(-71.0706, 42.3581), 4326)::geography, now())
+                """).update();
+
+        assertThat(repository.searchNames("cafe vanile", 42.355, -71.0656, 8))
+                .extracting(PlaceRepository.NameMatch::id).first().isEqualTo(cafe);
+        assertThat(repository.searchNames("VANILLE", 42.355, -71.0656, 8))
+                .extracting(PlaceRepository.NameMatch::name).containsExactly("Café Vanille");
+        assertThat(repository.searchNames("zzqx", 42.355, -71.0656, 8)).isEmpty();
+    }
 }

@@ -229,6 +229,36 @@ public class PlaceRepository {
         return List.copyOf(features);
     }
 
+    /** A place a name search found. */
+    public record NameMatch(long id, String name, String category, String address, double lat, double lon,
+            long distanceMeters) {
+    }
+
+    // "query <% name": the query matches some part of the name (pg_trgm word similarity, at least 0.6 by default),
+    // through the trigram index of migration V9. Best match first, nearer first among equals.
+    private static final String NAME_SEARCH_SQL = """
+            SELECT p.place_id, p.name, p.category, p.address,
+                   ST_Y(p.geom::geometry) AS lat, ST_X(p.geom::geometry) AS lon,
+                   ST_Distance(p.geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS distance_m
+            FROM place.place p
+            WHERE p.retired_at IS NULL AND place.search_text(:q) <% place.search_text(p.name)
+            ORDER BY word_similarity(place.search_text(:q), place.search_text(p.name)) DESC, distance_m, p.place_id
+            LIMIT :limit
+            """;
+
+    /** Live places whose name matches the typed text, accents and case aside. */
+    public List<NameMatch> searchNames(String query, double lat, double lon, int limit) {
+        return jdbc.sql(NAME_SEARCH_SQL)
+                .param("q", query)
+                .param("lat", lat)
+                .param("lon", lon)
+                .param("limit", limit)
+                .query((rs, i) -> new NameMatch(rs.getLong("place_id"), rs.getString("name"), rs.getString("category"),
+                        rs.getString("address"), rs.getDouble("lat"), rs.getDouble("lon"),
+                        Math.round(rs.getDouble("distance_m"))))
+                .list();
+    }
+
     public List<Category> categories() {
         return jdbc.sql("SELECT code, label FROM place.category ORDER BY sort_order")
                 .query(Category.class)
