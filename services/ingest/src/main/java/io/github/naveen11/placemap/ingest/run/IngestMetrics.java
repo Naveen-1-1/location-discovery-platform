@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Ingest metrics for the Ingest dashboard and alerts. Labels are only {@code source}, {@code stage}, {@code queue},
- * {@code outcome}, {@code decision} and {@code limit}, all low-cardinality, to stay far below Grafana Cloud's free series
+ * {@code outcome}, {@code decision}, {@code limit} and {@code result}, all low-cardinality, to stay far below Grafana Cloud's free series
  * limit. No two meters may map to the same Prometheus name: a counter {@code x} is exported as {@code x_total}, so no
  * gauge may be called {@code x.total}.
  */
@@ -74,6 +74,17 @@ public class IngestMetrics {
 
         void retried() {
             retries.increment();
+        }
+
+        /**
+         * One batch's geocoding: addresses answered from the cache, by the service, or not at all (a failed call), and
+         * how many records it placed.
+         */
+        void geocoded(int cached, int asked, int failed, int placed) {
+            registry.counter("placemap.ingest.geocodes", "source", source, "result", "cached").increment(cached);
+            registry.counter("placemap.ingest.geocodes", "source", source, "result", "asked").increment(asked);
+            registry.counter("placemap.ingest.geocodes", "source", source, "result", "failed").increment(failed);
+            registry.counter("placemap.ingest.geocoded.records", "source", source).increment(placed);
         }
 
         /** A retried batch turned out to be committed already: its acknowledgement was lost, not the commit. */

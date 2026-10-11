@@ -41,6 +41,11 @@ public class BostonLicensingBoard extends CkanCsvSource {
     }
 
     @Override
+    public boolean geocodesMissingLocations() {
+        return true;
+    }
+
+    @Override
     public String key(CsvRow row) {
         return row.get("license_num");
     }

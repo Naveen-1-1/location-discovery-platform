@@ -6,11 +6,18 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import io.github.naveen11.placemap.ingest.LiveHttp;
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
+import io.github.naveen11.placemap.ingest.geocode.AddressRule;
+import io.github.naveen11.placemap.ingest.geocode.Geocode;
+import io.github.naveen11.placemap.ingest.geocode.Geocoding;
+import io.github.naveen11.placemap.ingest.geocode.InMemoryGeocodeCache;
+import io.github.naveen11.placemap.ingest.geocode.PhotonGeocoder;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import java.io.BufferedReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,6 +25,7 @@ import java.util.TreeMap;
 import java.util.stream.Stream;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -35,6 +43,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class SourceContractTest {
 
     private static final double MAX_REJECT_SHARE = 0.02;
+    private static final int SAMPLE = 40;
     private static final HttpDownloader HTTP = LiveHttp.create();
 
     static Stream<SourceAdapter> adapters() {
@@ -48,7 +57,8 @@ class SourceContractTest {
                 new UsdaSnapRetailers(TestData.area()),
                 new BostonLicensingBoard(),
                 new BostonParkFeatures(),
-                new BostonWickedFreeWifi());
+                new BostonWickedFreeWifi(),
+                new NppesPharmacies(TestData.postcodes()));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -85,5 +95,33 @@ class SourceContractTest {
         int rejected = outcomes.getOrDefault("Rejected", 0);
         assertThat(outcomes.getOrDefault("Accepted", 0)).as("accepted rows").isPositive();
         assertThat((double) rejected / rows.size()).as("reject share").isLessThanOrEqualTo(MAX_REJECT_SHARE);
+    }
+
+    /**
+     * Public Photon and the acceptance rule on real pharmacy addresses: how many a sample places. Slow on purpose (one
+     * call a second, as in production), so it takes a sample, not the whole list.
+     */
+    @Test
+    void photonPlacesMostPharmaciesUnderTheAcceptanceRule(@TempDir Path dir) throws Exception {
+        var adapter = new NppesPharmacies(TestData.postcodes());
+        Path snapshot = dir.resolve("snapshot.csv");
+        adapter.fetch(TestData.catalog().get(NppesPharmacies.ID), snapshot, HTTP);
+        ParseContext context = TestData.parseContext();
+        List<SourceRow> records = TestData.rows(snapshot).stream().map(r -> adapter.parse(r, context))
+                .filter(RowResult.Accepted.class::isInstance).map(r -> ((RowResult.Accepted) r).row())
+                .filter(r -> AddressRule.query(r) != null).limit(SAMPLE).toList();
+        var photon = new PhotonGeocoder(URI.create("https://photon.komoot.io/api/"), TestData.area().bounds(),
+                Duration.ofSeconds(10), LiveHttp.client());
+        var geocoding = new Geocoding(photon, new InMemoryGeocodeCache(), 4, 1);
+        var area = TestData.area().checker();
+        Map<String, Integer> reasons = new TreeMap<>();
+        int placed = 0;
+        for (SourceRow record : records) {
+            Geocode geocode = AddressRule.decide(record, geocoding.search(AddressRule.query(record)), area);
+            placed += geocode.located() ? 1 : 0;
+            reasons.merge(geocode.located() ? "placed" : geocode.detail(), 1, Integer::sum);
+        }
+        System.out.printf("photon: %d of %d pharmacies placed %s%n", placed, records.size(), reasons);
+        assertThat(placed).as("pharmacies placed").isGreaterThanOrEqualTo(records.size() / 2);
     }
 }

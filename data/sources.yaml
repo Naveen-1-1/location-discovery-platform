@@ -442,6 +442,10 @@ sources:
     cadence: daily              # registry: "Information associated with NPIs is updated daily"
     crs: none (needs geocoding)
     join_keys: [number]         # the NPI
+    # ADR 0031: the API returns each organisation's authorised official; the importer never writes them anywhere.
+    drop_fields: [authorized_official_first_name, authorized_official_middle_name, authorized_official_last_name,
+                  authorized_official_name_prefix, authorized_official_name_suffix, authorized_official_credential,
+                  authorized_official_title_or_position, authorized_official_telephone_number]
     licence: US-Gov-Public-Domain
     licence_url: https://www.cms.gov/medicare/regulations-guidance/administrative-simplification/data-dissemination
     redistribution: "yes"

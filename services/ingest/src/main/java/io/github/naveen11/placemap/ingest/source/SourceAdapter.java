@@ -51,6 +51,14 @@ public interface SourceAdapter {
     }
 
     /**
+     * Whether records may arrive without a location but with an address, to be placed by the geocode stage (NPPES
+     * pharmacies; the few licences the city never located).
+     */
+    default boolean geocodesMissingLocations() {
+        return false;
+    }
+
+    /**
      * The source whose records this one describes under the same key, such as park features describing Boston's
      * open-space parcels by {@code OS_ID}. Such a record joins the place of the record it describes (the ID join of
      * ADR 0022) and is never scored. Empty for sources matched by name, address and distance.

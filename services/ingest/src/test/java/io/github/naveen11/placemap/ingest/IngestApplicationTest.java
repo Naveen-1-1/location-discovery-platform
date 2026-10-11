@@ -31,7 +31,11 @@ class IngestApplicationTest {
     void startsWithTheImplementedSourcesAndTheDefaults() {
         assertThat(adapters.all()).extracting(SourceAdapter::sourceId)
                 .containsExactlyInAnyOrder("boston_active_food_licenses", "overture_places", "osm_geofabrik_massachusetts",
-                        "cambridge_food_establishment_permits", "boston_food_inspections", "cambridge_sanitary_inspections");
+                        "cambridge_food_establishment_permits", "boston_food_inspections", "cambridge_sanitary_inspections",
+                        "bluebikes_station_information", "mbta_gtfs", "massgis_hospitals", "fdic_bank_locations",
+                        "afdc_alt_fuel_stations", "boston_open_space", "boston_public_libraries",
+                        "boston_bcyf_community_centers", "usda_snap_retailers", "boston_licensing_board_licenses",
+                        "boston_park_features", "boston_wicked_free_wifi", "nppes_npi_pharmacies");
         assertThat(properties.batchSize()).isEqualTo(1000);
         assertThat(properties.upsertWorkers()).isEqualTo(4);
         assertThat(properties.shutdownGrace()).hasSeconds(20);

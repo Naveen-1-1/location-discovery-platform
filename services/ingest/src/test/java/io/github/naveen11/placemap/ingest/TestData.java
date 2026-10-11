@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.ingest;
 
+import io.github.naveen11.placemap.ingest.catalog.AreaPostcodes;
 import io.github.naveen11.placemap.ingest.catalog.CategoryRules;
 import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourceCatalog;
@@ -24,6 +25,7 @@ public final class TestData {
     private static final SourceCatalog CATALOG = SourceCatalog.load(REPO.resolve("data/sources.yaml"));
     private static final CategoryRules CATEGORIES = CategoryRules.load(REPO.resolve("data/categories.yaml"));
     private static final CoverageArea AREA = CoverageArea.load(REPO.resolve("data/area/area.geojson"));
+    private static final AreaPostcodes POSTCODES = AreaPostcodes.load(REPO.resolve("data/area.yaml"));
 
     private TestData() {
     }
@@ -38,6 +40,10 @@ public final class TestData {
 
     public static CoverageArea area() {
         return AREA;
+    }
+
+    public static AreaPostcodes postcodes() {
+        return POSTCODES;
     }
 
     public static ParseContext parseContext() {

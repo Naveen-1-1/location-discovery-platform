@@ -65,6 +65,18 @@ public record SourceRow(
         return lon == null ? null : "SRID=4326;POINT(" + lon + " " + lat + ")";
     }
 
+    /**
+     * This record placed by the geocoder, or marked as not placeable: {@code geocode} in attrs records the quality
+     * ("house" or "none"), so the hash, and with it the stored record, changes when the answer does.
+     */
+    public SourceRow geocoded(Double geocodedLon, Double geocodedLat, String quality) {
+        var marked = new TreeMap<>(attrs);
+        marked.put("geocode", quality);
+        String hash = hash(name, category, geocodedLon, geocodedLat, address, postcode, phone, website, marked, outline);
+        return new SourceRow(key, name, category, geocodedLon, geocodedLat, address, postcode, phone, website, marked, hash,
+                outline);
+    }
+
     /** EWKT of the outline for PostGIS, or null. */
     public String outlineEwkt() {
         return outline == null ? null : "SRID=4326;" + outline;

@@ -20,3 +20,4 @@ placemap:
     categories-file: ../../data/categories.yaml
     source-priority-file: ../../data/source-priority.yaml
     area-file: ../../data/area/area.geojson
+    area-config-file: ../../data/area.yaml

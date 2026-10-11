@@ -37,6 +37,11 @@ public class BostonActiveFoodLicenses extends CkanCsvSource {
     }
 
     @Override
+    public boolean geocodesMissingLocations() {
+        return true;
+    }
+
+    @Override
     public String key(CsvRow row) {
         String business = row.get("businessname");
         String category = row.get("licensecat");
@@ -78,7 +83,7 @@ public class BostonActiveFoodLicenses extends CkanCsvSource {
             }
         }
         // About 6% of rows have no coordinates. They are kept without a location rather than rejected, because
-        // rejecting them would trip the 2% limit every run; they become matchable once geocoding exists (Phase 5).
+        // rejecting them would trip the 2% limit every run; the geocode stage places them from their address.
 
         // The trading name is what appears on the door (and in Overture/OSM); the legal name is kept in attrs.
         String name = Optional.ofNullable(row.get("dbaname")).orElse(row.get("businessname"));

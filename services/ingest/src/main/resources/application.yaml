@@ -38,6 +38,7 @@ placemap:
     categories-file: data/categories.yaml
     source-priority-file: data/source-priority.yaml
     area-file: data/area/area.geojson
+    area-config-file: data/area.yaml   # the towns' ZIP codes
     raw-dir: data/raw          # git-ignored
     batch-size: 1000
     upsert-workers: 4
@@ -48,3 +49,8 @@ placemap:
     max-attempts: 3
     max-reject-share: 0.02
     max-retire-share: 0.2
+    geocoder:                  # Photon (ADR 0008); the public instance in development (ADR 0033)
+      url: https://photon.komoot.io/api/
+      max-concurrent-calls: 4  # across all runs (the plan's Semaphore(4))
+      calls-per-second: 1      # fair use of the public instance; raise for our own
+      timeout: 10s

@@ -21,9 +21,16 @@ public final class LiveHttp {
     }
 
     public static HttpDownloader create() {
+        return new HttpDownloader(client());
+    }
+
+    public static HttpClient client() {
         String proxy = System.getenv("HTTPS_PROXY");
         if (proxy == null || proxy.isBlank()) {
-            return new HttpDownloader();
+            return HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(Duration.ofSeconds(30))
+                    .build();
         }
         URI uri = URI.create(proxy);
         var builder = HttpClient.newBuilder()
@@ -42,6 +49,6 @@ public final class LiveHttp {
                 }
             });
         }
-        return new HttpDownloader(builder.build());
+        return builder.build();
     }
 }

@@ -1,9 +1,13 @@
 package io.github.naveen11.placemap.ingest;
 
+import io.github.naveen11.placemap.ingest.catalog.AreaPostcodes;
 import io.github.naveen11.placemap.ingest.catalog.CategoryRules;
 import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourceCatalog;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
+import io.github.naveen11.placemap.ingest.geocode.Geocoding;
+import io.github.naveen11.placemap.ingest.geocode.JdbcGeocodeCache;
+import io.github.naveen11.placemap.ingest.geocode.PhotonGeocoder;
 import io.github.naveen11.placemap.ingest.run.IngestMetrics;
 import io.github.naveen11.placemap.ingest.run.IngestScheduler;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator;
@@ -13,6 +17,7 @@ import io.github.naveen11.placemap.ingest.snapshot.SnapshotStore;
 import io.github.naveen11.placemap.ingest.source.SourceAdapter;
 import io.github.naveen11.placemap.ingest.source.SourceAdapters;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.net.http.HttpClient;
 import java.util.List;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
@@ -43,6 +48,20 @@ class IngestConfig {
     }
 
     @Bean
+    AreaPostcodes areaPostcodes(IngestProperties properties) {
+        return AreaPostcodes.load(properties.areaConfigFile());
+    }
+
+    /** Shared by every run, so the call limits hold across runs (ADR 0008, 0033). */
+    @Bean
+    Geocoding geocoding(IngestProperties properties, CoverageArea area, DataSource dataSource) {
+        IngestProperties.Geocoder settings = properties.geocoder();
+        var client = HttpClient.newBuilder().connectTimeout(settings.timeout()).build();
+        return new Geocoding(new PhotonGeocoder(settings.url(), area.bounds(), settings.timeout(), client),
+                new JdbcGeocodeCache(dataSource), settings.maxConcurrentCalls(), settings.callsPerSecond());
+    }
+
+    @Bean
     SourceAdapters sourceAdapters(List<SourceAdapter> adapters, SourceCatalog catalog) {
         return new SourceAdapters(adapters, catalog);
     }
@@ -65,9 +84,9 @@ class IngestConfig {
     @Bean
     RunCoordinator runCoordinator(IngestProperties properties, SourceCatalog catalog, SourceAdapters adapters,
             CategoryRules categories, SourcePriority priority, CoverageArea area, SnapshotStore snapshots, RunStore runs,
-            DataSource dataSource, IngestMetrics metrics) {
+            DataSource dataSource, IngestMetrics metrics, Geocoding geocoding) {
         return new RunCoordinator(properties, catalog, adapters, categories, priority, area, snapshots, runs,
-                dataSource, metrics);
+                dataSource, metrics, geocoding);
     }
 
     @Bean

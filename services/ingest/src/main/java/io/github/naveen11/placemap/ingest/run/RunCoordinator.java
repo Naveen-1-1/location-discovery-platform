@@ -8,6 +8,7 @@ import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourceCatalog;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
+import io.github.naveen11.placemap.ingest.geocode.Geocoding;
 import io.github.naveen11.placemap.ingest.match.Matcher;
 import io.github.naveen11.placemap.ingest.match.PlaceIndex;
 import io.github.naveen11.placemap.ingest.pipeline.Pipeline;
@@ -80,10 +81,11 @@ public class RunCoordinator {
     private final RunStore runs;
     private final DataSource dataSource;
     private final IngestMetrics metrics;
+    private final Geocoding geocoding;
 
     public RunCoordinator(IngestProperties properties, SourceCatalog catalog, SourceAdapters adapters,
             CategoryRules categories, SourcePriority priority, CoverageArea area, SnapshotStore snapshots,
-            RunStore runs, DataSource dataSource, IngestMetrics metrics) {
+            RunStore runs, DataSource dataSource, IngestMetrics metrics, Geocoding geocoding) {
         this.properties = properties;
         this.catalog = catalog;
         this.adapters = adapters;
@@ -94,6 +96,7 @@ public class RunCoordinator {
         this.runs = runs;
         this.dataSource = dataSource;
         this.metrics = metrics;
+        this.geocoding = geocoding;
     }
 
     public Outcome run(String sourceId, RunControl control, boolean force) {
@@ -271,15 +274,22 @@ public class RunCoordinator {
                 () -> PlaceIndex.load(dataSource, sourceId, run.runId(), adapter.joinsSource().orElse(null)));
         var matcher = new Matcher(index, priority, sourceId);
         log.info("ingest {}: matching against {} places", sourceId, index.size());
+        // Sources whose records can lack a location get a geocode stage between parse and match, sized like parse.
+        boolean geocodes = adapter.geocodesMissingLocations();
+        int geocodeWorkers = properties.parseWorkerCount();
         // Each queue holds twice its consumers' worker count, in batches of batch-size rows (the plan's sizing).
         var raw = new BoundedChannel<RawBatch>(2 * parseWorkers);
-        var parsed = new BoundedChannel<ParsedBatch>(2 * matchWorkers);
+        var parsed = new BoundedChannel<ParsedBatch>(2 * (geocodes ? geocodeWorkers : matchWorkers));
+        var located = geocodes ? new BoundedChannel<ParsedBatch>(2 * matchWorkers) : parsed;
         var matched = new BoundedChannel<MatchedBatch>(2 * upsertWorkers);
         var reader = new BatchReader(snapshot.file(), adapter.columns(), properties.batchSize(), scan, done);
 
         try (IngestMetrics.RunMetrics runMetrics = metrics.forRun(sourceId)) {
             runMetrics.watchQueue("parse", raw);
-            runMetrics.watchQueue("match", parsed);
+            if (geocodes) {
+                runMetrics.watchQueue("geocode", parsed);
+            }
+            runMetrics.watchQueue("match", located);
             runMetrics.watchQueue("upsert", matched);
             runMetrics.watchProgress(watermark, run.totalBatches());
             StageListener readMetrics = runMetrics.stage("read");
@@ -294,8 +304,15 @@ public class RunCoordinator {
                     Thread.ofPlatform().name("ingest-parse-" + sourceId + "-", 1).factory(), raw, parsed,
                     () -> new ParseWorker(adapter, new ParseContext(categories, area.checker())),
                     runMetrics.stage("parse"));
+            if (geocodes) {
+                // Platform threads like their neighbours; each fans its batch's service calls out on virtual threads.
+                pipeline.stage("geocode", geocodeWorkers,
+                        Thread.ofPlatform().name("ingest-geocode-" + sourceId + "-", 1).factory(), parsed, located,
+                        () -> new GeocodeWorker(sourceId, geocoding, area.checker(), runMetrics),
+                        runMetrics.stage("geocode"));
+            }
             pipeline.stage("match", matchWorkers,
-                    Thread.ofPlatform().name("ingest-match-" + sourceId + "-", 1).factory(), parsed, matched,
+                    Thread.ofPlatform().name("ingest-match-" + sourceId + "-", 1).factory(), located, matched,
                     () -> new MatchWorker(matcher), runMetrics.stage("match"));
             pipeline.sink("upsert", upsertWorkers,
                     Thread.ofPlatform().name("ingest-upsert-" + sourceId + "-", 1).factory(), matched,
