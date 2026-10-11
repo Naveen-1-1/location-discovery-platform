@@ -86,10 +86,9 @@ class PlaceRepositoryContainerTest {
 
         assertThat(bruteForce).hasSizeBetween(20, 200); // the fixture really exercises the query
         assertThat(result).extracting(NearbyPlace::id).containsExactlyInAnyOrderElementsOf(bruteForce);
-        // KNN orders by sphere distance, ST_Distance reports spheroid distance: allow 1 m of disagreement.
-        for (int i = 1; i < result.size(); i++) {
-            assertThat(result.get(i).distanceMeters()).isGreaterThanOrEqualTo(result.get(i - 1).distanceMeters() - 1);
-        }
+        // The displayed distance must never decrease down the list (the KNN index alone orders by sphere distance,
+        // which disagreed with the displayed spheroid distance by 2 m before the outer re-sort was added).
+        assertThat(result).extracting(NearbyPlace::distanceMeters).isSorted();
     }
 
     @Test
