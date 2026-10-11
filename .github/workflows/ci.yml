@@ -28,6 +28,9 @@ jobs:
           java-version: '25'
           cache: maven
 
+      - name: Install osmium (the OSM importer's tests run it)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+
       - name: Build and test
         run: ./mvnw -B -ntp verify
 

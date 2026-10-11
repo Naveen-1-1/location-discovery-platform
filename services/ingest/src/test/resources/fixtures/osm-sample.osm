@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made-up objects (not OpenStreetMap data) in the shape osmium reads: for OsmSourceTest. -->
+<osm version="0.6" generator="placemap-test">
+  <node id="1" version="1" lat="42.3550" lon="-71.0656">
+    <tag k="amenity" v="cafe"/>
+    <tag k="name" v="Corner Cafe"/>
+    <tag k="addr:housenumber" v="12"/>
+    <tag k="addr:street" v="Main Street"/>
+    <tag k="addr:postcode" v="02108"/>
+    <tag k="contact:website" v="https://cafe.example"/>
+    <tag k="brand:wikidata" v="Q1"/>
+  </node>
+  <node id="2" version="1" lat="42.3560" lon="-71.0640">
+    <tag k="amenity" v="cafe"/>
+  </node>
+  <node id="3" version="1" lat="42.3565" lon="-71.0645">
+    <tag k="amenity" v="bench"/>
+    <tag k="name" v="Not A Place"/>
+  </node>
+  <node id="4" version="1" lat="42.3552" lon="-71.0650">
+    <tag k="amenity" v="atm"/>
+    <tag k="operator" v="Bank of Example"/>
+  </node>
+  <node id="5" version="1" lat="42.3651" lon="-71.1828">
+    <tag k="shop" v="supermarket"/>
+    <tag k="name" v="Watertown Market"/>
+  </node>
+  <node id="6" version="1" lat="42.2626" lon="-71.8023">
+    <tag k="amenity" v="cafe"/>
+    <tag k="name" v="Worcester Cafe"/>
+  </node>
+  <node id="7" version="1" lat="42.3736" lon="-71.1056">
+    <tag k="healthcare" v="pharmacy"/>
+    <tag k="name" v="Main Pharmacy"/>
+    <tag k="phone" v="+1 617 555 0100"/>
+  </node>
+  <node id="11" version="1" lat="42.3530" lon="-71.0700"/>
+  <node id="12" version="1" lat="42.3530" lon="-71.0640"/>
+  <node id="13" version="1" lat="42.3570" lon="-71.0640"/>
+  <node id="14" version="1" lat="42.3570" lon="-71.0700"/>
+  <way id="10" version="1">
+    <nd ref="11"/>
+    <nd ref="12"/>
+    <nd ref="13"/>
+    <nd ref="14"/>
+    <nd ref="11"/>
+    <tag k="leisure" v="park"/>
+    <tag k="name" v="Test Common"/>
+  </way>
+</osm>

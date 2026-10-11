@@ -42,7 +42,7 @@ sources:
       url: https://download.geofabrik.de/north-america/us/massachusetts-latest.osm.pbf
       api_key_env: null
       rate_limit: null          # none documented; file ~296 MB, so fetch at most once a day
-    cadence: daily              # file on 2026-10-10 held data up to 2026-10-08T20:21Z
+    cadence: weekly             # plan: weekly (~296 MB per download); Geofabrik refreshes daily (2026-10-10 file: data to 2026-10-08T20:21Z)
     crs: EPSG:4326
     join_keys: [osm_type, osm_id]
     licence: ODbL-1.0
