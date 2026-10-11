@@ -57,6 +57,7 @@
     <h3.version>4.5.0</h3.version>
     <commons-text.version>1.15.0</commons-text.version>
     <proj4j.version>1.4.3</proj4j.version>
+    <resilience4j.version>2.4.0</resilience4j.version>
 
     <!-- Plugins -->
     <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
@@ -160,6 +161,13 @@
         <groupId>org.locationtech.proj4j</groupId>
         <artifactId>proj4j-epsg</artifactId>
         <version>${proj4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.resilience4j</groupId>
+        <artifactId>resilience4j-bom</artifactId>
+        <version>${resilience4j.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>

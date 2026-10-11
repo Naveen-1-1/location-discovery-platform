@@ -1,27 +1,39 @@
 package io.github.naveen11.placemap.api.places;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.naveen11.placemap.api.routing.TravelMode;
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
 @WebMvcTest(NearbyController.class)
-@Import(CategoryCatalog.class)
+@Import({CategoryCatalog.class, OriginSnapper.class, NearbyControllerTest.Properties.class})
 class NearbyControllerTest {
+
+    @TestConfiguration
+    @EnableConfigurationProperties(NearbyProperties.class)
+    static class Properties {
+    }
 
     @Autowired
     MockMvcTester mvc;
@@ -29,30 +41,108 @@ class NearbyControllerTest {
     @MockitoBean
     PlaceRepository places;
 
+    @MockitoBean
+    NearbyService nearby;
+
     @BeforeEach
     void knownCategories() {
         when(places.categories()).thenReturn(List.of(new Category("food", "Food & drink"), new Category("gym", "Gyms")));
     }
 
     @Test
-    void returnsNearbyPlacesSortedByStraightLine() {
-        when(places.nearby(42.355, -71.0656, 800, List.of("food"), 20)).thenReturn(List.of(
-                new NearbyPlace(7, "Tatte", "food", "1 Main St", 42.356, -71.066, 112)));
+    void aStraightLineSearchUsesTheSnappedCellAndTheGivenRadius() {
+        answer("straight_line", null,
+                new NearbyPlace(7, "Tatte", "food", "1 Main St", 42.356, -71.066, 112, null, null));
 
-        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&radius=800&category=food&limit=20");
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&radius=800&category=food&limit=20").exchange();
 
         assertThat(result).hasStatusOk();
         assertThat(result).bodyJson().extractingPath("$.travelTimeSource").isEqualTo("straight_line");
+        assertThat(result).bodyJson().extractingPath("$.mode").isNull();
+        assertThat(result).bodyJson().extractingPath("$.snappedCell").asString().startsWith("8a");
+        assertThat(result).bodyJson().extractingPath("$.maxSnapErrorMeters").asNumber().satisfies(
+                n -> assertThat(n.intValue()).isBetween(60, 85));
         assertThat(result).bodyJson().extractingPath("$.places[0].name").isEqualTo("Tatte");
-        assertThat(result).bodyJson().extractingPath("$.places[0].distanceMeters").isEqualTo(112);
+        assertThat(result).bodyJson().extractingPath("$.places[0].travelSeconds").isNull();
+        NearbyQuery asked = askedQuery();
+        assertThat(asked.mode()).isNull();
+        assertThat(asked.radiusMeters()).isEqualTo(800);
+        assertThat(asked.categories()).containsExactly("food");
+    }
+
+    @Test
+    void aWalkingSearchUsesTheModesRadiusAndReturnsTravelTimes() {
+        answer("openrouteservice", null,
+                new NearbyPlace(3, "Near", "food", null, 42.356, -71.066, 300, 240L, 310L),
+                new NearbyPlace(4, "Farther", "food", null, 42.357, -71.067, 200, 600L, 800L),
+                new NearbyPlace(5, "Third", "food", null, 42.358, -71.068, 400, 700L, 900L));
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&mode=walk&limit=2").exchange();
+
+        assertThat(result).hasStatusOk();
+        assertThat(result).bodyJson().extractingPath("$.mode").isEqualTo("walk");
+        assertThat(result).bodyJson().extractingPath("$.radiusMeters").isEqualTo(2_500);
+        assertThat(result).bodyJson().extractingPath("$.driveWithoutTraffic").isEqualTo(false);
+        assertThat(result).bodyJson().extractingPath("$.places.length()").isEqualTo(2);
+        assertThat(result).bodyJson().extractingPath("$.places[0].travelSeconds").isEqualTo(240);
+        assertThat(askedQuery().mode()).isEqualTo(TravelMode.WALK);
+    }
+
+    @Test
+    void aDrivingSearchIsLabelledWithoutTrafficAndARadiusOnlyNarrowsIt() {
+        answer("openrouteservice", null);
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&mode=drive&radius=5000").exchange();
+
+        assertThat(result).bodyJson().extractingPath("$.driveWithoutTraffic").isEqualTo(true);
+        assertThat(askedQuery().radiusMeters()).isEqualTo(5_000);
+    }
+
+    @Test
+    void aFallbackIsFlagged() {
+        answer("straight_line", "timeout");
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&mode=bike").exchange();
+
+        assertThat(result).bodyJson().extractingPath("$.travelTimeSource").isEqualTo("straight_line");
+        assertThat(result).bodyJson().extractingPath("$.fallback").isEqualTo("timeout");
+    }
+
+    @Test
+    void aBusyDatabaseAnswers503WithRetryAfter() {
+        when(nearby.nearby(any(), any())).thenReturn(CompletableFuture.failedFuture(
+                BulkheadFullException.createBulkheadFullException(Bulkhead.ofDefaults("database"))));
+
+        var result = mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656&mode=walk").exchange();
+
+        assertThat(result).hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .hasContentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+                .hasHeader(HttpHeaders.RETRY_AFTER, "1");
+    }
+
+    @Test
+    void aMissedDeadlineAnswers503WithRetryAfter() {
+        when(nearby.nearby(any(), any())).thenReturn(CompletableFuture.failedFuture(new TimeoutException()));
+
+        assertThat(mvc.get().uri("/api/places/nearby?lat=42.355&lon=-71.0656").exchange())
+                .hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .hasHeader(HttpHeaders.RETRY_AFTER, "1");
+    }
+
+    @Test
+    void rejectsAnUnknownMode() {
+        var result = mvc.get().uri("/api/places/nearby?lat=42.35&lon=-71.06&mode=teleport").exchange();
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(result).bodyJson().extractingPath("$.detail").asString().contains("walk, bike or drive");
     }
 
     @Test
     void rejectsOutOfRangeLatitudeAsProblemDetail() {
-        var result = mvc.get().uri("/api/places/nearby?lat=100&lon=-71.06");
+        var result = mvc.get().uri("/api/places/nearby?lat=100&lon=-71.06").exchange();
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON);
-        verify(places, never()).nearby(anyDouble(), anyDouble(), anyInt(), anyList(), anyInt());
+        verify(nearby, never()).nearby(any(), any());
     }
 
     @Test
@@ -62,9 +152,21 @@ class NearbyControllerTest {
 
     @Test
     void rejectsUnknownCategory() {
-        var result = mvc.get().uri("/api/places/nearby?lat=42.35&lon=-71.06&category=food&category=casino");
+        var result = mvc.get().uri("/api/places/nearby?lat=42.35&lon=-71.06&category=food&category=casino").exchange();
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(result).bodyJson().extractingPath("$.detail").isEqualTo("Unknown category: casino");
+    }
+
+    /** Makes the service answer with these places, whatever the query; {@link #askedQuery()} shows the query. */
+    private void answer(String source, String fallback, NearbyPlace... found) {
+        when(nearby.nearby(any(), any())).thenAnswer(invocation -> CompletableFuture.completedFuture(
+                new NearbyResult(invocation.getArgument(0), source, fallback, List.of(found))));
+    }
+
+    private NearbyQuery askedQuery() {
+        var captor = ArgumentCaptor.forClass(NearbyQuery.class);
+        verify(nearby).nearby(captor.capture(), any());
+        return captor.getValue();
     }
 }

@@ -1,15 +1,23 @@
 package io.github.naveen11.placemap.api.places;
 
+import io.github.naveen11.placemap.api.Deadline;
+import io.github.naveen11.placemap.api.routing.TravelMode;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,46 +28,126 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api")
 public class NearbyController {
 
-    /** Phase 1 sorts by straight-line distance only; Phase 3 adds routed travel times (ADR 0026). */
-    static final String TRAVEL_TIME_SOURCE = "straight_line";
+    /** The straight-line search radius when the client gives none. */
+    static final int DEFAULT_RADIUS = 1_500;
 
     private static final Logger log = LoggerFactory.getLogger(NearbyController.class);
 
-    private final PlaceRepository places;
+    private final NearbyService nearby;
+    private final OriginSnapper snapper;
     private final CategoryCatalog catalog;
+    private final NearbyProperties properties;
 
-    public NearbyController(PlaceRepository places, CategoryCatalog catalog) {
-        this.places = places;
+    public NearbyController(NearbyService nearby, OriginSnapper snapper, CategoryCatalog catalog,
+            NearbyProperties properties) {
+        this.nearby = nearby;
+        this.snapper = snapper;
         this.catalog = catalog;
+        this.properties = properties;
     }
 
+    /**
+     * @param lat the snapped origin: the centre of the search's H3 cell, not the position the client sent
+     * @param maxSnapErrorMeters how far that position can be from the centre (the UI shows "approx. 70 m")
+     * @param mode walk, bike or drive; null for a straight-line search
+     * @param travelTimeSource the routing engine that gave the travel times, or {@code straight_line}
+     * @param fallback why a search with a mode has no travel times; null otherwise
+     * @param driveWithoutTraffic drive times assume empty roads (ADR 0006)
+     */
     public record NearbyResponse(
-            double lat, double lon, int radiusMeters, String travelTimeSource, List<NearbyPlace> places) {}
+            String snappedCell,
+            double lat,
+            double lon,
+            int maxSnapErrorMeters,
+            String mode,
+            int radiusMeters,
+            String travelTimeSource,
+            String fallback,
+            boolean driveWithoutTraffic,
+            List<NearbyPlace> places) {}
 
+    /**
+     * Places near a point. Without {@code mode}: the nearest within {@code radius}, by straight-line distance. With
+     * {@code mode}: the nearest candidates within the mode's search radius (capped by {@code radius} if given), sorted
+     * by travel time.
+     */
     @GetMapping("/places/nearby")
     public NearbyResponse nearby(
             @RequestParam @DecimalMin("-90") @DecimalMax("90") double lat,
             @RequestParam @DecimalMin("-180") @DecimalMax("180") double lon,
-            @RequestParam(defaultValue = "1500") @Min(50) @Max(5000) int radius,
+            @RequestParam(required = false) String mode,
+            @RequestParam(required = false) @Min(50) @Max(20_000) Integer radius,
             @RequestParam(name = "category", required = false) List<String> categories,
-            @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
-        var wanted = categories == null ? List.<String>of() : categories.stream().distinct().toList();
+            @RequestParam(defaultValue = "50") @Min(1) @Max(NearbyService.CANDIDATES) int limit) {
+        Deadline deadline = Deadline.after(properties.deadline());
+        TravelMode travelMode = parseMode(mode);
+        var wanted = categories == null ? List.<String>of() : categories;
         var unknown = wanted.stream().filter(c -> !catalog.isKnown(c)).collect(Collectors.toCollection(TreeSet::new));
         if (!unknown.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown category: " + String.join(", ", unknown));
         }
-        var found = places.nearby(lat, lon, radius, wanted, limit);
-        // Never log coordinates (privacy): the trace id on this line is what links it to the request's trace.
+        int searchRadius = travelMode == null
+                ? (radius == null ? DEFAULT_RADIUS : radius)
+                : Math.min(radius == null ? Integer.MAX_VALUE : radius, NearbyService.searchRadius(travelMode));
+        var query = new NearbyQuery(snapper.snap(lat, lon), travelMode, wanted, searchRadius);
+
+        NearbyResult result = await(nearby.nearby(query, deadline));
+
+        List<NearbyPlace> shown = result.places().subList(0, Math.min(limit, result.places().size()));
+        // Never log coordinates or the cell (privacy): the trace id on this line links it to the request's trace.
         log.atInfo()
-                .addKeyValue("radius_m", radius)
-                .addKeyValue("categories", wanted.isEmpty() ? "all" : String.join(",", wanted))
-                .addKeyValue("results", found.size())
+                .addKeyValue("mode", travelMode == null ? "straight_line" : travelMode.param())
+                .addKeyValue("radius_m", searchRadius)
+                .addKeyValue("categories", wanted.isEmpty() ? "all" : String.join(",", query.categories()))
+                .addKeyValue("travel_time_source", result.travelTimeSource())
+                .addKeyValue("fallback", result.fallback() == null ? "none" : result.fallback())
+                .addKeyValue("results", shown.size())
                 .log("nearby search");
-        return new NearbyResponse(lat, lon, radius, TRAVEL_TIME_SOURCE, found);
+        SnappedOrigin origin = query.origin();
+        return new NearbyResponse(origin.cell(), origin.lat(), origin.lon(), origin.maxErrorMeters(),
+                travelMode == null ? null : travelMode.param(), searchRadius, result.travelTimeSource(),
+                result.fallback(), travelMode == TravelMode.DRIVE, shown);
     }
 
     @GetMapping("/categories")
     public List<Category> categories() {
         return catalog.all();
+    }
+
+    private static TravelMode parseMode(String mode) {
+        if (mode == null) {
+            return null;
+        }
+        try {
+            return TravelMode.fromParam(mode);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /** Overload answers 503 with Retry-After (ADR 0026): the database is saturated, or the deadline passed. */
+    private static NearbyResult await(CompletableFuture<NearbyResult> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof BulkheadFullException) {
+                throw unavailable("The database is busy. Try again in a moment.", cause);
+            }
+            if (cause instanceof TimeoutException) {
+                throw unavailable("The search took too long. Try again in a moment.", cause);
+            }
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw e;
+        }
+    }
+
+    private static ErrorResponseException unavailable(String detail, Throwable cause) {
+        var error = new ErrorResponseException(HttpStatus.SERVICE_UNAVAILABLE, cause);
+        error.setDetail(detail);
+        error.getHeaders().set(HttpHeaders.RETRY_AFTER, "1");
+        return error;
     }
 }

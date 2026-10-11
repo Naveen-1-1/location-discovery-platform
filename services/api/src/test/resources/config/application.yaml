@@ -1,4 +1,5 @@
-# Loaded on top of src/main/resources/application.yaml (config/ wins). Tests never export telemetry.
+# Loaded on top of src/main/resources/application.yaml (config/ wins). Tests never export telemetry and never
+# call the real routing engine.
 management:
   otlp:
     metrics:
@@ -12,3 +13,8 @@ management:
     export:
       otlp:
         enabled: false
+
+placemap:
+  routing:
+    ors:
+      api-key: ""

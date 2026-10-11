@@ -53,7 +53,9 @@ public class PlaceRepository {
                         rs.getString("address"),
                         rs.getDouble("lat"),
                         rs.getDouble("lon"),
-                        Math.round(rs.getDouble("distance_m"))))
+                        Math.round(rs.getDouble("distance_m")),
+                        null,
+                        null))
                 .list();
     }
 

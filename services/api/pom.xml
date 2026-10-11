@@ -42,9 +42,32 @@
       <groupId>net.ttddyy.observation</groupId>
       <artifactId>datasource-micrometer-spring-boot</artifactId>
     </dependency>
+    <!-- RestClient for the routing engine, with client spans and http.client.requests metrics. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-restclient</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.github.ben-manes.caffeine</groupId>
       <artifactId>caffeine</artifactId>
+    </dependency>
+    <!-- Bulkheads and the routing circuit breaker (ADR 0010, 0026): the core libraries, wired with @Bean. -->
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-bulkhead</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-circuitbreaker</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-micrometer</artifactId>
+    </dependency>
+    <!-- Snapping the search origin to an H3 cell (ADR 0025). Native code: each call takes microseconds. -->
+    <dependency>
+      <groupId>com.uber</groupId>
+      <artifactId>h3</artifactId>
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
@@ -99,8 +122,9 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <!-- Load Mockito's agent at JVM start (Mockito's advice for JDK 21+) instead of self-attaching at runtime,
-               which newer JDKs warn about and restricted environments block. -->
-          <argLine>-javaagent:${org.mockito:mockito-core:jar}</argLine>
+               which newer JDKs warn about and restricted environments block. H3 loads native code, as in production
+               (tools/dev.sh passes the same flag). -->
+          <argLine>-javaagent:${org.mockito:mockito-core:jar} --enable-native-access=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
       <plugin>

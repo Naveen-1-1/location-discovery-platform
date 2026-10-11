@@ -53,6 +53,12 @@ management:
   # OTLP endpoints and auth come from OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS / _PROTOCOL in .env, which Spring Boot
   # maps onto its own properties for traces, metrics and logs.
 
+logging:
+  level:
+    # The cache logs every failed load with a stack trace. Nearby counts overload rejections
+    # (placemap.nearby.rejected) and logs real database errors itself.
+    "[com.github.benmanes.caffeine.cache.LocalAsyncCache]": error
+
 jdbc:
   datasource-proxy:
     include-parameter-values: false   # keep coordinates out of trace attributes
@@ -60,3 +66,12 @@ jdbc:
 placemap:
   drills:
     enabled: ${PLACEMAP_DRILLS:false}
+  nearby:
+    deadline: 1500ms             # ADR 0026
+    # The plan's 800 ms is for a local Valhalla; openrouteservice is across the internet (ADR 0033).
+    travel-time-timeout: 1s
+  routing:
+    ors:
+      api-key: ${ORS_API_KEY:}   # from .env; empty means straight-line distances only
+      matrix-timeout: 1s         # a backstop: nearby enforces travel-time-timeout itself
+      timeout: 5s
