@@ -1,0 +1,60 @@
+# promtool test rules infra/observability/alerts/ingest.rules.test.yaml
+rule_files:
+  - ingest.rules.yaml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # A one-off run (once mode) that failed: its only sample is the export at exit, minute 10.
+      - series: 'placemap_ingest_runs_total{job="placemap/ingest", outcome="failed", source="osm", instance="once"}'
+        values: '_x10 1'
+      # A long-running importer: the counter is exported as 0 for 20 minutes, then a run fails.
+      - series: 'placemap_ingest_runs_total{job="placemap/ingest", outcome="failed", source="overture", instance="svc"}'
+        values: '0x19 1x40'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: IngestRunFailed
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: IngestRunFailed
+        exp_alerts:
+          - &osm
+            exp_labels: {severity: ticket, source: osm}
+            exp_annotations:
+              summary: "the osm import failed"
+              description: "A bad download, a safety limit, or too many attempts. The map keeps the last good import; the reason is in ingest.run.error."
+              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+      - eval_time: 21m
+        alertname: IngestRunFailed
+        exp_alerts:
+          - *osm
+          - &overture
+            exp_labels: {severity: ticket, source: overture}
+            exp_annotations:
+              summary: "the overture import failed"
+              description: "A bad download, a safety limit, or too many attempts. The map keeps the last good import; the reason is in ingest.run.error."
+              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+      - eval_time: 26m
+        alertname: IngestRunFailed
+        exp_alerts:
+          - *overture
+      # 20 minutes after the failure the long-running importer still exports 1, but nothing new happened.
+      - eval_time: 40m
+        alertname: IngestRunFailed
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'placemap_ingest_limit_trips_total{job="placemap/ingest", limit="rejects", source="boston_food_inspections", instance="once"}'
+        values: '_x5 1'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: IngestSafetyLimitTripped
+        exp_alerts:
+          - exp_labels: {severity: ticket, source: boston_food_inspections, limit: rejects}
+            exp_annotations:
+              summary: "the rejects limit stopped the boston_food_inspections import"
+              description: "Too many rejected rows (over 2%) or records to retire (over 20%); nothing was retired. Check the source before re-running."
+              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+      - eval_time: 25m
+        alertname: IngestSafetyLimitTripped
+        exp_alerts: []

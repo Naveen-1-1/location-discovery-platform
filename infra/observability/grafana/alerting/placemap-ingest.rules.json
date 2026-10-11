@@ -1,0 +1,125 @@
+{
+ "title": "placemap-ingest",
+ "folderUid": "placemap",
+ "interval": 60,
+ "rules": [
+  {
+   "uid": "placemap-ingest-run-failed",
+   "title": "IngestRunFailed",
+   "condition": "C",
+   "for": "0s",
+   "noDataState": "OK",
+   "execErrState": "Error",
+   "labels": {
+    "severity": "ticket",
+    "service": "ingest"
+   },
+   "annotations": {
+    "summary": "the {{ $labels.source }} import failed",
+    "description": "A run of {{ $labels.source }} was closed as FAILED: a bad download, a safety limit, or too many attempts. The map keeps the last good import. The reason is in ingest.run.error; see the runbook.",
+    "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+   },
+   "notification_settings": {
+    "receiver": "email-placemap"
+   },
+   "data": [
+    {
+     "refId": "A",
+     "relativeTimeRange": {
+      "from": 1800,
+      "to": 0
+     },
+     "datasourceUid": "grafanacloud-prom",
+     "model": {
+      "refId": "A",
+      "expr": "sum by (source) ((increase(placemap_ingest_runs_total{outcome=\"failed\", job=\"placemap/ingest\", deployment_environment!=\"benchmark\"}[15m]) > 0) or (max_over_time(placemap_ingest_runs_total{outcome=\"failed\", job=\"placemap/ingest\", deployment_environment!=\"benchmark\"}[15m]) > 0 unless max_over_time(placemap_ingest_runs_total{outcome=\"failed\", job=\"placemap/ingest\", deployment_environment!=\"benchmark\"}[15m] offset 15m)))",
+      "instant": true,
+      "range": false
+     }
+    },
+    {
+     "refId": "C",
+     "relativeTimeRange": {
+      "from": 0,
+      "to": 0
+     },
+     "datasourceUid": "__expr__",
+     "model": {
+      "refId": "C",
+      "type": "threshold",
+      "expression": "A",
+      "conditions": [
+       {
+        "evaluator": {
+         "type": "gt",
+         "params": [
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "uid": "placemap-ingest-safety-limit",
+   "title": "IngestSafetyLimitTripped",
+   "condition": "C",
+   "for": "0s",
+   "noDataState": "OK",
+   "execErrState": "Error",
+   "labels": {
+    "severity": "ticket",
+    "service": "ingest"
+   },
+   "annotations": {
+    "summary": "the {{ $labels.limit }} limit stopped the {{ $labels.source }} import",
+    "description": "Completing the run would have stored too many rejected rows (over 2%) or retired too many records (over 20%), so nothing was retired and the run failed. Check the source before re-running; see the runbook.",
+    "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+   },
+   "notification_settings": {
+    "receiver": "email-placemap"
+   },
+   "data": [
+    {
+     "refId": "A",
+     "relativeTimeRange": {
+      "from": 1800,
+      "to": 0
+     },
+     "datasourceUid": "grafanacloud-prom",
+     "model": {
+      "refId": "A",
+      "expr": "sum by (source, limit) ((increase(placemap_ingest_limit_trips_total{job=\"placemap/ingest\", deployment_environment!=\"benchmark\"}[15m]) > 0) or (max_over_time(placemap_ingest_limit_trips_total{job=\"placemap/ingest\", deployment_environment!=\"benchmark\"}[15m]) > 0 unless max_over_time(placemap_ingest_limit_trips_total{job=\"placemap/ingest\", deployment_environment!=\"benchmark\"}[15m] offset 15m)))",
+      "instant": true,
+      "range": false
+     }
+    },
+    {
+     "refId": "C",
+     "relativeTimeRange": {
+      "from": 0,
+      "to": 0
+     },
+     "datasourceUid": "__expr__",
+     "model": {
+      "refId": "C",
+      "type": "threshold",
+      "expression": "A",
+      "conditions": [
+       {
+        "evaluator": {
+         "type": "gt",
+         "params": [
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
