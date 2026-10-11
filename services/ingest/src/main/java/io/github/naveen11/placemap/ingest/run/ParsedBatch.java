@@ -1,0 +1,18 @@
+package io.github.naveen11.placemap.ingest.run;
+
+import io.github.naveen11.placemap.ingest.source.SourceRow;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * A parsed batch, ready to commit in one transaction.
+ *
+ * @param rows rows in the raw batch (accepted + rejected)
+ * @param checksum sha-256 of the raw rows, stored with the checkpoint
+ */
+public record ParsedBatch(int seq, int rows, List<SourceRow> records, List<Reject> rejects, String checksum) {
+
+    /** @param rowNo position within the batch */
+    public record Reject(int rowNo, String reason, Map<String, String> record) {
+    }
+}

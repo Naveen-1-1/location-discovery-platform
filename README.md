@@ -24,7 +24,7 @@ the project from the start.
 
 The reasoning behind every design choice is in [docs/adr](docs/adr/).
 
-## Running locally (Phase 1)
+## Running locally
 Development is hybrid: the Java services run on your machine, while the database (Neon), monitoring (Grafana
 Cloud), and later routing and search use free cloud tiers (see [ADR 0033](docs/adr/0033-hybrid-development-setup.md)).
 
@@ -43,6 +43,16 @@ tools/dev.sh migrate && tools/dev.sh seed && tools/dev.sh tiles
 tools/dev.sh api    # http://localhost:8080
 tools/dev.sh web    # http://localhost:5173  ← open this
 ```
+
+**Importer (Phase 2):** imports official and open data into the database on each source's cadence and resumes
+any import that was interrupted (see [ADR 0020](docs/adr/0020-import-crash-safety.md) and
+[ADR 0021](docs/adr/0021-ingest-run-mode.md)).
+```bash
+tools/dev.sh ingest                                         # keeps running, imports when due
+tools/dev.sh ingest-once boston_active_food_licenses        # one import now, then exit
+```
+Downloads are saved under `data/raw/` (git-ignored). Personal fields are never downloaded
+([ADR 0031](docs/adr/0031-personal-data-dropped-at-import.md)).
 
 ## Building
 Requires JDK 25 (Temurin) and Maven 3.9.6 or newer. Docker Desktop must be running for the database

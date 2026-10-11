@@ -1,0 +1,325 @@
+package io.github.naveen11.placemap.ingest.run;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.github.naveen11.placemap.ingest.IngestProperties;
+import io.github.naveen11.placemap.ingest.TestData;
+import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
+import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
+import io.github.naveen11.placemap.ingest.snapshot.SnapshotStore;
+import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
+import io.github.naveen11.placemap.ingest.source.SourceAdapters;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DelegatingDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.images.builder.ImageFromDockerfile;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+/**
+ * Whole runs against the real migrations on our PostGIS image (ADR 0020, 0021). The "download" copies a local file,
+ * so each test controls exactly what the publisher serves. Needs Docker; skipped (not failed) without it.
+ */
+@Testcontainers(disabledWithoutDocker = true)
+class IngestRunContainerTest {
+
+    private static final Path POSTGIS_IMAGE_DIR = Path.of("../../infra/docker/postgis").toAbsolutePath().normalize();
+    private static final String SOURCE = BostonActiveFoodLicenses.ID;
+    private static final int BATCH_SIZE = 7; // 40 fixture rows → 6 batches, so resume and parallel commits matter
+
+    @Container
+    static final GenericContainer<?> POSTGIS = new GenericContainer<>(
+                    new ImageFromDockerfile("placemap/postgis-test", false).withFileFromPath(".", POSTGIS_IMAGE_DIR))
+            .withEnv("POSTGRES_DB", "placemap")
+            .withEnv("POSTGRES_PASSWORD", "test")
+            .withExposedPorts(5432)
+            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
+
+    private static String url;
+    private static DataSource dataSource;
+    private static JdbcClient jdbc;
+
+    @TempDir
+    Path tmp;
+
+    /** What the fake publisher serves on the next download. */
+    private final AtomicReference<Path> published = new AtomicReference<>(TestData.BOSTON_LICENCES);
+
+    @BeforeAll
+    static void migrate() {
+        url = "jdbc:postgresql://%s:%d/placemap?reWriteBatchedInserts=true".formatted(POSTGIS.getHost(),
+                POSTGIS.getMappedPort(5432));
+        dataSource = new DriverManagerDataSource(url, "postgres", "test");
+        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        jdbc = JdbcClient.create(dataSource);
+    }
+
+    @BeforeEach
+    void emptyTables() {
+        jdbc.sql("TRUNCATE ingest.reject, ingest.batch_done, place.source_record, ingest.run RESTART IDENTITY CASCADE")
+                .update();
+    }
+
+    @Test
+    void firstRunStoresEveryRowAndCompletes() {
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")).isEqualTo(40);
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND geom IS NULL")).isEqualTo(10);
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND category = 'food'")).isEqualTo(40);
+        Map<String, Object> run = latestRun();
+        assertThat(run).containsEntry("status", "COMPLETE")
+                .containsEntry("total_rows", 40)
+                .containsEntry("total_batches", 6)
+                .containsEntry("rejected_rows", 0)
+                .containsEntry("attempts", 1)
+                .containsEntry("result_checksum", new RunStore(dataSource).checksum(SOURCE));
+        assertThat(jdbc.sql("SELECT count(*) FROM ingest.batch_done WHERE keys IS NULL").query(Integer.class).single())
+                .as("6 checkpoints, keys cleared at completion").isEqualTo(6);
+        assertThat(jdbc.sql("SELECT count(*) FROM ingest.reject").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void anUnchangedDownloadIsSkipped() {
+        run();
+
+        assertThat(run()).isEqualTo(Outcome.UNCHANGED);
+        assertThat(latestRun()).containsEntry("status", "UNCHANGED");
+        assertThat(jdbc.sql("SELECT count(DISTINCT run_id) FROM ingest.batch_done").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    /** Idempotency: running the same input again must give the same checksum and rewrite nothing. */
+    @Test
+    void aForcedRerunRewritesNothingAndGivesTheSameChecksum() {
+        run();
+        String first = checksum();
+
+        assertThat(coordinator(dataSource).run(SOURCE, new RunControl(), true)).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(checksum()).isEqualTo(first);
+        assertThat(latestRun()).containsEntry("result_checksum", first);
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND changed_run <> 1")).isZero();
+    }
+
+    /**
+     * A commit fails part-way (as if the process died there): the run stays open with some batches committed, and the
+     * next attempt resumes it and ends at exactly the checksum of a clean run.
+     */
+    @Test
+    void resumesAfterAFailedCommitAndEndsAtTheCleanChecksum() {
+        run();
+        String golden = checksum();
+        emptyTables();
+
+        Outcome failed = coordinator(failingOnCommit(3)).run(SOURCE, new RunControl(), false);
+
+        assertThat(failed).isEqualTo(Outcome.ERROR);
+        assertThat(latestRun()).containsEntry("status", "RUNNING").containsEntry("attempts", 1);
+        int committed = jdbc.sql("SELECT count(*) FROM ingest.batch_done").query(Integer.class).single();
+        assertThat(committed).isBetween(2, 5);
+
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(latestRun()).containsEntry("status", "COMPLETE").containsEntry("attempts", 2);
+        assertThat(checksum()).isEqualTo(golden);
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ?")).isEqualTo(40);
+    }
+
+    @Test
+    void retiresRecordsThatDisappearAndRevivesThemWhenTheyReturn() throws Exception {
+        List<String> lines = Files.readAllLines(TestData.BOSTON_LICENCES);
+        String removed = lines.get(6);
+        String changedBefore = lines.get(8);
+        var edited = new ArrayList<>(lines);
+        edited.set(8, changedBefore.replace("Eating & Drinking,", "Eating & Drinking w/ Take Out,")); // still food
+        edited.remove(6);
+
+        run();
+        publish(edited);
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")).isEqualTo(39);
+        assertThat(changedRuns()).containsEntry(key(removed), 1L).containsEntry(key(changedBefore), 2L);
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND changed_run = 1")).isEqualTo(39);
+
+        publish(lines);
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")).isEqualTo(40);
+        assertThat(changedRuns()).containsEntry(key(removed), 3L).containsEntry(key(changedBefore), 3L);
+    }
+
+    @Test
+    void tooManyRejectedRowsFailTheRunAndRetireNothing() throws Exception {
+        run();
+        List<String> lines = new ArrayList<>(Files.readAllLines(TestData.BOSTON_LICENCES));
+        for (int i = 20; i < 23; i++) { // 3 of 40 rows = 7.5%, above the 2% limit
+            lines.set(i, lines.get(i).replaceAll(",-?[0-9.]+,-?[0-9.]+$", ",0,0"));
+        }
+        publish(lines);
+
+        assertThat(run()).isEqualTo(Outcome.FAILED);
+
+        assertThat(latestRun()).containsEntry("status", "FAILED").containsEntry("rejected_rows", 3);
+        assertThat((String) latestRun().get("error")).contains("3 of 40 rows rejected");
+        assertThat(jdbc.sql("SELECT DISTINCT reason FROM ingest.reject").query(String.class).list())
+                .containsExactly("zero coordinate");
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")).isEqualTo(40);
+    }
+
+    @Test
+    void refusesToRetireMostOfTheSourceAtOnce() throws Exception {
+        run();
+        publish(Files.readAllLines(TestData.BOSTON_LICENCES).subList(0, 11)); // header + 10 rows: a truncated download
+
+        assertThat(run()).isEqualTo(Outcome.FAILED);
+
+        assertThat((String) latestRun().get("error")).contains("would retire 30 of 40");
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")).isEqualTo(40);
+    }
+
+    @Test
+    void skipsWhileAnotherProcessHoldsTheSourceLock() throws Exception {
+        try (Connection other = DriverManager.getConnection(url, "postgres", "test");
+                var lock = other.prepareStatement("SELECT pg_advisory_lock(hashtextextended(?, 0))")) {
+            lock.setString(1, "placemap.ingest:" + SOURCE);
+            lock.execute();
+
+            assertThat(run()).isEqualTo(Outcome.LOCKED);
+            assertThat(jdbc.sql("SELECT count(*) FROM ingest.run").query(Integer.class).single()).isZero();
+        }
+        // The other session ended, so Postgres released its lock.
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+    }
+
+    @Test
+    void anEmptyDownloadFailsInsteadOfRetiringEverything() throws Exception {
+        run();
+        publish(Files.readAllLines(TestData.BOSTON_LICENCES).subList(0, 1));
+
+        assertThat(run()).isEqualTo(Outcome.FAILED);
+        assertThat((String) latestRun().get("error")).contains("no rows");
+        assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ? AND retired_at IS NULL")).isEqualTo(40);
+    }
+
+    @Test
+    void aResumedRunWhoseSnapshotIsGoneFailsAndTheNextRunStartsFresh() throws Exception {
+        coordinator(failingOnCommit(2)).run(SOURCE, new RunControl(), false);
+        assertThat(latestRun()).containsEntry("status", "RUNNING");
+        try (var files = Files.walk(tmp.resolve("raw"))) {
+            for (Path p : files.filter(Files::isRegularFile).toList()) {
+                Files.delete(p);
+            }
+        }
+
+        assertThat(run()).isEqualTo(Outcome.FAILED);
+        assertThat((String) latestRun().get("error")).contains("missing or changed");
+
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+        assertThat(latestRun()).containsEntry("run_id", 2L);
+    }
+
+    // ---------------------------------------------------------------------------------------------- helpers
+
+    private Outcome run() {
+        return coordinator(dataSource).run(SOURCE, new RunControl(), false);
+    }
+
+    private RunCoordinator coordinator(DataSource ds) {
+        Path data = TestData.REPO.resolve("data");
+        var properties = new IngestProperties(data.resolve("sources.yaml"), data.resolve("categories.yaml"),
+                data.resolve("area/area.geojson"), tmp.resolve("raw"), BATCH_SIZE, 2, 2, 1, Duration.ofMinutes(1),
+                Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02, 0.2, null, false);
+        var http = new HttpDownloader() {
+            @Override
+            public void download(URI uri, Path target) throws IOException {
+                Files.copy(published.get(), target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        };
+        var adapters = new SourceAdapters(List.of(new BostonActiveFoodLicenses()), TestData.catalog());
+        return new RunCoordinator(properties, TestData.catalog(), adapters, TestData.categories(), TestData.area(),
+                new SnapshotStore(properties.rawDir(), http), new RunStore(ds), ds,
+                new IngestMetrics(new SimpleMeterRegistry()));
+    }
+
+    private void publish(List<String> lines) throws IOException {
+        Path file = Files.createTempFile(tmp, "published", ".csv");
+        Files.write(file, lines);
+        published.set(file);
+    }
+
+    /** A data source whose n-th commit (counted across all connections) rolls back and throws instead. */
+    private static DataSource failingOnCommit(int n) {
+        var commits = new AtomicInteger();
+        return new DelegatingDataSource(dataSource) {
+            @Override
+            public Connection getConnection() throws SQLException {
+                Connection real = super.getConnection();
+                return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                        new Class<?>[] {Connection.class}, (proxy, method, args) -> {
+                            if (method.getName().equals("commit") && commits.incrementAndGet() == n) {
+                                real.rollback();
+                                throw new SQLException("injected commit failure", "XX000");
+                            }
+                            try {
+                                return method.invoke(real, args);
+                            } catch (InvocationTargetException e) {
+                                throw e.getCause();
+                            }
+                        });
+            }
+        };
+    }
+
+    private int count(String sql) {
+        return jdbc.sql(sql).param(SOURCE).query(Integer.class).single();
+    }
+
+    private String checksum() {
+        return new RunStore(dataSource).checksum(SOURCE);
+    }
+
+    private Map<String, Object> latestRun() {
+        return jdbc.sql("SELECT * FROM ingest.run ORDER BY run_id DESC LIMIT 1").query().singleRow();
+    }
+
+    private Map<String, Long> changedRuns() {
+        return jdbc.sql("SELECT source_key, changed_run FROM place.source_record WHERE source = ?")
+                .param(SOURCE)
+                .query((rs, i) -> Map.entry(rs.getString(1), rs.getLong(2)))
+                .list().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    /** The source key of a fixture line, computed the way the adapter does. */
+    private static String key(String csvLine) throws IOException {
+        String header = Files.readAllLines(TestData.BOSTON_LICENCES).getFirst();
+        return new BostonActiveFoodLicenses().key(TestData.rows(header + "\n" + csvLine + "\n").getFirst());
+    }
+}

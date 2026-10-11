@@ -32,24 +32,15 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
-    <!-- Traces + metrics + logs over OTLP (ADR 0017 / 0033). -->
+    <!-- Traces + metrics + logs over OTLP (ADR 0017 / 0033), plus virtual-thread pinning metrics. -->
     <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-opentelemetry</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.opentelemetry.instrumentation</groupId>
-      <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+      <groupId>io.github.naveen-1-1.placemap</groupId>
+      <artifactId>observability</artifactId>
     </dependency>
     <!-- JDBC spans (connection, query) in traces; the approach Spring Boot's docs point to. -->
     <dependency>
       <groupId>net.ttddyy.observation</groupId>
       <artifactId>datasource-micrometer-spring-boot</artifactId>
-    </dependency>
-    <!-- jvm.threads.virtual.pinned / submit.failed, read from JFR. -->
-    <dependency>
-      <groupId>io.micrometer</groupId>
-      <artifactId>micrometer-java21</artifactId>
     </dependency>
     <dependency>
       <groupId>com.github.ben-manes.caffeine</groupId>

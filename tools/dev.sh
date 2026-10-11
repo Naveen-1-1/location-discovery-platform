@@ -7,6 +7,8 @@
 #   tools/dev.sh api       build and start the api service on :8080
 #   tools/dev.sh web       start the map frontend on :5173 (proxies /api to :8080)
 #   tools/dev.sh drill     with the api running in drill mode: send failing requests to test alerting
+#   tools/dev.sh ingest    start the importer: imports each source on its cadence, resumes unfinished runs
+#   tools/dev.sh ingest-once SOURCE [--force]   import (or resume) one source now, then exit
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -68,12 +70,25 @@ case "${1:-help}" in
     done
     echo
     ;;
+  ingest)
+    load_env
+    ./mvnw -q -B -pl services/ingest -am package -DskipTests
+    exec java -jar services/ingest/target/ingest.jar
+    ;;
+  ingest-once)
+    load_env
+    source_id=${2:?usage: tools/dev.sh ingest-once SOURCE [--force]}
+    force=false
+    [[ ${3:-} == --force ]] && force=true
+    ./mvnw -q -B -pl services/ingest -am package -DskipTests
+    exec java -jar services/ingest/target/ingest.jar --placemap.ingest.once="$source_id" --placemap.ingest.force="$force"
+    ;;
   web)
     cd frontend
     [[ -d node_modules ]] || npm ci
     exec npm run dev
     ;;
   *)
-    sed -n '2,9p' "$0"
+    sed -n '2,11p' "$0"
     ;;
 esac

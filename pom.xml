@@ -23,8 +23,10 @@
     <module>libs/concurrent</module>
     <module>libs/concurrent-jcstress</module>
     <module>libs/concurrent-jmh</module>
+    <module>libs/observability</module>
     <module>db</module>
     <module>services/api</module>
+    <module>services/ingest</module>
   </modules>
 
   <properties>
@@ -46,6 +48,11 @@
     <postgresql.version>42.7.13</postgresql.version>
     <otel-logback-appender.version>2.28.0-alpha</otel-logback-appender.version>
     <datasource-micrometer.version>2.3.0</datasource-micrometer.version>
+
+    <!-- Libraries the Boot BOM does not manage -->
+    <commons-csv.version>1.14.1</commons-csv.version>
+    <jts.version>1.20.0</jts.version>
+    <archunit.version>1.5.1</archunit.version>
 
     <!-- Plugins -->
     <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
@@ -104,6 +111,26 @@
         <groupId>io.github.naveen-1-1.placemap</groupId>
         <artifactId>db</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.naveen-1-1.placemap</groupId>
+        <artifactId>observability</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-csv</artifactId>
+        <version>${commons-csv.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.locationtech.jts</groupId>
+        <artifactId>jts-core</artifactId>
+        <version>${jts.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

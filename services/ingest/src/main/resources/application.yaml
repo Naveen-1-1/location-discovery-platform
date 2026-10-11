@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: ingest           # becomes OpenTelemetry service.name
+  main:
+    web-application-type: none
+  lifecycle:
+    timeout-per-shutdown-phase: 30s   # covers the 20 s drain plus the cancel (placemap.ingest.shutdown-grace)
+  datasource:
+    # Neon direct (non-pooled) endpoint: session advisory locks need it (ADR 0033). reWriteBatchedInserts turns each
+    # batch's 1,000 single-row upserts into a few multi-row statements.
+    url: jdbc:postgresql://${PGHOST}/${PGDATABASE}?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory&ApplicationName=ingest&reWriteBatchedInserts=true
+    username: ${PGUSER}
+    password: ${PGPASSWORD}
+    hikari:                    # plain milliseconds
+      # Per run: 4 upsert connections + 1 lock connection; 2 runs at once, plus 2 for bookkeeping.
+      maximum-pool-size: 12
+      minimum-idle: 0            # let Neon scale to zero between runs
+      idle-timeout: 60000
+      max-lifetime: 300000       # in-use connections (like the lock's) are never retired mid-run
+      connection-timeout: 10000
+
+management:
+  opentelemetry:
+    resource-attributes:
+      "[service.namespace]": placemap
+      "[deployment.environment]": ${PLACEMAP_ENV:dev}
+  otlp:
+    metrics:
+      export:
+        step: 30s
+        base-time-unit: seconds
+        histogram-flavor: base2_exponential_bucket_histogram
+  # OTLP endpoints and auth come from OTEL_EXPORTER_OTLP_* in .env, as for the api.
+
+placemap:
+  ingest:
+    sources-file: data/sources.yaml
+    categories-file: data/categories.yaml
+    area-file: data/area/area.geojson
+    raw-dir: data/raw          # git-ignored
+    batch-size: 1000
+    upsert-workers: 4
+    max-concurrent-runs: 2
+    tick: 1m
+    shutdown-grace: 20s
+    retry-failed-after: 1h
+    max-attempts: 3
+    max-reject-share: 0.02
+    max-retire-share: 0.2

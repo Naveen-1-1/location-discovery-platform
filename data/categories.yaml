@@ -5,6 +5,8 @@ categories:
     label: Food & drink
     overture: { basic_category: [restaurant, casual_eatery, fast_food_restaurant, cafe, coffee_shop, bar] }
     osm: { amenity: [restaurant, fast_food, cafe, bar, pub] }
+    official:
+      boston_active_food_licenses: { descript: ["Eating & Drinking", "Eating & Drinking w/ Take Out"] }
   grocery:
     label: Groceries
     overture:

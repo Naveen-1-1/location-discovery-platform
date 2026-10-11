@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.naveen-1-1.placemap</groupId>
+    <artifactId>placemap-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>observability</artifactId>
+  <name>placemap :: libs :: observability</name>
+  <description>OpenTelemetry wiring shared by the Spring Boot services: logs over OTLP and virtual-thread pinning metrics.
+    Picked up automatically through Spring Boot auto-configuration.</description>
+
+  <dependencies>
+    <!-- Traces + metrics + logs over OTLP (ADR 0017 / 0033). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-opentelemetry</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.opentelemetry.instrumentation</groupId>
+      <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+    </dependency>
+    <!-- jvm.threads.virtual.pinned / submit.failed, read from JFR. -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-java21</artifactId>
+    </dependency>
+  </dependencies>
+</project>

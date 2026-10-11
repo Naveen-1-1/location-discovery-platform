@@ -1,0 +1,21 @@
+# Loaded on top of src/main/resources/application.yaml (config/ wins). Tests never export telemetry, and read the
+# real registry files from the repository root.
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+
+placemap:
+  ingest:
+    sources-file: ../../data/sources.yaml
+    categories-file: ../../data/categories.yaml
+    area-file: ../../data/area/area.geojson

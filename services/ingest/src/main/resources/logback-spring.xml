@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- Console output keeps Spring Boot's default pattern, which includes [traceId, spanId]. -->
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+  <!-- Same events as OpenTelemetry log records (to Loki via OTLP), linked to the active trace. -->
+  <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+    <captureCodeAttributes>true</captureCodeAttributes>
+    <captureKeyValuePairAttributes>true</captureKeyValuePairAttributes>
+  </appender>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="OTEL"/>
+  </root>
+</configuration>
