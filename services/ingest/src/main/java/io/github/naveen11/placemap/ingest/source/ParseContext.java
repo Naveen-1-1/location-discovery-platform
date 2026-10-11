@@ -15,6 +15,7 @@ public final class ParseContext {
 
     private final CategoryRules categories;
     private final CoverageArea.Checker area;
+    private final Reprojector reprojector = new Reprojector();
 
     public ParseContext(CategoryRules categories, CoverageArea.Checker area) {
         this.categories = categories;
@@ -23,6 +24,11 @@ public final class ParseContext {
 
     public CategoryRules categories() {
         return categories;
+    }
+
+    /** {lon, lat} in WGS84 for projected coordinates, e.g. EPSG:2249 feet from Boston's licensing data. */
+    public double[] toWgs84(String crs, double x, double y) {
+        return reprojector.toWgs84(crs, x, y);
     }
 
     /**
