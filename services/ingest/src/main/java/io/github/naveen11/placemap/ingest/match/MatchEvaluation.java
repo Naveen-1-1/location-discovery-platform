@@ -129,6 +129,10 @@ public final class MatchEvaluation {
         }
         if (ownerLabels != null && Files.exists(ownerLabels)) {
             Map<String, Integer> theirs = labels(ownerLabels);
+            if (theirs.isEmpty()) {
+                out.append("\nBlind check: ").append(ownerLabels).append(" has no answers yet\n");
+                return out.toString();
+            }
             var mine = new TreeMap<String, Integer>();
             cases.forEach(c -> mine.put(c.caseId(), c.label()));
             var disagreements = new ArrayList<String>();

@@ -64,6 +64,17 @@ class MatchEvaluationTest {
                 "Blind check: 2 cases labelled by both, 1 agree (50.0%)", "- m002 (Claude 0, owner 1)");
     }
 
+    @Test
+    void anOwnersFileWithoutAnswersIsReportedAsSuch(@TempDir Path dir) throws Exception {
+        Path sample = dir.resolve("match-sample.csv");
+        Files.write(sample, List.of(String.join(",", MatchSample.HEADER), row("m001", "1", "link", 0.92, "1")));
+        Files.writeString(MatchSample.metaPath(sample), "{\"bands\": {\"link\": 40}}");
+        Path owner = dir.resolve("owner.csv");
+        Files.writeString(owner, "case_id,label\n");
+
+        assertThat(MatchEvaluation.report(sample, owner)).contains("has no answers yet").doesNotContain("agree");
+    }
+
     private static String row(String id, String blind, String band, double score, String label) {
         var values = new ArrayList<>(List.of(id, blind, "overture_places", "k", "Cafe", "food", "1 Main St", band,
                 Double.toString(score)));

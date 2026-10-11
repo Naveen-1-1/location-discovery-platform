@@ -149,6 +149,7 @@ function answer(label) {
 document.getElementById("file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
+  event.target.blur(); // the file picker would otherwise keep the keyboard, and 1, 2, 3, 0 would do nothing
   cases = parseCsv(await file.text()).filter((r) => r.blind === "1");
   load();
   at = Math.max(0, cases.findIndex((c) => answers[c.case_id] === undefined));
@@ -158,7 +159,7 @@ document.getElementById("file").addEventListener("change", async (event) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (!cases.length || e.target instanceof HTMLInputElement) return;
+  if (!cases.length) return;
   if (["0", "1", "2", "3"].includes(e.key)) {
     const k = Number(e.key);
     if (k === 0 || (at < cases.length && cases[at][`cand${k}_place_id`])) answer(k);
@@ -168,6 +169,10 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("back").onclick = () => { at = Math.max(0, at - 1); show(); };
 
 document.getElementById("download").onclick = () => {
+  if (!cases.some((c) => answers[c.case_id] !== undefined)) {
+    alert("No answers yet: pick a candidate (or None) for each case first.");
+    return;
+  }
   const lines = ["case_id,label", ...cases.filter((c) => answers[c.case_id] !== undefined).map((c) => `${c.case_id},${answers[c.case_id]}`)];
   const url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
   const a = el("a", { href: url, download: "match-labels-owner.csv" });
