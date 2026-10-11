@@ -2,14 +2,10 @@ package io.github.naveen11.placemap.ingest.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.naveen11.placemap.ingest.IngestProperties;
 import io.github.naveen11.placemap.ingest.TestData;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
-import io.github.naveen11.placemap.ingest.snapshot.SnapshotStore;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
-import io.github.naveen11.placemap.ingest.source.SourceAdapters;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -20,7 +16,6 @@ import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -252,20 +247,13 @@ class IngestRunContainerTest {
     }
 
     private RunCoordinator coordinator(DataSource ds) {
-        Path data = TestData.REPO.resolve("data");
-        var properties = new IngestProperties(data.resolve("sources.yaml"), data.resolve("categories.yaml"),
-                data.resolve("area/area.geojson"), tmp.resolve("raw"), BATCH_SIZE, 2, 2, 1, Duration.ofMinutes(1),
-                Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02, 0.2, null, false);
         var http = new HttpDownloader() {
             @Override
             public void download(URI uri, Path target) throws IOException {
                 Files.copy(published.get(), target, StandardCopyOption.REPLACE_EXISTING);
             }
         };
-        var adapters = new SourceAdapters(List.of(new BostonActiveFoodLicenses()), TestData.catalog());
-        return new RunCoordinator(properties, TestData.catalog(), adapters, TestData.categories(), TestData.area(),
-                new SnapshotStore(properties.rawDir(), http), new RunStore(ds), ds,
-                new IngestMetrics(new SimpleMeterRegistry()));
+        return TestIngest.coordinator(ds, tmp.resolve("raw"), BATCH_SIZE, http, new BostonActiveFoodLicenses());
     }
 
     private void publish(List<String> lines) throws IOException {

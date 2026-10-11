@@ -51,6 +51,16 @@
       <groupId>org.duckdb</groupId>
       <artifactId>duckdb_jdbc</artifactId>
     </dependency>
+    <!-- The matcher's place index (ADR 0022). Native code: used only from platform threads. -->
+    <dependency>
+      <groupId>com.uber</groupId>
+      <artifactId>h3</artifactId>
+    </dependency>
+    <!-- Jaro-Winkler name similarity. -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-text</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>

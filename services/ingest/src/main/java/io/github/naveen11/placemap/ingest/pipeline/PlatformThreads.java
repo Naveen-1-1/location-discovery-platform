@@ -1,27 +1,36 @@
-package io.github.naveen11.placemap.ingest.source;
+package io.github.naveen11.placemap.ingest.pipeline;
 
 import java.io.IOException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Runs native (JNI) code such as DuckDB on a platform thread. A virtual thread that enters native code pins its
- * carrier thread for the whole call, so the plan keeps JNI off virtual threads; the run itself lives on one.
+ * Runs native (JNI) code such as DuckDB or H3 on a platform thread. A virtual thread that enters native code pins its
+ * carrier thread for the whole call, so the plan keeps JNI off virtual threads; a run itself lives on one.
  */
-final class PlatformThreads {
+public final class PlatformThreads {
 
     @FunctionalInterface
-    interface Task {
+    public interface Task {
         void run() throws Exception;
     }
 
     private PlatformThreads() {
     }
 
-    static void run(String name, Task task) throws IOException, InterruptedException {
+    public static void run(String name, Task task) throws IOException, InterruptedException {
+        call(name, () -> {
+            task.run();
+            return null;
+        });
+    }
+
+    public static <T> T call(String name, Callable<T> task) throws IOException, InterruptedException {
+        var result = new AtomicReference<T>();
         var failure = new AtomicReference<Throwable>();
         Thread thread = Thread.ofPlatform().name(name).start(() -> {
             try {
-                task.run();
+                result.set(task.call());
             } catch (Throwable t) {
                 failure.set(t);
             }
@@ -40,5 +49,6 @@ final class PlatformThreads {
             case Error e -> throw e;
             case Throwable t -> throw new IOException(name + " failed: " + t.getMessage(), t);
         }
+        return result.get();
     }
 }

@@ -1,8 +1,10 @@
 package io.github.naveen11.placemap.ingest.run;
 
+import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -60,16 +62,30 @@ public class RunStore {
                 .optional();
     }
 
-    /** The snapshot hash of the latest successful run, to skip unchanged downloads. */
-    public Optional<String> lastSuccessfulSnapshot(String source) {
+    /** The latest successful run of the source, to skip unchanged downloads. */
+    public Optional<RunRecord> lastSuccessful(String source) {
         return jdbc.sql("""
-                        SELECT snapshot_sha256 FROM ingest.run
+                        SELECT %s FROM ingest.run
                         WHERE source = ? AND status IN ('COMPLETE', 'UNCHANGED')
                         ORDER BY run_id DESC LIMIT 1
-                        """)
+                        """.formatted(RUN_COLUMNS))
                 .param(source)
-                .query(String.class)
+                .query(RunRecord.class)
                 .optional();
+    }
+
+    /**
+     * Whether any place was created or changed since the given run started. An unchanged download is only skipped
+     * if the places are unchanged too; otherwise its records might now match places that did not exist before.
+     */
+    public boolean placesChangedSince(long runId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM place.place
+                                       WHERE updated_at > (SELECT started_at FROM ingest.run WHERE run_id = ?))
+                        """)
+                .param(runId)
+                .query(Boolean.class)
+                .single();
     }
 
     public void markRunning(long runId, String sha256, int rows, int batches) {
@@ -115,8 +131,8 @@ public class RunStore {
      * rejected rows, or a snapshot that would retire too large a share of the live records (a truncated download
      * looks exactly like that).
      */
-    public Completion complete(long runId, String source, double maxRejectShare, double maxRetireShare)
-            throws SQLException {
+    public Completion complete(long runId, String source, double maxRejectShare, double maxRetireShare,
+            List<SourcePriority.Role> roles) throws SQLException {
         try (Connection c = dataSource.getConnection()) {
             c.setAutoCommit(false);
             try {
@@ -173,6 +189,9 @@ public class RunStore {
                         .param(source)
                         .update();
                 tx.sql("UPDATE ingest.batch_done SET keys = NULL WHERE run_id = ?").param(runId).update();
+                refreshPlaces(tx, source, roles);
+                // Reviews this run did not repeat are stale: the record is linked now, or no longer borderline.
+                tx.sql("DELETE FROM place.match_review WHERE source = ? AND run_id <> ?").params(source, runId).update();
                 String checksum = checksum(tx, source);
                 tx.sql("""
                                 UPDATE ingest.run
@@ -199,18 +218,104 @@ public class RunStore {
         return checksum(jdbc, source);
     }
 
+    /**
+     * Places are linked by place_id, whose numbers depend on commit order, so the checksum names each record's place
+     * by an anchor instead: the smallest "source:key" among the records linked to it. Two runs that group the
+     * records into places the same way give the same checksum.
+     */
     private static String checksum(JdbcClient client, String source) {
         return client.sql("""
+                        WITH anchor AS (
+                            SELECT l.source_key, min((o.source || ':' || o.source_key) COLLATE "C") AS anchor
+                            FROM place.place_source_link l
+                            JOIN place.place_source_link o ON o.place_id = l.place_id
+                            WHERE l.source = ?
+                            GROUP BY l.source_key)
                         SELECT md5(coalesce(string_agg(
-                                   ROW(source_key, name, category, ST_AsEWKT(geom), address, postcode, phone, website,
-                                       attrs, row_hash)::text,
-                                   E'\\n' ORDER BY source_key COLLATE "C"), ''))
-                        FROM place.source_record
-                        WHERE source = ? AND retired_at IS NULL
+                                   ROW(r.source_key, r.name, r.category, ST_AsEWKT(r.geom), r.address, r.postcode,
+                                       r.phone, r.website, r.attrs, r.row_hash, a.anchor)::text,
+                                   E'\\n' ORDER BY r.source_key COLLATE "C"), ''))
+                        FROM place.source_record r
+                        LEFT JOIN anchor a ON a.source_key = r.source_key
+                        WHERE r.source = ? AND r.retired_at IS NULL
                         """)
-                .param(source)
+                .params(source, source)
                 .query(String.class)
                 .single();
+    }
+
+    /**
+     * Brings every place linked to this source up to date with its live records (ADR 0022, 0032):
+     *
+     * <ul>
+     *   <li>Each attribute comes from the best-ranked live record that has it. Rank is the record's source position
+     *       in data/source-priority.yaml for the record's category: existence sources first, then enrichment ones.
+     *   <li>A place stays live only while some live record comes from an existence source for its category;
+     *       otherwise it is retired (never deleted, so saved lists keep working). A returning record revives it.
+     *   <li>Rows are only rewritten when something changed, so {@code updated_at} means "really changed".
+     * </ul>
+     *
+     * Runs once per run, single-threaded, after every batch has committed, so the result does not depend on the
+     * order batches committed in.
+     */
+    private static void refreshPlaces(JdbcClient tx, String source, List<SourcePriority.Role> roles) {
+        tx.sql("""
+                CREATE TEMP TABLE source_role (category text, source text, rank int, existence boolean,
+                                               PRIMARY KEY (category, source)) ON COMMIT DROP
+                """).update();
+        for (SourcePriority.Role role : roles) {
+            tx.sql("INSERT INTO source_role VALUES (?, ?, ?, ?)")
+                    .params(role.category(), role.source(), role.rank(), role.existence())
+                    .update();
+        }
+        tx.sql("""
+                CREATE TEMP TABLE touched ON COMMIT DROP AS
+                SELECT DISTINCT place_id FROM place.place_source_link WHERE source = ?
+                """).param(source).update();
+        tx.sql("""
+                WITH ranked AS (
+                    SELECT l.place_id, r.source, r.source_key, r.name, r.category, r.geom, r.address, r.phone,
+                           r.website, coalesce(sr.rank, 1000) AS rank, coalesce(sr.existence, false) AS existence
+                    FROM touched t
+                    JOIN place.place_source_link l ON l.place_id = t.place_id
+                    JOIN place.source_record r ON r.source = l.source AND r.source_key = l.source_key
+                                                AND r.retired_at IS NULL
+                    LEFT JOIN source_role sr ON sr.category = r.category AND sr.source = r.source),
+                best AS (
+                    SELECT place_id,
+                           (array_agg(name ORDER BY rank, source, source_key))[1] AS name,
+                           (array_agg(category ORDER BY rank, source, source_key)
+                               FILTER (WHERE category IS NOT NULL))[1] AS category,
+                           (array_agg(geom ORDER BY rank, source, source_key) FILTER (WHERE geom IS NOT NULL))[1] AS geom,
+                           (array_agg(address ORDER BY rank, source, source_key)
+                               FILTER (WHERE address IS NOT NULL))[1] AS address,
+                           (array_agg(phone ORDER BY rank, source, source_key) FILTER (WHERE phone IS NOT NULL))[1] AS phone,
+                           (array_agg(website ORDER BY rank, source, source_key)
+                               FILTER (WHERE website IS NOT NULL))[1] AS website,
+                           bool_or(existence) AS established
+                    FROM ranked
+                    GROUP BY place_id)
+                UPDATE place.place p
+                SET name = b.name, category = coalesce(b.category, p.category), geom = coalesce(b.geom, p.geom),
+                    address = b.address, phone = b.phone, website = b.website,
+                    retired_at = CASE WHEN b.established THEN NULL ELSE coalesce(p.retired_at, now()) END,
+                    updated_at = now()
+                FROM best b
+                WHERE p.place_id = b.place_id
+                  AND ((p.name, p.category, p.address, p.phone, p.website)
+                           IS DISTINCT FROM (b.name, coalesce(b.category, p.category), b.address, b.phone, b.website)
+                       OR ST_AsBinary(p.geom) IS DISTINCT FROM ST_AsBinary(coalesce(b.geom, p.geom))
+                       OR (p.retired_at IS NULL) IS DISTINCT FROM b.established)
+                """).update();
+        // Touched places with no live record left at all (the update above only saw places that still have one).
+        tx.sql("""
+                UPDATE place.place p SET retired_at = now(), updated_at = now()
+                WHERE p.retired_at IS NULL
+                  AND p.place_id IN (SELECT place_id FROM touched)
+                  AND NOT EXISTS (SELECT 1 FROM place.place_source_link l
+                                  JOIN place.source_record r ON r.source = l.source AND r.source_key = l.source_key
+                                  WHERE l.place_id = p.place_id AND r.retired_at IS NULL)
+                """).update();
     }
 
     private static void failInTransaction(JdbcClient tx, long runId, int rejected, String error) {

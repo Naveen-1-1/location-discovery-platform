@@ -1,16 +1,17 @@
 package io.github.naveen11.placemap.ingest.run;
 
 import io.github.naveen11.placemap.concurrent.ContiguousWatermark;
+import io.github.naveen11.placemap.ingest.match.MatchDecision;
 import io.github.naveen11.placemap.ingest.pipeline.Stage;
 import io.github.naveen11.placemap.ingest.source.SourceRow;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLRecoverableException;
 import java.sql.SQLTransientException;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -20,15 +21,17 @@ import tools.jackson.databind.json.JsonMapper;
  * <ol>
  *   <li>Upsert the records, sorted by key so concurrent batches lock rows in the same order. Unchanged rows (same
  *       hash) are not rewritten.
+ *   <li>Apply the matching decisions: new links, new places, review entries.
  *   <li>Insert the rejects and the {@code batch_done} checkpoint.
  *   <li>Commit, then mark the batch in the watermark.
  * </ol>
  *
  * <p>Deadlocks, serialization failures and lost connections are retried with jittered backoff, at most 5 attempts.
- * A retry after a commit whose acknowledgement was lost is safe: the upsert is idempotent and the reject and
- * checkpoint inserts ignore rows that already exist.
+ * Every statement is safe to repeat, so a retry after a commit whose acknowledgement was lost changes nothing: the
+ * upsert is idempotent, links and checkpoints ignore rows that exist, and a place is only created if the record
+ * has no link yet.
  */
-final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
+final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
 
     static final int MAX_ATTEMPTS = 5;
 
@@ -43,6 +46,26 @@ final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
                 website = EXCLUDED.website, attrs = EXCLUDED.attrs, row_hash = EXCLUDED.row_hash,
                 changed_run = EXCLUDED.changed_run, retired_at = NULL
             WHERE r.row_hash IS DISTINCT FROM EXCLUDED.row_hash OR r.retired_at IS NOT NULL
+            """;
+    private static final String INSERT_LINK = """
+            INSERT INTO place.place_source_link (source, source_key, place_id, method, score, linked_run)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (source, source_key) DO NOTHING
+            """;
+    // The NOT EXISTS makes creation idempotent: repeating the batch after a lost commit acknowledgement finds the
+    // link and creates nothing.
+    private static final String CREATE_PLACE = """
+            WITH created AS (
+                INSERT INTO place.place (name, category, geom, address, phone, website)
+                SELECT ?, ?, ST_GeogFromText(?), ?, ?, ?
+                WHERE NOT EXISTS (SELECT 1 FROM place.place_source_link WHERE source = ? AND source_key = ?)
+                RETURNING place_id)
+            INSERT INTO place.place_source_link (source, source_key, place_id, method, linked_run)
+            SELECT ?, ?, place_id, 'created', ? FROM created
+            """;
+    private static final String UPSERT_REVIEW = """
+            INSERT INTO place.match_review (source, source_key, place_id, score, run_id) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (source, source_key, place_id) DO UPDATE SET score = EXCLUDED.score, run_id = EXCLUDED.run_id
             """;
     private static final String INSERT_REJECT = """
             INSERT INTO ingest.reject (run_id, seq, row_no, reason, record) VALUES (?, ?, ?, ?, CAST(? AS jsonb))
@@ -72,10 +95,10 @@ final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
     }
 
     @Override
-    public Void process(ParsedBatch batch) throws SQLException, InterruptedException {
+    public Void process(MatchedBatch matched) throws SQLException, InterruptedException {
         for (int attempt = 1; ; attempt++) {
             try {
-                write(batch);
+                write(matched);
                 break;
             } catch (SQLException e) {
                 if (!isRetryable(e) || attempt == MAX_ATTEMPTS) {
@@ -86,36 +109,41 @@ final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
                 Thread.sleep(backoffMillis(attempt));
             }
         }
-        watermark.markDone(batch.seq());
-        metrics.committed(batch);
+        watermark.markDone(matched.batch().seq());
+        metrics.committed(matched);
         return null;
     }
 
-    private void write(ParsedBatch batch) throws SQLException {
+    private void write(MatchedBatch matched) throws SQLException {
+        ParsedBatch batch = matched.batch();
+        List<SourceRow> records = batch.records();
+        List<Integer> byKey = IntStream.range(0, records.size()).boxed()
+                .sorted(Comparator.comparing(i -> records.get(i).key()))
+                .toList();
         Connection c = connection();
         try {
-            List<SourceRow> records = new ArrayList<>(batch.records());
-            records.sort(Comparator.comparing(SourceRow::key));
             try (var upsert = c.prepareStatement(UPSERT_RECORD)) {
-                for (SourceRow row : records) {
-                    int i = 1;
-                    upsert.setString(i++, source);
-                    upsert.setString(i++, row.key());
-                    upsert.setString(i++, row.name());
-                    upsert.setString(i++, row.category());
-                    upsert.setString(i++, row.ewkt());
-                    upsert.setString(i++, row.address());
-                    upsert.setString(i++, row.postcode());
-                    upsert.setString(i++, row.phone());
-                    upsert.setString(i++, row.website());
-                    upsert.setString(i++, json.writeValueAsString(row.attrs()));
-                    upsert.setString(i++, row.rowHash());
-                    upsert.setLong(i++, runId);
-                    upsert.setLong(i, runId);
+                for (int i : byKey) {
+                    SourceRow row = records.get(i);
+                    int p = 1;
+                    upsert.setString(p++, source);
+                    upsert.setString(p++, row.key());
+                    upsert.setString(p++, row.name());
+                    upsert.setString(p++, row.category());
+                    upsert.setString(p++, row.ewkt());
+                    upsert.setString(p++, row.address());
+                    upsert.setString(p++, row.postcode());
+                    upsert.setString(p++, row.phone());
+                    upsert.setString(p++, row.website());
+                    upsert.setString(p++, json.writeValueAsString(row.attrs()));
+                    upsert.setString(p++, row.rowHash());
+                    upsert.setLong(p++, runId);
+                    upsert.setLong(p, runId);
                     upsert.addBatch();
                 }
                 upsert.executeBatch();
             }
+            applyDecisions(c, matched, byKey);
             try (var reject = c.prepareStatement(INSERT_REJECT)) {
                 for (ParsedBatch.Reject r : batch.rejects()) {
                     reject.setLong(1, runId);
@@ -134,13 +162,67 @@ final class BatchWriter implements Stage.Worker<ParsedBatch, Void> {
                 done.setInt(4, batch.rejects().size());
                 done.setInt(5, batch.skipped());
                 done.setString(6, batch.checksum());
-                done.setArray(7, c.createArrayOf("text", records.stream().map(SourceRow::key).toArray()));
+                done.setArray(7, c.createArrayOf("text", byKey.stream().map(i -> records.get(i).key()).toArray()));
                 done.executeUpdate();
             }
             c.commit();
         } catch (SQLException | RuntimeException e) {
             rollbackQuietly(c);
             throw e;
+        }
+    }
+
+    private void applyDecisions(Connection c, MatchedBatch matched, List<Integer> byKey) throws SQLException {
+        List<SourceRow> records = matched.batch().records();
+        try (var link = c.prepareStatement(INSERT_LINK);
+                var create = c.prepareStatement(CREATE_PLACE);
+                var review = c.prepareStatement(UPSERT_REVIEW)) {
+            for (int i : byKey) {
+                SourceRow row = records.get(i);
+                switch (matched.decisions().get(i)) {
+                    case MatchDecision.Link l -> {
+                        link.setString(1, source);
+                        link.setString(2, row.key());
+                        link.setLong(3, l.placeId());
+                        link.setString(4, l.method());
+                        link.setDouble(5, l.score());
+                        link.setLong(6, runId);
+                        link.addBatch();
+                    }
+                    case MatchDecision.Create ignored -> {
+                        int p = 1;
+                        create.setString(p++, row.name());
+                        create.setString(p++, row.category());
+                        create.setString(p++, row.ewkt());
+                        create.setString(p++, row.address());
+                        create.setString(p++, row.phone());
+                        create.setString(p++, row.website());
+                        create.setString(p++, source);
+                        create.setString(p++, row.key());
+                        create.setString(p++, source);
+                        create.setString(p++, row.key());
+                        create.setLong(p, runId);
+                        create.addBatch();
+                    }
+                    case MatchDecision.Review r -> {
+                        review.setString(1, source);
+                        review.setString(2, row.key());
+                        review.setLong(3, r.placeId());
+                        review.setDouble(4, r.score());
+                        review.setLong(5, runId);
+                        review.addBatch();
+                    }
+                    case MatchDecision.Keep ignored -> {
+                        // linked in an earlier run
+                    }
+                    case MatchDecision.Unlinked ignored -> {
+                        // stays a record without a place
+                    }
+                }
+            }
+            link.executeBatch(); // an empty batch is a no-op
+            create.executeBatch();
+            review.executeBatch();
         }
     }
 

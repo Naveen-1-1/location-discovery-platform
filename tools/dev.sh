@@ -2,13 +2,12 @@
 # One entry point for local development. Every command loads .env first.
 #
 #   tools/dev.sh migrate   apply database migrations to Neon
-#   tools/dev.sh seed      load the temporary Overture places (Phase 1)
 #   tools/dev.sh tiles     build the Boston basemap file for the frontend
 #   tools/dev.sh api       build and start the api service on :8080
 #   tools/dev.sh web       start the map frontend on :5173 (proxies /api to :8080)
 #   tools/dev.sh drill     with the api running in drill mode: send failing requests to test alerting
 #   tools/dev.sh ingest    start the importer: imports each source on its cadence, resumes unfinished runs
-#   tools/dev.sh ingest-once SOURCE [--force]   import (or resume) one source now, then exit
+#   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -48,10 +47,6 @@ case "${1:-help}" in
     load_env
     ./mvnw -B -ntp -pl db flyway:migrate flyway:info
     ;;
-  seed)
-    load_env
-    tools/seed-overture.sh
-    ;;
   tiles)
     tools/build-pmtiles.sh
     ;;
@@ -77,11 +72,18 @@ case "${1:-help}" in
     ;;
   ingest-once)
     load_env
-    source_id=${2:?usage: tools/dev.sh ingest-once SOURCE [--force]}
+    shift
     force=false
-    [[ ${3:-} == --force ]] && force=true
+    sources=()
+    for arg in "$@"; do
+      if [[ $arg == --force ]]; then force=true; else sources+=("$arg"); fi
+    done
+    (( ${#sources[@]} )) || { echo "usage: tools/dev.sh ingest-once SOURCE... [--force]" >&2; exit 1; }
     ./mvnw -q -B -pl services/ingest -am package -DskipTests
-    exec java -jar services/ingest/target/ingest.jar --placemap.ingest.once="$source_id" --placemap.ingest.force="$force"
+    # One process per source, in the order given: later sources match against the places earlier ones created.
+    for source_id in "${sources[@]}"; do
+      java -jar services/ingest/target/ingest.jar --placemap.ingest.once="$source_id" --placemap.ingest.force="$force"
+    done
     ;;
   web)
     cd frontend
@@ -89,6 +91,6 @@ case "${1:-help}" in
     exec npm run dev
     ;;
   *)
-    sed -n '2,11p' "$0"
+    sed -n '2,10p' "$0"
     ;;
 esac

@@ -2,6 +2,7 @@ package io.github.naveen11.placemap.ingest.run;
 
 import io.github.naveen11.placemap.concurrent.BoundedChannel;
 import io.github.naveen11.placemap.concurrent.ContiguousWatermark;
+import io.github.naveen11.placemap.ingest.match.MatchDecision;
 import io.github.naveen11.placemap.ingest.pipeline.StageListener;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -50,11 +51,16 @@ public class IngestMetrics {
             this.retries = registry.counter("placemap.ingest.batch.retries", "source", source);
         }
 
-        void committed(ParsedBatch batch) {
+        void committed(MatchedBatch matched) {
+            ParsedBatch batch = matched.batch();
             accepted.increment(batch.records().size());
             rejected.increment(batch.rejects().size());
             skipped.increment(batch.skipped());
             batches.increment();
+            for (MatchDecision decision : matched.decisions()) {
+                registry.counter("placemap.ingest.matches", "source", source, "decision",
+                        decision.getClass().getSimpleName().toLowerCase()).increment();
+            }
         }
 
         void retried() {

@@ -54,6 +54,8 @@
     <jts.version>1.20.0</jts.version>
     <archunit.version>1.5.1</archunit.version>
     <duckdb.version>1.5.5.1</duckdb.version>
+    <h3.version>4.5.0</h3.version>
+    <commons-text.version>1.15.0</commons-text.version>
 
     <!-- Plugins -->
     <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
@@ -137,6 +139,16 @@
         <groupId>org.duckdb</groupId>
         <artifactId>duckdb_jdbc</artifactId>
         <version>${duckdb.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.uber</groupId>
+        <artifactId>h3</artifactId>
+        <version>${h3.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-text</artifactId>
+        <version>${commons-text.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

@@ -7,7 +7,11 @@ import io.github.naveen11.placemap.ingest.catalog.CategoryRules;
 import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourceCatalog;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
+import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
+import io.github.naveen11.placemap.ingest.match.Matcher;
+import io.github.naveen11.placemap.ingest.match.PlaceIndex;
 import io.github.naveen11.placemap.ingest.pipeline.Pipeline;
+import io.github.naveen11.placemap.ingest.pipeline.PlatformThreads;
 import io.github.naveen11.placemap.ingest.pipeline.StageFailedException;
 import io.github.naveen11.placemap.ingest.snapshot.BatchReader;
 import io.github.naveen11.placemap.ingest.snapshot.RawBatch;
@@ -32,8 +36,10 @@ import org.slf4j.LoggerFactory;
  *   <li>Take the source's advisory lock, or skip if another process holds it.
  *   <li>Open a new run, or resume the source's unfinished one.
  *   <li>Fetch: save the snapshot. If it is identical to the last successful one, finish as UNCHANGED.
- *   <li>Scan it (row count, repeated keys), then run read → parse → upsert, skipping batches already committed.
- *   <li>Once every batch is committed, complete the run in one transaction.
+ *   <li>Scan it (row count, repeated keys) and load the frozen place index, then run read → parse → match → upsert,
+ *       skipping batches already committed.
+ *   <li>Once every batch is committed, complete the run in one transaction (retire vanished records, refresh the
+ *       places they belong to).
  * </ol>
  *
  * Errors leave the run open for the next tick, up to {@code max-attempts}; a bad snapshot or a safety limit fails it.
@@ -45,7 +51,7 @@ public class RunCoordinator {
     public enum Outcome {
         /** All batches committed and the run completed. */
         COMPLETE,
-        /** The download matched the last successful run; nothing to do. */
+        /** The download and the places both match the last successful run; nothing to do. */
         UNCHANGED,
         /** The run was closed as failed (bad snapshot, safety limit, or too many attempts). */
         FAILED,
@@ -61,6 +67,7 @@ public class RunCoordinator {
     private final SourceCatalog catalog;
     private final SourceAdapters adapters;
     private final CategoryRules categories;
+    private final SourcePriority priority;
     private final CoverageArea area;
     private final SnapshotStore snapshots;
     private final RunStore runs;
@@ -68,12 +75,13 @@ public class RunCoordinator {
     private final IngestMetrics metrics;
 
     public RunCoordinator(IngestProperties properties, SourceCatalog catalog, SourceAdapters adapters,
-            CategoryRules categories, CoverageArea area, SnapshotStore snapshots, RunStore runs,
-            DataSource dataSource, IngestMetrics metrics) {
+            CategoryRules categories, SourcePriority priority, CoverageArea area, SnapshotStore snapshots,
+            RunStore runs, DataSource dataSource, IngestMetrics metrics) {
         this.properties = properties;
         this.catalog = catalog;
         this.adapters = adapters;
         this.categories = categories;
+        this.priority = priority;
         this.area = area;
         this.snapshots = snapshots;
         this.runs = runs;
@@ -145,7 +153,9 @@ public class RunCoordinator {
                 return Outcome.STOPPED;
             }
             snapshot = snapshots.fetch(adapter, source, run.runId());
-            if (!force && runs.lastSuccessfulSnapshot(sourceId).filter(snapshot.sha256()::equals).isPresent()) {
+            Optional<RunRecord> last = runs.lastSuccessful(sourceId);
+            if (!force && last.isPresent() && snapshot.sha256().equals(last.get().snapshotSha256())
+                    && !runs.placesChangedSince(last.get().runId())) {
                 runs.markUnchanged(run.runId(), snapshot.sha256());
                 snapshots.keepOnly(sourceId, run.runId());
                 log.info("ingest {}: run {} unchanged since the last import", sourceId, run.runId());
@@ -190,7 +200,7 @@ public class RunCoordinator {
         }
 
         RunStore.Completion completion = runs.complete(run.runId(), sourceId, properties.maxRejectShare(),
-                properties.maxRetireShare());
+                properties.maxRetireShare(), priority.roles());
         snapshots.keepOnly(sourceId, run.runId());
         if (!completion.complete()) {
             log.error("ingest {}: run {} failed: {}", sourceId, run.runId(), completion.error());
@@ -205,28 +215,40 @@ public class RunCoordinator {
             Set<Integer> done, ContiguousWatermark watermark, RunControl control) throws Exception {
         String sourceId = adapter.sourceId();
         int parseWorkers = properties.parseWorkerCount();
+        int matchWorkers = properties.matchWorkerCount();
         int upsertWorkers = properties.upsertWorkers();
+        // H3 is native code, so the index is built on a platform thread (as are the match workers that query it).
+        PlaceIndex index = PlatformThreads.call("ingest-index-" + sourceId,
+                () -> PlaceIndex.load(dataSource, sourceId, run.runId()));
+        var matcher = new Matcher(index, priority, sourceId);
+        log.info("ingest {}: matching against {} places", sourceId, index.size());
         // Each queue holds twice its consumers' worker count, in batches of batch-size rows (the plan's sizing).
         var raw = new BoundedChannel<RawBatch>(2 * parseWorkers);
-        var parsed = new BoundedChannel<ParsedBatch>(2 * upsertWorkers);
+        var parsed = new BoundedChannel<ParsedBatch>(2 * matchWorkers);
+        var matched = new BoundedChannel<MatchedBatch>(2 * upsertWorkers);
         var reader = new BatchReader(snapshot.file(), adapter.columns(), properties.batchSize(), scan, done);
 
         try (IngestMetrics.RunMetrics runMetrics = metrics.forRun(sourceId)) {
             runMetrics.watchQueue("parse", raw);
-            runMetrics.watchQueue("upsert", parsed);
+            runMetrics.watchQueue("match", parsed);
+            runMetrics.watchQueue("upsert", matched);
             runMetrics.watchProgress(watermark, run.totalBatches());
 
             var pipeline = new Pipeline();
-            // Reading the file is I/O-bound and pure Java, so a virtual thread suits it. Parsing is CPU work and the
-            // upsert holds one JDBC connection per thread: both get a fixed number of platform threads.
+            // Reading the file is I/O-bound and pure Java, so a virtual thread suits it. Parsing and matching are CPU
+            // work (matching also calls H3), and the upsert holds one JDBC connection per thread: all three get a
+            // fixed number of platform threads.
             pipeline.source("read", Thread.ofVirtual().name("ingest-read-" + sourceId).factory(), raw,
                     reader::readInto);
             pipeline.stage("parse", parseWorkers,
                     Thread.ofPlatform().name("ingest-parse-" + sourceId + "-", 1).factory(), raw, parsed,
                     () -> new ParseWorker(adapter, new ParseContext(categories, area.checker())),
                     runMetrics.stage("parse"));
+            pipeline.stage("match", matchWorkers,
+                    Thread.ofPlatform().name("ingest-match-" + sourceId + "-", 1).factory(), parsed, matched,
+                    () -> new MatchWorker(matcher), runMetrics.stage("match"));
             pipeline.sink("upsert", upsertWorkers,
-                    Thread.ofPlatform().name("ingest-upsert-" + sourceId + "-", 1).factory(), parsed,
+                    Thread.ofPlatform().name("ingest-upsert-" + sourceId + "-", 1).factory(), matched,
                     () -> new BatchWriter(dataSource, run.runId(), sourceId, watermark, runMetrics),
                     runMetrics.stage("upsert"));
 

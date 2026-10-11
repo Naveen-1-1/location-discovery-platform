@@ -3,6 +3,7 @@ package io.github.naveen11.placemap.ingest;
 import io.github.naveen11.placemap.ingest.catalog.CategoryRules;
 import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourceCatalog;
+import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.run.IngestMetrics;
 import io.github.naveen11.placemap.ingest.run.IngestScheduler;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator;
@@ -32,6 +33,11 @@ class IngestConfig {
     }
 
     @Bean
+    SourcePriority sourcePriority(IngestProperties properties) {
+        return SourcePriority.load(properties.sourcePriorityFile());
+    }
+
+    @Bean
     CoverageArea coverageArea(IngestProperties properties) {
         return CoverageArea.load(properties.areaFile());
     }
@@ -58,9 +64,10 @@ class IngestConfig {
 
     @Bean
     RunCoordinator runCoordinator(IngestProperties properties, SourceCatalog catalog, SourceAdapters adapters,
-            CategoryRules categories, CoverageArea area, SnapshotStore snapshots, RunStore runs, DataSource dataSource,
-            IngestMetrics metrics) {
-        return new RunCoordinator(properties, catalog, adapters, categories, area, snapshots, runs, dataSource, metrics);
+            CategoryRules categories, SourcePriority priority, CoverageArea area, SnapshotStore snapshots, RunStore runs,
+            DataSource dataSource, IngestMetrics metrics) {
+        return new RunCoordinator(properties, catalog, adapters, categories, priority, area, snapshots, runs,
+                dataSource, metrics);
     }
 
     @Bean

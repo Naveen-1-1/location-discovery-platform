@@ -32,11 +32,15 @@ Before you start: copy `.env.example` to `.env` and fill in the Neon and Grafana
 
 **One-off setup:**
 ```bash
-tools/dev.sh migrate && tools/dev.sh seed && tools/dev.sh tiles
+tools/dev.sh migrate && tools/dev.sh tiles
 ```
 - `migrate` applies the database migrations to Neon.
-- `seed` loads about 7,100 temporary Overture places.
 - `tiles` builds the Boston basemap file.
+
+**First import** (OSM first, so it can corroborate Overture's less certain places; then the licences match both):
+```bash
+tools/dev.sh ingest-once osm_geofabrik_massachusetts overture_places boston_active_food_licenses
+```
 
 **Then use two terminals:**
 ```bash
@@ -49,7 +53,7 @@ any import that was interrupted (see [ADR 0020](docs/adr/0020-import-crash-safet
 [ADR 0021](docs/adr/0021-ingest-run-mode.md)).
 ```bash
 tools/dev.sh ingest                                         # keeps running, imports when due
-tools/dev.sh ingest-once boston_active_food_licenses        # one import now, then exit
+tools/dev.sh ingest-once boston_active_food_licenses        # one import now, then exit (add --force to redo)
 ```
 Downloads are saved under `data/raw/` (git-ignored). Personal fields are never downloaded
 ([ADR 0031](docs/adr/0031-personal-data-dropped-at-import.md)).

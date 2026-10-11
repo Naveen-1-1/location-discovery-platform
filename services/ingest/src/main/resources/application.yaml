@@ -36,6 +36,7 @@ placemap:
   ingest:
     sources-file: data/sources.yaml
     categories-file: data/categories.yaml
+    source-priority-file: data/source-priority.yaml
     area-file: data/area/area.geojson
     raw-dir: data/raw          # git-ignored
     batch-size: 1000
