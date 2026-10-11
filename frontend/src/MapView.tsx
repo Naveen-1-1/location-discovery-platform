@@ -78,7 +78,7 @@ export function MapView({ origin, radius, places, selected, onPickOrigin, onSele
         id="places"
         type="geojson"
         data={geojson}
-        attribution='Places © <a href="https://overturemaps.org">Overture Maps Foundation</a>'
+        attribution='Places © <a href="https://overturemaps.org">Overture Maps Foundation</a>, © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
       >
         <Layer
           id={PLACES_LAYER}
