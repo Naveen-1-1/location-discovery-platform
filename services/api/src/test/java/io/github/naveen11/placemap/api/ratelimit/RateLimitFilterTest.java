@@ -27,7 +27,7 @@ class RateLimitFilterTest {
 
         assertThat(over.getStatus()).isEqualTo(429);
         assertThat(over.getHeader(HttpHeaders.RETRY_AFTER)).isEqualTo("1");
-        assertThat(over.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        assertThat(over.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE + ";charset=UTF-8");
         assertThat(over.getContentAsString()).contains("\"status\":429").contains("Try again in 1 s.");
         assertThat(rejected.count()).isEqualTo(1);
     }

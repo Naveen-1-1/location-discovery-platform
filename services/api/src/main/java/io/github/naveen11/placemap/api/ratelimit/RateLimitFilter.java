@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -38,6 +39,7 @@ final class RateLimitFilter extends OncePerRequestFilter {
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(decision.retryAfterSeconds()));
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8);
         response.getWriter().write("""
                 {"type":"about:blank","title":"Too Many Requests","status":429,\
                 "detail":"Too many requests from this client. Try again in %d s."}""".formatted(
