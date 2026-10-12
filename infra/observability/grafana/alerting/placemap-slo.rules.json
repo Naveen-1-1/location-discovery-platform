@@ -1,0 +1,247 @@
+{
+  "title": "placemap-slo",
+  "folderUid": "placemap",
+  "interval": 60,
+  "rules": [
+    {
+      "uid": "placemap-slo-avail-fast",
+      "title": "ApiAvailabilityBurnFast",
+      "condition": "C",
+      "for": "2m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "severity": "page",
+        "slo": "api-availability",
+        "service": "api"
+      },
+      "annotations": {
+        "summary": "the api is spending its error budget 14x too fast",
+        "description": "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days.",
+        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
+      },
+      "notification_settings": {
+        "receiver": "email-placemap"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 3600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "refId": "A",
+            "expr": "((sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\", status=~\"5..\"}[1h]))) / sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\"}[1h])))) > (14.4 * 0.005) and (sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\", status=~\"5..\"}[5m]))) / sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\"}[5m])))) > (14.4 * 0.005) and sum(histogram_count(increase(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\"}[1h]))) >= 100) or vector(0)",
+            "instant": true,
+            "range": false
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "A",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "uid": "placemap-slo-avail-slow",
+      "title": "ApiAvailabilityBurnSlow",
+      "condition": "C",
+      "for": "15m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "severity": "page",
+        "slo": "api-availability",
+        "service": "api"
+      },
+      "annotations": {
+        "summary": "the api is spending its error budget 6x too fast",
+        "description": "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days.",
+        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
+      },
+      "notification_settings": {
+        "receiver": "email-placemap"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 21600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "refId": "A",
+            "expr": "((sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\", status=~\"5..\"}[6h]))) / sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\"}[6h])))) > (6 * 0.005) and (sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\", status=~\"5..\"}[30m]))) / sum(histogram_count(rate(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\"}[30m])))) > (6 * 0.005) and sum(histogram_count(increase(http_server_requests_seconds{job=\"placemap/api\", uri!~\"/actuator.*\"}[6h]))) >= 100) or vector(0)",
+            "instant": true,
+            "range": false
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "A",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "uid": "placemap-slo-latency-fast",
+      "title": "NearbyLatencyBurnFast",
+      "condition": "C",
+      "for": "2m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "severity": "page",
+        "slo": "nearby-latency",
+        "service": "api"
+      },
+      "annotations": {
+        "summary": "nearby search is spending its latency budget 14x too fast",
+        "description": "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days.",
+        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"
+      },
+      "notification_settings": {
+        "receiver": "email-placemap"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 3600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "refId": "A",
+            "expr": "((1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job=\"placemap/api\", uri=\"/api/places/nearby\", status=\"200\"}[1h])))) > (14.4 * 0.05) and (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job=\"placemap/api\", uri=\"/api/places/nearby\", status=\"200\"}[5m])))) > (14.4 * 0.05) and sum(histogram_count(increase(http_server_requests_seconds{job=\"placemap/api\", uri=\"/api/places/nearby\", status=\"200\"}[1h]))) >= 100) or vector(0)",
+            "instant": true,
+            "range": false
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "A",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "uid": "placemap-slo-latency-slow",
+      "title": "NearbyLatencyBurnSlow",
+      "condition": "C",
+      "for": "15m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "labels": {
+        "severity": "page",
+        "slo": "nearby-latency",
+        "service": "api"
+      },
+      "annotations": {
+        "summary": "nearby search is spending its latency budget 6x too fast",
+        "description": "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days.",
+        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"
+      },
+      "notification_settings": {
+        "receiver": "email-placemap"
+      },
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 21600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "refId": "A",
+            "expr": "((1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job=\"placemap/api\", uri=\"/api/places/nearby\", status=\"200\"}[6h])))) > (6 * 0.05) and (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job=\"placemap/api\", uri=\"/api/places/nearby\", status=\"200\"}[30m])))) > (6 * 0.05) and sum(histogram_count(increase(http_server_requests_seconds{job=\"placemap/api\", uri=\"/api/places/nearby\", status=\"200\"}[6h]))) >= 100) or vector(0)",
+            "instant": true,
+            "range": false
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "A",
+            "conditions": [
+              {
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

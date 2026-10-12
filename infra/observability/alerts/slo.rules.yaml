@@ -1,0 +1,79 @@
+# Burn-rate alerts on the api's SLOs (docs/slo.md, ADR 0044), in Prometheus rule-file format. Development uses the
+# same rules as Grafana-managed rules (infra/observability/grafana/alerting/placemap-slo.rules.json, applied by
+# tools/grafana-apply.py).
+#
+# Multi-window, multi-burn-rate (Google SRE workbook, "Alerting on SLOs"): an alert needs both its long window and its
+# short window over the threshold. The long window shows the budget is really going (14.4x for an hour spends 2% of
+# a 30-day budget; 6x for six hours spends 5%); the short one clears the alert soon after the problem stops.
+# Each also needs 100 requests in the long window: development traffic is tiny, and two errors in a quiet hour are
+# not an outage.
+#
+# Requests the api refuses before Spring maps them (429 rate limit, 413 body limit) are recorded with uri="UNKNOWN",
+# so availability counts every request except the actuator's, and only 5xx answers are bad.
+groups:
+  - name: placemap-slo
+    rules:
+      - alert: ApiAvailabilityBurnFast
+        expr: >-
+          (
+            sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*", status=~"5.."}[1h])))
+            / sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*"}[1h])))
+          ) > (14.4 * 0.005)
+          and (
+            sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*", status=~"5.."}[5m])))
+            / sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*"}[5m])))
+          ) > (14.4 * 0.005)
+          and sum(histogram_count(increase(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*"}[1h]))) >= 100
+        for: 2m
+        labels:
+          severity: page
+          slo: api-availability
+        annotations:
+          summary: "the api is spending its error budget 14x too fast"
+          description: "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days."
+          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
+      - alert: ApiAvailabilityBurnSlow
+        expr: >-
+          (
+            sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*", status=~"5.."}[6h])))
+            / sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*"}[6h])))
+          ) > (6 * 0.005)
+          and (
+            sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*", status=~"5.."}[30m])))
+            / sum(histogram_count(rate(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*"}[30m])))
+          ) > (6 * 0.005)
+          and sum(histogram_count(increase(http_server_requests_seconds{job="placemap/api", uri!~"/actuator.*"}[6h]))) >= 100
+        for: 15m
+        labels:
+          severity: page
+          slo: api-availability
+        annotations:
+          summary: "the api is spending its error budget 6x too fast"
+          description: "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days."
+          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
+      - alert: NearbyLatencyBurnFast
+        expr: >-
+          (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[1h])))) > (14.4 * 0.05)
+          and (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[5m])))) > (14.4 * 0.05)
+          and sum(histogram_count(increase(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[1h]))) >= 100
+        for: 2m
+        labels:
+          severity: page
+          slo: nearby-latency
+        annotations:
+          summary: "nearby search is spending its latency budget 14x too fast"
+          description: "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days."
+          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"
+      - alert: NearbyLatencyBurnSlow
+        expr: >-
+          (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[6h])))) > (6 * 0.05)
+          and (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[30m])))) > (6 * 0.05)
+          and sum(histogram_count(increase(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[6h]))) >= 100
+        for: 15m
+        labels:
+          severity: page
+          slo: nearby-latency
+        annotations:
+          summary: "nearby search is spending its latency budget 6x too fast"
+          description: "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days."
+          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"

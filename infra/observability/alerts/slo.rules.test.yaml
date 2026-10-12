@@ -1,0 +1,133 @@
+# promtool test rules infra/observability/alerts/slo.rules.test.yaml
+#
+# Request histograms are native (OTLP exponential histograms), one sample a minute. Schema 0 buckets cover
+# (2^(i-1), 2^i]; with offset -2 the first bucket is (0.125, 0.25] s, under the 300 ms target, and the third is
+# (0.5, 1] s, over it.
+rule_files:
+  - slo.rules.yaml
+evaluation_interval: 1m
+tests:
+  # 10% of requests fail for 40 minutes, then none: the fast burn fires within a quarter of an hour and clears soon
+  # after the errors stop; the slow burn fires later and clears later.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:1.8 count:9 buckets:[9] offset:-2}}x120'
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="503"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:0.2 count:1 buckets:[1] offset:-2}}x40 {{schema:0 sum:8 count:40 buckets:[40] offset:-2}}x80'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: [&fast {exp_labels: {severity: page, slo: api-availability}, exp_annotations: {
+            summary: "the api is spending its error budget 14x too fast",
+            description: "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days.",
+            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"}}]
+      - eval_time: 15m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: [*fast]
+      - eval_time: 30m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: [&slow {exp_labels: {severity: page, slo: api-availability}, exp_annotations: {
+            summary: "the api is spending its error budget 6x too fast",
+            description: "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days.",
+            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"}}]
+      - eval_time: 50m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: [*slow]
+      - eval_time: 70m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: []
+
+  # A quiet hour: 17% of 72 requests fail, under the 100-request floor. The actuator's own failures never count.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:0.2 count:1 buckets:[1] offset:-2}}x60'
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="500"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:0.04 count:0.2 buckets:[0.2] offset:-2}}x60'
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/actuator/health", status="503"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:20 count:100 buckets:[100] offset:-2}}x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: []
+
+  # 80% of nearby searches are slow: both latency burns fire, the fast one first.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0 0 0] offset:-2}}+{{schema:0 sum:6.4 count:10 buckets:[2 0 8] offset:-2}}x60'
+    promql_expr_test:
+      - expr: 1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{uri="/api/places/nearby"}[1h])))
+        eval_time: 30m
+        exp_samples: [{labels: '{}', value: 0.8}]
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: NearbyLatencyBurnFast
+        exp_alerts: [{exp_labels: {severity: page, slo: nearby-latency}, exp_annotations: {
+            summary: "nearby search is spending its latency budget 14x too fast",
+            description: "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days.",
+            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"}}]
+      - eval_time: 15m
+        alertname: NearbyLatencyBurnSlow
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: NearbyLatencyBurnSlow
+        exp_alerts: [&latencySlow {exp_labels: {severity: page, slo: nearby-latency}, exp_annotations: {
+            summary: "nearby search is spending its latency budget 6x too fast",
+            description: "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days.",
+            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"}}]
+
+  # Half the successful searches are slow: only the slow burn fires. Slow failures and other endpoints do not count.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0 0 0] offset:-2}}+{{schema:0 sum:4.5 count:10 buckets:[5 0 5] offset:-2}}x60'
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="503"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0 0 0] offset:-2}}+{{schema:0 sum:8 count:10 buckets:[0 0 10] offset:-2}}x60'
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/route", status="200"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0 0 0] offset:-2}}+{{schema:0 sum:8 count:10 buckets:[0 0 10] offset:-2}}x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: NearbyLatencyBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: NearbyLatencyBurnSlow
+        exp_alerts: [*latencySlow]
+
+  # The alert drill with no other traffic (docs/runbooks/alert-drill.md): 120 failing requests in two minutes.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/_drills/error", status="500"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:12 count:60 buckets:[60] offset:-2}}x2 {{schema:0 sum:24 count:120 buckets:[120] offset:-2}}x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: [*fast]
+      - eval_time: 9m
+        alertname: ApiAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: [*slow]
+      - eval_time: 35m
+        alertname: ApiAvailabilityBurnSlow
+        exp_alerts: []

@@ -1,0 +1,45 @@
+# promtool test rules infra/observability/alerts/api.rules.test.yaml
+rule_files:
+  - api.rules.yaml
+evaluation_interval: 1m
+tests:
+  # The alert drill (docs/runbooks/alert-drill.md): one failing request a second for three minutes.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/_drills/error", status="500"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:12 count:60 buckets:[60] offset:-2}}x3 {{schema:0 sum:36 count:180 buckets:[180] offset:-2}}x10'
+      # Client errors are not server errors.
+      - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="400"}'
+        values: '{{schema:0 sum:0 count:0 buckets:[0] offset:-2}}+{{schema:0 sum:12 count:600 buckets:[600] offset:-2}}x13'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ApiServerErrors
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: ApiServerErrors
+        exp_alerts:
+          - exp_labels: {severity: page}
+            exp_annotations:
+              summary: "api is returning 5xx errors"
+              description: "1 errors/s over the last 2 minutes. Check the API RED dashboard, then the traces for status=500."
+      - eval_time: 8m
+        alertname: ApiServerErrors
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'jvm_threads_virtual_pinned_seconds_count{job="placemap/live-hub"}'
+        values: '0 0 0 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: VirtualThreadPinning
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: VirtualThreadPinning
+        exp_alerts:
+          - exp_labels: {severity: ticket}
+            exp_annotations:
+              summary: "virtual threads are being pinned"
+              description: "A virtual thread blocked while pinned to its carrier thread. Find the stack in JFR (jdk.VirtualThreadPinned)."
+      - eval_time: 9m
+        alertname: VirtualThreadPinning
+        exp_alerts: []
