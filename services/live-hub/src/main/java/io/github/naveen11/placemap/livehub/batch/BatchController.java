@@ -21,6 +21,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -30,6 +34,10 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Request {@code {"keys": ["bikes:<station_id>", ...]}}. Response {@code {"version": V, "topics": {"bikes":
  * {"stale": false, "updated": ms}}, "items": {"bikes:<station_id>": {...}}}}; unknown keys are left out.
+ *
+ * <p>The body is parsed here, by a reader with tight limits (ADR 0044): the request is two levels deep and its strings
+ * are short, so deeper nesting, long strings or a long document are refused with 400 before they cost anything. The
+ * body's size is capped before that by {@link BodyLimitFilter}.
  */
 @RestController
 public class BatchController {
@@ -39,6 +47,17 @@ public class BatchController {
     }
 
     private static final JsonMapper JSON = new JsonMapper();
+    private static final JsonMapper READER = JsonMapper.builder(JsonFactory.builder()
+                    .streamReadConstraints(StreamReadConstraints.builder()
+                            .maxNestingDepth(8)
+                            .maxStringLength(1024)
+                            .maxNameLength(64)
+                            .maxNumberLength(32)
+                            .maxDocumentLength(64 * 1024)
+                            .build())
+                    .build())
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .build();
 
     private final SnapshotPublisher<LiveSnapshot, LiveKey, Frame> publisher;
     private final int maxKeys;
@@ -49,7 +68,8 @@ public class BatchController {
     }
 
     @PostMapping(path = "/internal/live/batch", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<byte[]> batch(@RequestBody BatchRequest request) {
+    public ResponseEntity<byte[]> batch(@RequestBody byte[] body) {
+        BatchRequest request = parse(body);
         List<String> keys = request.keys() == null ? List.of() : request.keys();
         if (keys.size() > maxKeys) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "at most " + maxKeys + " keys");
@@ -73,6 +93,18 @@ public class BatchController {
             }
         }
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(json(snapshot, topics, items));
+    }
+
+    private static BatchRequest parse(byte[] body) {
+        try {
+            BatchRequest request = READER.readValue(body, BatchRequest.class);
+            if (request == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "empty request");
+            }
+            return request;
+        } catch (JacksonException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unreadable request");
+        }
     }
 
     private static byte[] json(LiveSnapshot snapshot, EnumSet<Topic> topics, Map<String, byte[]> items) {

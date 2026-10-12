@@ -4,6 +4,7 @@ import io.github.naveen11.placemap.livehub.sse.ConnectionMode;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.util.unit.DataSize;
 
 /**
  * {@code placemap.live.*}, defaults from the plan (showcase 2) and ADR 0018, 0023 and 0041.
@@ -22,6 +23,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param watchdogTick            how often the watchdog checks every session
  * @param retryMin                the shortest reconnect delay a client is told; each gets a random one up to retryMax
  * @param maxBatchKeys            items one {@code /internal/live/batch} call may ask for
+ * @param maxBody                 the largest request body read (ADR 0044); 500 batch keys take about 25 KB
  */
 @ConfigurationProperties("placemap.live")
 public record LiveProperties(
@@ -40,6 +42,7 @@ public record LiveProperties(
         @DefaultValue("2s") Duration retryMin,
         @DefaultValue("7s") Duration retryMax,
         @DefaultValue("500") int maxBatchKeys,
+        @DefaultValue("64KB") DataSize maxBody,
         @DefaultValue Bluebikes bluebikes,
         @DefaultValue Mbta mbta) {
 

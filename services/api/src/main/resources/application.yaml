@@ -25,6 +25,10 @@ server:
   # Trust X-Forwarded-For only from proxies on loopback or private networks (Caddy in front, ADR 0028), so rate
   # limits see each client instead of the proxy. A client on the internet cannot set it for itself.
   forward-headers-strategy: native
+  tomcat:
+    # A body nobody reads is swallowed to keep the connection open, at most this much; then the connection is closed
+    # (ADR 0044). The api reads no bodies at all: placemap.body-limit refuses them first.
+    max-swallow-size: 64KB
 
 management:
   endpoints:

@@ -14,6 +14,8 @@ server:
     max-connections: 12000       # room for the 5,000-stream test (L6) plus ordinary requests
     # Also Tomcat's blocking-write timeout: the backstop behind the watchdog's 10 s eviction (ADR 0023).
     connection-timeout: 15s
+    # A body nobody reads is swallowed to keep the connection open, at most this much (ADR 0044).
+    max-swallow-size: 64KB
 
 management:
   endpoints:
