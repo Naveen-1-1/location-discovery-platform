@@ -31,6 +31,7 @@ HISTORY = ROOT / "docs/benchmarks/nightly-runs.md"
 JAR = ROOT / "services/ingest/target/ingest.jar"
 JAVA = ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow"]
 GREEN_DAYS_NEEDED = 3
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The release check reads only files: no database and no telemetry.
 OFFLINE = ["--spring.datasource.url=jdbc:postgresql://localhost/unused", "--spring.datasource.username=unused",
            "--spring.datasource.password=unused", "--management.otlp.metrics.export.enabled=false",
@@ -49,8 +50,9 @@ class Log:
         return subprocess.run(cmd, cwd=cwd, stdout=self.file, stderr=subprocess.STDOUT).returncode
 
     def text(self):
+        """The output so far, without terminal colour codes."""
         self.file.flush()
-        return self.path.read_text(encoding="utf-8", errors="replace")
+        return ANSI.sub("", self.path.read_text(encoding="utf-8", errors="replace"))
 
 
 def docker_running():
@@ -193,8 +195,8 @@ def green_days():
     return sorted(days)
 
 
-def record(started, results, total, result):
-    cells = [started.strftime("%Y-%m-%d"), started.strftime("%H:%M"), f"`{commit()}`", result]
+def record(started, revision, results, total, result):
+    cells = [started.strftime("%Y-%m-%d"), started.strftime("%H:%M"), f"`{revision}`", result]
     for name in NAMES:
         if name in results:
             ok, seconds, _ = results[name]
@@ -221,9 +223,10 @@ def main():
         parser.error(f"unknown steps {unknown}; choose from {NAMES}")
 
     started = datetime.datetime.now()
+    revision = commit()  # as the run starts: what it tests
     logs = ROOT / "target/nightly" / started.strftime("%Y%m%d-%H%M%S")
     logs.mkdir(parents=True, exist_ok=True)
-    print(f"Nightly check, {started:%Y-%m-%d %H:%M}, commit {commit()}; logs in {logs.relative_to(ROOT)}/", flush=True)
+    print(f"Nightly check, {started:%Y-%m-%d %H:%M}, commit {revision}; logs in {logs.relative_to(ROOT)}/", flush=True)
     results = {}
     t0 = time.monotonic()
     try:
@@ -249,7 +252,7 @@ def main():
     full = set(results) == set(NAMES)
     result = "FAILED" if failed else "PASSED" if full else "PARTIAL"
     if not args.no_history:
-        record(started, results, total, result)
+        record(started, revision, results, total, result)
     days = green_days()
     if failed:
         print(f"NIGHTLY FAILED in {took(total)}: {', '.join(failed)}")

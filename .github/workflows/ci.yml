@@ -35,7 +35,18 @@ jobs:
         run: ./mvnw -B -ntp verify
 
       - name: JCStress (sanity mode; the full suite runs in nightly.yml)
-        run: ./mvnw -B -ntp -pl libs/concurrent-jcstress -am verify -Pjcstress -Djcstress.mode=sanity -DskipTests
+        run: |
+          ./mvnw -B -ntp -pl libs/concurrent-jcstress -am verify -Pjcstress -Djcstress.mode=sanity -DskipTests \
+            | tee jcstress.log
+          # JCStress exits 0 even when tests fail; its last results line says how many did.
+          python3 - jcstress.log <<'PY'
+          import re, sys
+          found = re.findall(r"Results: (\d+) planned; (\d+) passed, (\d+) failed, (\d+) soft errs, (\d+) hard errs",
+                             open(sys.argv[1], encoding="utf-8", errors="replace").read())
+          if not found or found[-1][2:] != ("0", "0", "0"):
+              sys.exit("JCStress: " + (" ".join(found[-1]) if found else "no results line"))
+          print("JCStress: %s of %s passed" % (found[-1][1], found[-1][0]))
+          PY
 
       - name: JMH smoke (one short iteration, proves the harness runs)
         run: java -jar libs/concurrent-jmh/target/benchmarks.jar -f 1 -wi 0 -i 1 -r 1s -t 2
