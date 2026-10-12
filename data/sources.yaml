@@ -80,6 +80,21 @@ sources:
       Data from Meta. Data from Microsoft. Data from PinMeTo. Data from Krick. Data from RenderSEO. Data from DAC. Data from BrightQuery. (CDLA Permissive 2.0)
       Data from Foursquare. Copyright 2024 Foursquare Labs, Inc. All rights reserved. Available under Apache 2.0. Foursquare data was transformed to the Overture schema. Changed: 2026-03-18. [plus the full Foursquare NOTICE.txt]
       Data from AllThePlaces. (CC0 1.0)
+    # ADR 0044: the data release credits each upstream provider (sources[].dataset, kept in attrs.datasets) that its
+    # Overture records come from, and ships the texts its licence needs. A provider not listed here stops the release.
+    providers:
+      Overture:         { credit: null }   # Overture's own conflation
+      Overture-signals: { credit: null }
+      meta:             { credit: "Data from Meta.", licence: CDLA-Permissive-2.0 }
+      Microsoft:        { credit: "Data from Microsoft.", licence: CDLA-Permissive-2.0 }
+      PinMeTo:          { credit: "Data from PinMeTo.", licence: CDLA-Permissive-2.0 }
+      Krick:            { credit: "Data from Krick.", licence: CDLA-Permissive-2.0 }
+      RenderSEO:        { credit: "Data from RenderSEO.", licence: CDLA-Permissive-2.0 }
+      DAC:              { credit: "Data from DAC.", licence: CDLA-Permissive-2.0 }
+      BrightQuery:      { credit: "Data from BrightQuery.", licence: CDLA-Permissive-2.0 }
+      Foursquare:       { credit: "Data from Foursquare. Copyright 2024 Foursquare Labs, Inc. All rights reserved. Available under Apache 2.0. Foursquare data was transformed to the Overture schema. Changed: 2026-03-18.",
+                          licence: Apache-2.0, notice: Foursquare-NOTICE.txt }
+      AllThePlaces:     { credit: "Data from AllThePlaces.", licence: CC0-1.0 }
     licence_notes: >-
       The attribution page lists licences per Places provider: CDLA-Permissive-2.0
       (Meta, Microsoft, PinMeTo, Krick, RenderSEO, DAC, BrightQuery), Apache-2.0

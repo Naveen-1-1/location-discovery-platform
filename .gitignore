@@ -24,6 +24,7 @@ dist/
 # Large or generated data (built in CI or by tools/*.sh; never committed)
 data/raw/
 data/cache/
+data/release/
 spikes/phase0/work/
 *.osm.pbf
 *.pmtiles

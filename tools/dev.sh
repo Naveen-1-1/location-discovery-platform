@@ -14,6 +14,8 @@
 #   tools/dev.sh match-sample     draw the matching evaluation's sample from the database (data/eval/match-sample.csv)
 #   tools/dev.sh match-evaluate   precision and recall from the labelled sample, and the owner's blind check
 #   tools/dev.sh coverage         write docs/data/coverage.md: places, sources, facts and geocodes in the database
+#   tools/dev.sh release          build the ODbL data release from Neon into data/release/<date>/ (not published)
+#   tools/dev.sh release-check [DIR]   check a built release (default: the newest); no database needed
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -115,10 +117,16 @@ case "${1:-help}" in
     shift
     exec python3 -I tools/ingest-proofs.py "$@"
     ;;
-  match-sample|match-evaluate)
+  match-sample|match-evaluate|release)
     load_env
     ./mvnw -q -B -pl services/ingest -am package -DskipTests
     exec java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.tool.name="$1"
+    ;;
+  release-check)
+    load_env
+    [[ -f services/ingest/target/ingest.jar ]] || ./mvnw -q -B -pl services/ingest -am package -DskipTests
+    exec java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.tool.name=release-check \
+      ${2:+--placemap.ingest.tool.release-folder="$2"}
     ;;
   coverage)
     load_env
@@ -130,6 +138,6 @@ case "${1:-help}" in
     exec npm run dev
     ;;
   *)
-    sed -n '2,13p' "$0"
+    sed -n '2,/^set -euo/p' "$0" | sed '$d'
     ;;
 esac

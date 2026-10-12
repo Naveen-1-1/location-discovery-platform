@@ -31,7 +31,7 @@ final class TestIngest {
                 batchSize, 2, 2, 2, 1, Duration.ofMinutes(1), Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02,
                 maxRetireShare, null, false, null,
                 new IngestProperties.Geocoder(URI.create("https://photon.invalid/api/"), 4, 100, Duration.ofSeconds(5)),
-                new IngestProperties.Tool(null, null, null, 100, 1));
+                new IngestProperties.Tool(null, null, null, 100, 1, null, null, null));
     }
 
     static RunCoordinator coordinator(DataSource dataSource, Path rawDir, int batchSize, HttpDownloader http,

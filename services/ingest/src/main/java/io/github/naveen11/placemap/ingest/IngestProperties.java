@@ -45,17 +45,24 @@ public record IngestProperties(
 
     /**
      * {@code placemap.ingest.tool.*}: run one tool instead of importing, then exit (tools/dev.sh match-sample,
-     * match-evaluate).
+     * match-evaluate, release, release-check).
      *
-     * @param name {@code match-sample} or {@code match-evaluate}; empty for the importer
+     * @param name {@code match-sample}, {@code match-evaluate}, {@code release} or {@code release-check}; empty for
+     *     the importer
      * @param ownerLabels match-evaluate: the owner's blind labels, compared with the sample's
+     * @param releaseDir release: where each release's dated folder is built (ADR 0044)
+     * @param licencesDir release: the licence texts it ships
+     * @param releaseFolder release-check: the folder to check; empty means the newest under releaseDir
      */
     public record Tool(
             String name,
             @DefaultValue("data/eval/match-sample.csv") Path sample,
             @DefaultValue("data/eval/match-labels-owner.csv") Path ownerLabels,
             @DefaultValue("100") int perBand,
-            @DefaultValue("20261011") long seed) {
+            @DefaultValue("20261011") long seed,
+            @DefaultValue("data/release") Path releaseDir,
+            @DefaultValue("data/licences") Path licencesDir,
+            Path releaseFolder) {
     }
 
     /**
