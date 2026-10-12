@@ -46,7 +46,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Overture, OSM and the Boston licences merged into places through the real adapters (DuckDB, osmium), the real
- * matcher and the real migrations (ADR 0022, 0032). All places are made up. Needs Docker and osmium.
+ * matcher and the real migrations. All places are made up. Needs Docker and osmium.
  *
  * <p>The scenario, around downtown Boston:
  * <ul>
@@ -261,7 +261,7 @@ class PlaceMatchingContainerTest {
         assertThat(Files.readString(tmp.resolve("eval/match-sample-meta.json"))).contains("\"bands\"", "\"link\"");
     }
 
-    /** What the filters read, refreshed at each completion for the places the run touched (ADR 0042). */
+    /** What the filters read, refreshed at each completion for the places the run touched. */
     @Test
     void eachPlaceGetsTheFactsTheFiltersRead() throws Exception {
         writeOsm(List.of(

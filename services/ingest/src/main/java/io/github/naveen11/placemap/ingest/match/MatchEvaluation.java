@@ -18,7 +18,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Precision and recall of the link threshold on the labelled sample (ADR 0022; proposed exit: precision ≥ 0.95,
+ * Precision and recall of the link threshold on the labelled sample (proposed exit: precision ≥ 0.95,
  * recall ≥ 0.85).
  *
  * <p>A case's label names the candidate that is the same real place as the record ({@code 1}–{@code 3}) or none

@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.util.unit.DataSize;
 
 /**
- * {@code placemap.live.*}, defaults from the plan (showcase 2) and ADR 0018, 0023 and 0041.
+ * {@code placemap.live.*}, defaults from the plan (showcase 2).
  *
  * @param tick                    how often the snapshot writer publishes, at most
  * @param queueCapacity           feed updates waiting for the writer, at most
@@ -23,7 +23,7 @@ import org.springframework.util.unit.DataSize;
  * @param watchdogTick            how often the watchdog checks every session
  * @param retryMin                the shortest reconnect delay a client is told; each gets a random one up to retryMax
  * @param maxBatchKeys            items one {@code /internal/live/batch} call may ask for
- * @param maxBody                 the largest request body read (ADR 0044); 500 batch keys take about 25 KB
+ * @param maxBody                 the largest request body read; 500 batch keys take about 25 KB
  */
 @ConfigurationProperties("placemap.live")
 public record LiveProperties(
@@ -63,7 +63,7 @@ public record LiveProperties(
 
     /**
      * MBTA: the V3 streams when there is an API key, the keyless GTFS-Realtime JSON files while a stream is down or
-     * there is no key, and the static GTFS zip both are read with (ADR 0041).
+     * there is no key, and the static GTFS zip both are read with.
      *
      * @param apiKey           MBTA V3 key from {@code MBTA_API_KEY}; empty means the open files only
      * @param streamTick       how often a connected stream counts as an answer; its topic is stale after 3 of these

@@ -1,4 +1,4 @@
-// Live data from live-hub over one Server-Sent Events stream per browser tab (ADR 0018). In development Vite proxies
+// Live data from live-hub over one Server-Sent Events stream per browser tab. In development Vite proxies
 // /live to localhost:8081. The stream starts with a snapshot of every topic it asks for, then sends only what
 // changed; after a reconnect (the browser's own, a few seconds later) the server sends a fresh snapshot, so nothing
 // needs replaying. Components say which topics they need; the stream reopens when that set changes.

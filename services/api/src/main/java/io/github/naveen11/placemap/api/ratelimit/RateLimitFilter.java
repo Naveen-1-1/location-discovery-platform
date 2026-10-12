@@ -13,7 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Answers 429 with Retry-After once a client is over its limit (ADR 0026). It runs before Spring MVC, so it writes
+ * Answers 429 with Retry-After once a client is over its limit. It runs before Spring MVC, so it writes
  * the problem-details body itself, in the same shape the rest of the API uses.
  */
 final class RateLimitFilter extends OncePerRequestFilter {

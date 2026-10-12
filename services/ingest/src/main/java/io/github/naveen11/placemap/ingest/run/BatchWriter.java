@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Upsert stage: commits one batch per transaction (ADR 0020). Each worker thread holds its own connection.
+ * Upsert stage: commits one batch per transaction. Each worker thread holds its own connection.
  *
  * <ol>
  *   <li>Upsert the records, sorted by key so concurrent batches lock rows in the same order. Unchanged rows (same

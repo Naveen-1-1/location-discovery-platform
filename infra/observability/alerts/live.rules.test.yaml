@@ -22,7 +22,6 @@ tests:
             exp_annotations:
               summary: "the live bikes feed is stale"
               description: "live-hub has had no answer from the bikes feed for over 3x its ttl, for 2 minutes. The map marks that data out of date and keeps showing the last values."
-              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/live-feed-stale.md"
       - eval_time: 16m
         alertname: LiveFeedStale
         exp_alerts: []

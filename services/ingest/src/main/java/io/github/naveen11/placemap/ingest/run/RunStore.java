@@ -138,7 +138,7 @@ public class RunStore {
     }
 
     /**
-     * Finishes a run whose batches are all committed, in one transaction (ADR 0020): checks the reject limit,
+     * Finishes a run whose batches are all committed, in one transaction: checks the reject limit,
      * retires the source's records that this run did not see (never deletes them), and marks the run COMPLETE with a
      * checksum of the source's live records. Two safety limits fail the run instead of finishing it: too many
      * rejected rows, or a snapshot that would retire too large a share of the live records (a truncated download
@@ -275,7 +275,7 @@ public class RunStore {
     }
 
     /**
-     * Rebuilds the source's per-establishment inspection summary that the map's filters read (ADR 0034): latest
+     * Rebuilds the source's per-establishment inspection summary that the map's filters read: latest
      * result and date, number of inspections, and violation lines marked Fail in the last 12 months. A no-op for
      * sources without inspections. Readers keep seeing the old rows until the run's transaction commits.
      */
@@ -295,7 +295,7 @@ public class RunStore {
                 WHERE i.source = ?
                 GROUP BY i.source, i.source_key
                 """).param(source).update();
-        // Failed checks of the latest inspection (Cambridge's way of saying whether it passed; ADR 0042).
+        // Failed checks of the latest inspection (Cambridge's way of saying whether it passed).
         tx.sql("""
                 UPDATE place.inspection_summary s
                 SET latest_failed_checks = latest.failed
@@ -311,13 +311,13 @@ public class RunStore {
     }
 
     /**
-     * Brings every place linked to this source up to date with its live records (ADR 0022, 0032):
+     * Brings every place linked to this source up to date with its live records:
      *
      * <ul>
      *   <li>Each attribute comes from the best-ranked live record that has it. Rank is the record's source position
      *       in data/source-priority.yaml for the record's category: existence sources first, then enrichment ones.
      *   <li>A place stays live only while some live record comes from an existence source for its category;
-     *       otherwise it is retired (never deleted, so place ids stay stable, ADR 0043). A returning record revives it.
+     *       otherwise it is retired (never deleted, so place ids stay stable). A returning record revives it.
      *   <li>Rows are only rewritten when something changed, so {@code updated_at} means "really changed".
      * </ul>
      *

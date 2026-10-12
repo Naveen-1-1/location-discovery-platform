@@ -7,9 +7,9 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Cambridge's Food Establishment Permits (about 7,000 rows, daily). An enrichment source for food places (ADR 0032),
+ * Cambridge's Food Establishment Permits (about 7,000 rows, daily). An enrichment source for food places,
  * notable for opening hours and seat counts. Each establishment ({@code id}) has one row per yearly renewal, so rows
- * are lines of one record and the newest renewal describes it. The applicant's name is never requested (ADR 0031).
+ * are lines of one record and the newest renewal describes it. The applicant's name is never requested.
  */
 @Component
 public class CambridgeFoodPermits extends SocrataCsvSource {

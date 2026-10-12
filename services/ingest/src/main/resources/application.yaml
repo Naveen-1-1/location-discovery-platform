@@ -6,7 +6,7 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s   # covers the 20 s drain plus the cancel (placemap.ingest.shutdown-grace)
   datasource:
-    # Neon direct (non-pooled) endpoint: session advisory locks need it (ADR 0033). reWriteBatchedInserts turns each
+    # Neon direct (non-pooled) endpoint: session advisory locks need it. reWriteBatchedInserts turns each
     # batch's 1,000 single-row upserts into a few multi-row statements.
     url: jdbc:postgresql://${PGHOST}/${PGDATABASE}?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory&ApplicationName=ingest&reWriteBatchedInserts=true
     username: ${PGUSER}
@@ -49,7 +49,7 @@ placemap:
     max-attempts: 3
     max-reject-share: 0.02
     max-retire-share: 0.2
-    geocoder:                  # Photon (ADR 0008); the public instance in development (ADR 0033)
+    geocoder:                  # Photon; the public instance in development
       url: https://photon.komoot.io/api/
       max-concurrent-calls: 4  # across all runs (the plan's Semaphore(4))
       calls-per-second: 1      # fair use of the public instance; raise for our own

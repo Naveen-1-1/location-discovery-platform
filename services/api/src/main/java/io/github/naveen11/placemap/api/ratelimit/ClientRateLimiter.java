@@ -13,7 +13,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 
 /**
- * Per-client request limits (ADR 0026): one token bucket per client, refilled at {@code perSecond} up to
+ * Per-client request limits: one token bucket per client, refilled at {@code perSecond} up to
  * {@code burst}, held in a bounded map so a flood of distinct clients cannot exhaust memory.
  *
  * <p>A client is identified by a salted SHA-256 hash of its IP address, so the raw address is never stored. The salt

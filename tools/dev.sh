@@ -9,14 +9,14 @@
 #   tools/dev.sh drill     with the api running in drill mode: send failing requests to test alerting
 #   tools/dev.sh ingest    start the importer: imports each source on its cadence, resumes unfinished runs
 #   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
-#   tools/dev.sh sizes     show the size of every table in the database (ADR 0034 asks to measure it)
+#   tools/dev.sh sizes     show the size of every table in the database
 #   tools/dev.sh proofs c1|c2|backpressure   crash tests / backpressure benchmark on a throwaway local database
 #   tools/dev.sh match-sample     draw the matching evaluation's sample from the database (data/eval/match-sample.csv)
 #   tools/dev.sh match-evaluate   precision and recall from the labelled sample, and the owner's blind check
 #   tools/dev.sh coverage         write docs/data/coverage.md: places, sources, facts and geocodes in the database
 #   tools/dev.sh release          build the ODbL data release from Neon into data/release/<date>/ (not published)
 #   tools/dev.sh release-check [DIR]   check a built release (default: the newest); no database needed
-#   tools/dev.sh nightly [--only STEP,...]   every check that needs no cloud, ending NIGHTLY PASSED or FAILED (ADR 0044)
+#   tools/dev.sh nightly [--only STEP,...]   every check that needs no cloud, ending NIGHTLY PASSED or FAILED
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

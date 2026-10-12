@@ -9,10 +9,10 @@ import tools.jackson.databind.JsonNode;
  * is no travel time (straight-line search, fallback, or a place the engine cannot reach).
  *
  * <p>{@code liveKey} is set for places live-hub has data for, such as Bluebikes docks ({@code bikes:<station_id>}),
- * and is the key the map's live stream uses too (ADR 0024). {@code live} is that data as live-hub sent it; it is
+ * and is the key the map's live stream uses too. {@code live} is that data as live-hub sent it; it is
  * added to each answer, never kept in the shared result, and null when live-hub has nothing or did not answer.
  *
- * <p>{@code facts} carries the filters' badges (ADR 0042); its {@code openNow} is likewise worked out per answer.
+ * <p>{@code facts} carries the filters' badges; its {@code openNow} is likewise worked out per answer.
  */
 public record NearbyPlace(
         long id,

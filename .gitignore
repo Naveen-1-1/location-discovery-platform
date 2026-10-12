@@ -25,7 +25,6 @@ dist/
 data/raw/
 data/cache/
 data/release/
-spikes/phase0/work/
 *.osm.pbf
 *.pmtiles
 *.parquet
@@ -44,3 +43,8 @@ __pycache__/
 
 # Local session handoff notes (never committed)
 /HANDOFF*.md
+
+# Project docs and the Phase 0 spike are kept locally, not in git
+/docs/
+/spikes/
+/LOCAL-DOCS.md

@@ -34,7 +34,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * OpenStreetMap from the Geofabrik Massachusetts extract (ADR 0004, 0032), cut down with osmium (plan: "Process OSM
+ * OpenStreetMap from the Geofabrik Massachusetts extract, cut down with osmium (plan: "Process OSM
  * with osmium"):
  *
  * <ol>

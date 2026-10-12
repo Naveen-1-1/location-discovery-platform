@@ -1,8 +1,8 @@
 # How this release was made
 
 Boston place-discovery map: places in Boston, Cambridge, Somerville and Brookline, release {{date}}. {{places}} places
-built from {{records}} source records. Licence: ODbL 1.0 (`LICENSE`); credits in `ATTRIBUTION.md`. The code and the
-reasoning behind every rule below (the ADRs) are at https://github.com/Naveen-1-1/place-discovery-map.
+built from {{records}} source records. Licence: ODbL 1.0 (`LICENSE`); credits in `ATTRIBUTION.md`. The code that built it
+is at https://github.com/Naveen-1-1/place-discovery-map.
 
 ## Files
 - `places.parquet`: one row per place, GeoParquet 1.0 (a point in WGS 84 longitude and latitude, WKB, in `geometry`).

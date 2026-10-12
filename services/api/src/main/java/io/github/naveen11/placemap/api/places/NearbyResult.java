@@ -10,7 +10,7 @@ import java.util.List;
  * @param fallback why there are no travel times although a mode was asked for (timeout, breaker_open, …); null
  *     otherwise
  * @param hiddenForUnknownHours with "open now" on, how many places within the radius that pass the other filters
- *     were left out because their hours are unknown (ADR 0042); null otherwise
+ *     were left out because their hours are unknown; null otherwise
  */
 public record NearbyResult(NearbyQuery query, String travelTimeSource, String fallback, List<NearbyPlace> places,
         Integer hiddenForUnknownHours) {

@@ -23,7 +23,6 @@ tests:
             exp_annotations:
               summary: "the osm import failed"
               description: "A bad download, a safety limit, or too many attempts. The map keeps the last good import; the reason is in ingest.run.error."
-              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
       - eval_time: 21m
         alertname: IngestRunFailed
         exp_alerts:
@@ -33,7 +32,6 @@ tests:
             exp_annotations:
               summary: "the overture import failed"
               description: "A bad download, a safety limit, or too many attempts. The map keeps the last good import; the reason is in ingest.run.error."
-              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
       - eval_time: 26m
         alertname: IngestRunFailed
         exp_alerts:
@@ -54,7 +52,6 @@ tests:
             exp_annotations:
               summary: "the rejects limit stopped the boston_food_inspections import"
               description: "Too many rejected rows (over 2%) or records to retire (over 20%); nothing was retired. Check the source before re-running."
-              runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
       - eval_time: 25m
         alertname: IngestSafetyLimitTripped
         exp_alerts: []

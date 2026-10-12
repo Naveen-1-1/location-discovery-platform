@@ -9,7 +9,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongSupplier;
 
 /**
- * A per-subscriber queue that keeps only the newest value for each key (ADR 0023). Live state is "latest value
+ * A per-subscriber queue that keeps only the newest value for each key. Live state is "latest value
  * wins" (bikes at a dock), so an older value still waiting for a slow reader is worthless once a newer one exists.
  *
  * <ul>

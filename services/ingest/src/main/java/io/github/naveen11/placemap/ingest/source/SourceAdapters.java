@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * The sources this importer can handle, checked against the registry at startup. Fails fast if an adapter would
- * request a personal field (ADR 0031) or names a source the registry does not have.
+ * request a personal field or names a source the registry does not have.
  */
 public class SourceAdapters {
 
@@ -23,7 +23,7 @@ public class SourceAdapters {
             personal.retainAll(source.dropFields());
             if (!personal.isEmpty()) {
                 throw new IllegalStateException(adapter.sourceId() + " requests personal fields " + personal
-                        + " that data/sources.yaml lists under drop_fields (ADR 0031)");
+                        + " that data/sources.yaml lists under drop_fields");
             }
             if (byId.put(adapter.sourceId(), adapter) != null) {
                 throw new IllegalStateException("two adapters for " + adapter.sourceId());

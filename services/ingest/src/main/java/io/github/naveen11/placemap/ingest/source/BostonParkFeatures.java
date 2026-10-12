@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  * What Boston's parks have: playgrounds, courts, spray decks, restrooms, dog parks (1,788 assets in 216 parks on
  * 2026-10-11). The assets have no ids of their own, so the fetch turns them into one record per park, keyed by the
  * open-space parcel's {@code OS_ID}, listing each kind of asset with its count ("Basketball:2;Playground:1"). Those
- * records join the parcel's place by that key (ADR 0022's ID join) and are never matched by name or distance.
+ * records join the parcel's place by that key (an ID join) and are never matched by name or distance.
  */
 @Component
 public class BostonParkFeatures extends CkanCsvSource {

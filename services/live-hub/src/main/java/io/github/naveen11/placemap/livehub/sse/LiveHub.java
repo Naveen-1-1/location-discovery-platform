@@ -24,7 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * All open SSE sessions (ADR 0018, 0023, 0041): admits new ones within the connection limits, starts each one's drain
+ * All open SSE sessions: admits new ones within the connection limits, starts each one's drain
  * on {@code connectionExecutor}, and runs the 1 s watchdog that evicts stuck clients and queues heartbeats.
  */
 public final class LiveHub implements AutoCloseable {
@@ -112,7 +112,7 @@ public final class LiveHub implements AutoCloseable {
         var session = new ClientSession(client, topics, settings.mailboxCapacity(), sink, publisher::current, retry,
                 nanoClock, metrics, this::closed);
         sessions.add(session);
-        publisher.subscribe(session); // before the drain reads the snapshot (ADR 0023)
+        publisher.subscribe(session); // before the drain reads the snapshot
         try {
             switch (settings.mode()) {
                 case VIRTUAL -> connections.execute(session::runLoop);

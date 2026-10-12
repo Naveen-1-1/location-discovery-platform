@@ -6,10 +6,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * {@code placemap.search.*}: the search box (ADR 0008, 0042). Addresses come from Photon through this api, never
+ * {@code placemap.search.*}: the search box. Addresses come from Photon through this api, never
  * straight from the browser, so users' keystrokes and addresses stay with us (owner decision).
  *
- * @param photonUrl Photon's search endpoint: the public instance in development (ADR 0033), our own later
+ * @param photonUrl Photon's search endpoint: the public instance in development, our own later
  * @param photonTimeout how long one Photon call may take; the search answers with places only after that
  * @param photonConcurrency the Photon bulkhead: calls in flight at once; one more is answered without addresses
  * @param cacheTtl how long a Photon answer is reused for the same text near the same place

@@ -1,7 +1,7 @@
 {
   "uid": "placemap-routing",
   "title": "placemap \u00b7 Nearby & routing",
-  "description": "Travel-time search: shared results, fallbacks, the routing engine, bulkheads and rate limits (ADR 0025, 0026, 0033). Source: infra/observability/grafana/dashboards/routing.json",
+  "description": "Travel-time search: shared results, fallbacks, the routing engine, bulkheads and rate limits. Source: infra/observability/grafana/dashboards/routing.json",
   "tags": [
     "placemap",
     "api",
@@ -56,7 +56,7 @@
       "id": 1,
       "type": "stat",
       "title": "Nearby cache hit ratio",
-      "description": "Searches answered from a shared result (ADR 0025). Each miss costs a database query and, with a mode, one routing call against the daily quota.",
+      "description": "Searches answered from a shared result. Each miss costs a database query and, with a mode, one routing call against the daily quota.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

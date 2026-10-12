@@ -20,7 +20,7 @@ import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
 /**
- * {@link RoutingClient} for the hosted openrouteservice API v2 (ADR 0033): its matrix, directions and isochrones
+ * {@link RoutingClient} for the hosted openrouteservice API v2: its matrix, directions and isochrones
  * endpoints, with the API key in the Authorization header.
  *
  * <p>The matrix endpoint moves every location to the nearest path, however far away it is: a point out at sea came

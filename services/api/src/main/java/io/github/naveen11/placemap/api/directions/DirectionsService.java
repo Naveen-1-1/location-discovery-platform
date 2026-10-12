@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Routes and isochrones from a snapped origin (plan: showcase 3). As with nearby, answers are shared: identical
  * requests from one cell wait on one engine call, and the answer is kept a while (routes {@code routeTtl},
- * isochrones {@code isochroneTtl}), which spares openrouteservice's daily quotas (ADR 0033). Failures are not kept.
+ * isochrones {@code isochroneTtl}), which spares openrouteservice's daily quotas. Failures are not kept.
  */
 public class DirectionsService implements AutoCloseable {
 

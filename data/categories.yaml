@@ -1,5 +1,5 @@
-# App categories and how each source's own classification maps onto them (ADR 0032).
-# Started from the Phase 0 spike mapping (spikes/phase0/sql/40_overlap.sql); extend as categories are added.
+# App categories and how each source's own classification maps onto them.
+# Started from the Phase 0 coverage count's mapping; extend as categories are added.
 categories:
   food:
     label: Food & drink

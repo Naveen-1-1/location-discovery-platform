@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cuts a Greater-Boston basemap from the latest Protomaps daily build (ADR 0007) into frontend/public/tiles/.
+# Cuts a Greater-Boston basemap from the latest Protomaps daily build into frontend/public/tiles/.
 # Reads only the needed byte ranges of the ~140 GB planet file. Usage: tools/dev.sh tiles
 set -euo pipefail
 cd "$(dirname "$0")/.."

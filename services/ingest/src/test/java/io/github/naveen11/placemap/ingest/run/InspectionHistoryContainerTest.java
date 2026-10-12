@@ -34,7 +34,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Inspection history through the real pipeline and migrations (ADR 0034): 36 real Boston lines (3 licences, 20
+ * Inspection history through the real pipeline and migrations: 36 real Boston lines (3 licences, 20
  * inspections, 23 violation lines) and 26 real Cambridge lines (4 establishments, 9 inspections, 24 violations). Batches of 5 rows, so one licence's lines fall into
  * batches that commit in parallel. Needs Docker.
  */

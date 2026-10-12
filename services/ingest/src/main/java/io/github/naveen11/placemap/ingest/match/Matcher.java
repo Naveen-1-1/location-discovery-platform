@@ -8,13 +8,13 @@ import java.util.Set;
 import org.locationtech.jts.io.WKTReader;
 
 /**
- * Decides, for one record, which place it belongs to (ADR 0022, gate G1 rules from ADR 0032):
+ * Decides, for one record, which place it belongs to, with the gate G1 rules:
  *
  * <ol>
  *   <li>Already linked: keep the place.
  *   <li>A source that describes another source's records (park features of a parcel) joins that record's place by
  *       key, and is never scored.
- *   <li>Score every live place within 100 m whose kind is compatible with the record's (ADR 0042: the same
+ *   <li>Score every live place within 100 m whose kind is compatible with the record's (the same
  *       category, a listed pair such as food and grocery, or a record without a category) as 0.45·name +
  *       0.25·address + 0.2·distance + 0.1·category. The best one at 0.81 or above is a match. Distances to and from an outline (a park) are measured from its edge, 0 m
  *       inside it.
@@ -30,7 +30,7 @@ public final class Matcher {
 
     public static final double RADIUS_METERS = 100;
     /**
-     * 0.81 since the Phase 5 evaluation (ADR 0042, docs/data/matching-evaluation.md): precision 0.957 and recall 0.860
+     * 0.81 since the Phase 5 evaluation: precision 0.957 and recall 0.860
      * on the labelled sample, against 0.940 and 0.898 at the earlier 0.80. Every wrong link there was a different
      * business at the same address.
      */

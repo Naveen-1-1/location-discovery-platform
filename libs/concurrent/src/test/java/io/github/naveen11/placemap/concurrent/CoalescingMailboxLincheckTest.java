@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Lincheck: every concurrent history of {@link CoalescingMailbox} must match some one-at-a-time order of the same
- * calls run against {@link Spec}, a plain {@link LinkedHashMap} model of the intended behaviour (ADR 0023).
+ * calls run against {@link Spec}, a plain {@link LinkedHashMap} model of the intended behaviour.
  *
  * <p>Only the non-blocking calls are exercised, as in {@link BoundedChannelLincheckTest}: a take on an empty mailbox
  * parks, which Lincheck reports as a deadlock. {@code take} shares {@code poll}'s locked state change and is covered

@@ -9,14 +9,14 @@ import java.util.Optional;
 
 /**
  * Everything the generic pipeline needs to know about one source. Every snapshot is a CSV file whose header is exactly
- * {@link #columns()}, in a stable row order, so the same input always gives the same batches (ADR 0020).
+ * {@link #columns()}, in a stable row order, so the same input always gives the same batches.
  */
 public interface SourceAdapter {
 
     /** The id in {@code data/sources.yaml}. */
     String sourceId();
 
-    /** The snapshot's columns, in order. Never contains the source's {@code drop_fields} (ADR 0031). */
+    /** The snapshot's columns, in order. Never contains the source's {@code drop_fields}. */
     List<String> columns();
 
     /** Writes the snapshot to {@code target}, requesting only {@link #columns()} from the publisher. */
@@ -43,7 +43,7 @@ public interface SourceAdapter {
     }
 
     /**
-     * The inspection a row reports, if this source carries inspection history (ADR 0034). Throws
+     * The inspection a row reports, if this source carries inspection history. Throws
      * {@link IllegalArgumentException} with a reason for an unusable line, which is then rejected.
      */
     default Optional<InspectionLine> inspection(CsvRow row) {
@@ -60,8 +60,8 @@ public interface SourceAdapter {
 
     /**
      * The source whose records this one describes under the same key, such as park features describing Boston's
-     * open-space parcels by {@code OS_ID}. Such a record joins the place of the record it describes (the ID join of
-     * ADR 0022) and is never scored. Empty for sources matched by name, address and distance.
+     * open-space parcels by {@code OS_ID}. Such a record joins the place of the record it describes (an ID join)
+     * and is never scored. Empty for sources matched by name, address and distance.
      */
     default Optional<String> joinsSource() {
         return Optional.empty();

@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 /**
  * Stores that accept SNAP (EBT), from the USDA's retailer locator (991 in the area's bounding box on 2026-10-11). It
  * adds the "Accepts SNAP/EBT" mark to places it matches and, for groceries, may create a store the open sources
- * miss (ADR 0032). Bakeries, meat markets and other specialty stores carry no app category but still match, so
+ * miss. Bakeries, meat markets and other specialty stores carry no app category but still match, so
  * their places get the mark too. CC BY 4.0: credited in the map's attribution and the data release.
  */
 @Component

@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The release's own checks and documents (ADR 0044) on small hand-made releases, written through the export's own
+ * The release's own checks and documents on small hand-made releases, written through the export's own
  * tables and COPY statements. No database needed; the export's query is tested in {@code ReleaseExportContainerTest}.
  */
 class ReleaseCheckTest {

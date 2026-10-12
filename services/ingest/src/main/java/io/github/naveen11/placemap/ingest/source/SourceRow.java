@@ -12,7 +12,7 @@ import java.util.TreeMap;
 
 /**
  * A normalised record ready for {@code place.source_record}. {@code rowHash} covers every stored column, so an
- * unchanged record can be skipped on re-import without being rewritten (ADR 0020).
+ * unchanged record can be skipped on re-import without being rewritten.
  *
  * @param lon WGS84 longitude, or null with {@code lat} when the source gives no location
  * @param attrs source-specific fields, sorted so the hash does not depend on insertion order

@@ -13,8 +13,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
- * Maps a source's own classification onto the app categories, as written in {@code data/categories.yaml}
- * (ADR 0032). Rules are data, not code. Categories are tried in file order, and the first match wins. Immutable, so
+ * Maps a source's own classification onto the app categories, as written in {@code data/categories.yaml}.
+ * Rules are data, not code. Categories are tried in file order, and the first match wins. Immutable, so
  * parse workers share one instance.
  *
  * <ul>

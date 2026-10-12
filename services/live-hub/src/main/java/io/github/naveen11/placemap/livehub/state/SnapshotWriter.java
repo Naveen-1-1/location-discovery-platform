@@ -22,7 +22,7 @@ import java.util.function.LongSupplier;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The one thread that owns all live state (ADR 0023). Feeds hand it {@link FeedUpdate}s through a bounded queue; at
+ * The one thread that owns all live state. Feeds hand it {@link FeedUpdate}s through a bounded queue; at
  * most once per tick (250 ms) it turns what changed into a new immutable {@link LiveSnapshot} and one frame per changed
  * key, serialized once, and publishes both through {@link SnapshotPublisher}, which hands the frames to every client
  * mailbox on this same thread.

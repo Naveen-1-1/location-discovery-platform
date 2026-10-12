@@ -1,7 +1,7 @@
 import { layers, namedFlavor } from "@protomaps/basemaps";
 import type { StyleSpecification } from "maplibre-gl";
 
-// Basemap from our own PMTiles file (tools/build-pmtiles.sh), read with HTTP range requests (ADR 0007).
+// Basemap from our own PMTiles file (tools/build-pmtiles.sh), read with HTTP range requests.
 // Fonts and sprites come from Protomaps' public asset site during development; they are self-hosted at deployment.
 const ASSETS = "https://protomaps.github.io/basemaps-assets";
 

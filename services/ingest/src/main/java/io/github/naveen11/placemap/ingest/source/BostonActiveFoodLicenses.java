@@ -6,8 +6,8 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Boston's Active Food Establishment Licenses (about 3,400 rows, daily). An enrichment source for food places
- * (ADR 0032): records are matched to places, never create them. The phone column is never requested (ADR 0031).
+ * Boston's Active Food Establishment Licenses (about 3,400 rows, daily). An enrichment source for food places:
+ * records are matched to places, never create them. The phone column is never requested.
  *
  * <p>The dataset has no licence number. (property_id, business name, licence category, address) is unique; checked
  * against the full dataset on 2026-10-10, including the ~300 rows without a property_id.

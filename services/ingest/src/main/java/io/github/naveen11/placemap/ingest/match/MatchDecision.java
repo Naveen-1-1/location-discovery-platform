@@ -1,6 +1,6 @@
 package io.github.naveen11.placemap.ingest.match;
 
-/** What matching decided for one record (ADR 0022). */
+/** What matching decided for one record. */
 public sealed interface MatchDecision {
 
     /** Already linked in an earlier run: keep that place (stable place ids). */

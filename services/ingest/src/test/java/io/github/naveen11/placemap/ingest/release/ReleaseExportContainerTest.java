@@ -27,7 +27,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * The release export against the real migrations (ADR 0044), with places made up to cover each rule: an open place
+ * The release export against the real migrations, with places made up to cover each rule: an open place
  * with an inspection, two transit stops with no open existence record, a bank named from OSM, a place the app shows
  * under a display-only record but an open one also lists, and two that are retired one way or another. Needs Docker.
  */

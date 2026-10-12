@@ -30,8 +30,8 @@ import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Routes and isochrones as GeoJSON, ready for a map layer. Both start from the centre of the caller's H3 cell
- * (ADR 0025), so the exact position never reaches the routing engine.
+ * Routes and isochrones as GeoJSON, ready for a map layer. Both start from the centre of the caller's H3 cell,
+ * so the exact position never reaches the routing engine.
  */
 @RestController
 @RequestMapping("/api")

@@ -12,7 +12,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
- * One source thread feeding a chain of {@link Stage}s through bounded channels (ADR 0021, 0036).
+ * One source thread feeding a chain of {@link Stage}s through bounded channels.
  *
  * <ul>
  *   <li>{@link #requestStop()} is the graceful path (SIGTERM): the source stops between items and closes its channel;

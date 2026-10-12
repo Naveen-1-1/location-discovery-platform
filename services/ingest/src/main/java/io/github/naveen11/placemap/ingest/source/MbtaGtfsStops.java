@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * MBTA stops and stations from the static GTFS feed (about 25 MB zipped; 10,298 entries in {@code stops.txt} on
- * 2026-10-11). The only source that creates transit places (ADR 0032), display-only under ADR 0029. live-hub keys
+ * 2026-10-11). The only source that creates transit places, display-only. live-hub keys
  * MBTA alerts and predictions by the same {@code stop_id}.
  *
  * <p>Places are stations ({@code location_type} 1) and stops that stand alone on the street (type 0 without a parent

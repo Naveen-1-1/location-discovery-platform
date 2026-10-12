@@ -4,7 +4,7 @@ import io.github.naveen11.placemap.api.routing.TravelMode;
 import java.util.List;
 
 /**
- * Everything a nearby result depends on, and so the key under which it is shared (ADR 0025): two requests from the
+ * Everything a nearby result depends on, and so the key under which it is shared: two requests from the
  * same cell with the same mode, categories, radius and filters get the same answer.
  *
  * @param mode null for a straight-line search

@@ -1,6 +1,6 @@
 """Writes the coverage report (Phase 5 exit: "the coverage report is regenerated") from the database.
 
-Usage: tools/dev.sh coverage   (runs: python3 -I tools/coverage-report.py docs/data/coverage.md)
+Usage: tools/dev.sh coverage   (runs: python3 -I tools/coverage-report.py OUTPUT.md)
 
 Reads with psql, using the PG* variables tools/dev.sh loads from .env, and prints nothing secret. Counts only:
 places per category and the sources behind them, each source's records and how they matched, what the filters
@@ -57,8 +57,8 @@ QUERIES = {
 TITLES = {
     "places": "Live places per category",
     "backing": "Sources behind each category's places (a place counts once per source that describes it)",
-    "records": "Records per source and how they matched (ADR 0022)",
-    "facts": "What the filters know (ADR 0042)",
+    "records": "Records per source and how they matched",
+    "facts": "What the filters know",
     "geocodes": "Geocoder answers, one per address ever asked (Photon)",
 }
 

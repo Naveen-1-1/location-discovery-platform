@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * The files beside the data (ADR 0044): {@code LICENSE} (ODbL 1.0), {@code ATTRIBUTION.md} from
+ * The files beside the data: {@code LICENSE} (ODbL 1.0), {@code ATTRIBUTION.md} from
  * {@code data/sources.yaml}, {@code METHOD.md}, the licence texts and notices the sources ask for, and
  * {@code SHA256SUMS} over everything.
  */

@@ -1,4 +1,4 @@
-# Burn-rate alerts on the api's SLOs (docs/slo.md, ADR 0044), in Prometheus rule-file format. Development uses the
+# Burn-rate alerts on the api's SLOs, in Prometheus rule-file format. Development uses the
 # same rules as Grafana-managed rules (infra/observability/grafana/alerting/placemap-slo.rules.json, applied by
 # tools/grafana-apply.py).
 #
@@ -31,7 +31,6 @@ groups:
         annotations:
           summary: "the api is spending its error budget 14x too fast"
           description: "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
       - alert: ApiAvailabilityBurnSlow
         expr: >-
           (
@@ -50,7 +49,6 @@ groups:
         annotations:
           summary: "the api is spending its error budget 6x too fast"
           description: "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
       - alert: NearbyLatencyBurnFast
         expr: >-
           (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[1h])))) > (14.4 * 0.05)
@@ -63,7 +61,6 @@ groups:
         annotations:
           summary: "nearby search is spending its latency budget 14x too fast"
           description: "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"
       - alert: NearbyLatencyBurnSlow
         expr: >-
           (1 - histogram_fraction(0, 0.3, sum(rate(http_server_requests_seconds{job="placemap/api", uri="/api/places/nearby", status="200"}[6h])))) > (6 * 0.05)
@@ -76,4 +73,3 @@ groups:
         annotations:
           summary: "nearby search is spending its latency budget 6x too fast"
           description: "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"

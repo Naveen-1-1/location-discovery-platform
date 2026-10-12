@@ -7,7 +7,7 @@ import java.io.IOException;
 /**
  * An SSE response held open with {@link AsyncContext}. Writes are blocking servlet I/O from the session's drain
  * thread; a client that stops reading eventually blocks them until the watchdog evicts it, or Tomcat's write timeout
- * fires as a backstop (ADR 0023).
+ * fires as a backstop.
  */
 final class ServletEventSink implements EventSink {
 

@@ -6,7 +6,7 @@ public sealed interface RowResult {
     record Accepted(SourceRow row) implements RowResult {
     }
 
-    /** The row failed validation; it goes to {@code ingest.reject} and counts toward the 2% limit (ADR 0020). */
+    /** The row failed validation; it goes to {@code ingest.reject} and counts toward the 2% limit. */
     record Rejected(String reason) implements RowResult {
     }
 

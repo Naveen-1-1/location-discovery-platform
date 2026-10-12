@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * {@code placemap.nearby.*}, defaults from the plan (showcase 3) and ADR 0025/0026.
+ * {@code placemap.nearby.*}, defaults from the plan (showcase 3).
  *
  * @param deadline how long a request may take in total
  * @param travelTimeTimeout how long the one travel-time call may take before the result falls back to straight-line

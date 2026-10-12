@@ -20,7 +20,7 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Asks live-hub for the live data of many places at once ({@code POST /internal/live/batch}, ADR 0024). Never fails
+ * Asks live-hub for the live data of many places at once ({@code POST /internal/live/batch}). Never fails
  * and never waits longer than {@code timeout} or the request's own deadline: past either, the answer is
  * {@link LiveData#unavailable()} and nearby results go out without live badges.
  *

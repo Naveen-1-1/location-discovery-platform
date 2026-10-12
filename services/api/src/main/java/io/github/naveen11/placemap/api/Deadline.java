@@ -3,7 +3,7 @@ package io.github.naveen11.placemap.api;
 import java.time.Duration;
 
 /**
- * The moment a request must be answered by (ADR 0026), passed explicitly from the controller down to every wait, so
+ * The moment a request must be answered by, passed explicitly from the controller down to every wait, so
  * nothing waits longer than the request has left.
  */
 public record Deadline(long nanos) {

@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
- * N worker threads between an input and an output channel (ADR 0021, 0036). Each worker takes an item, processes
+ * N worker threads between an input and an output channel. Each worker takes an item, processes
  * it and puts the result downstream, until the input reaches end of stream.
  *
  * <ul>

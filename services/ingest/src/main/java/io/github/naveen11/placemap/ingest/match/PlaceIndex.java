@@ -24,8 +24,8 @@ import org.locationtech.jts.operation.distance.DistanceOp;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
- * The places a run matches against, loaded once before the match workers start and never changed afterwards
- * (ADR 0022). Because every record is compared with the same frozen index, matching is safe to run on many threads
+ * The places a run matches against, loaded once before the match workers start and never changed afterwards.
+ * Because every record is compared with the same frozen index, matching is safe to run on many threads
  * and gives the same answer whatever order batches take.
  *
  * <ul>

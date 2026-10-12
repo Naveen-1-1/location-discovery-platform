@@ -6,7 +6,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * A fixed-capacity FIFO queue between two pipeline stages that can also be closed or failed (ADR 0036).
+ * A fixed-capacity FIFO queue between two pipeline stages that can also be closed or failed.
  *
  * <ul>
  *   <li><b>Backpressure:</b> {@link #put} blocks while the channel is full, so a fast producer slows to the pace of
@@ -16,7 +16,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *       {@link ChannelClosedException}.
  *   <li><b>Fail</b> means "stop now". Buffered items are dropped, and every blocked or later call throws
  *       {@link ChannelFailedException} carrying the first failure's cause. Nothing is lost for good: the import only
- *       marks a batch done after it is committed, so dropped batches are redone on resume (ADR 0020).
+ *       marks a batch done after it is committed, so dropped batches are redone on resume.
  * </ul>
  *
  * <p>Built like {@link java.util.concurrent.ArrayBlockingQueue} on the inside (a ring buffer, one lock, two

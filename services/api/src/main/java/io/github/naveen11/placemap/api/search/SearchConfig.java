@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-/** Wires the search box: Photon behind its own bulkhead, names behind the database's (ADR 0026). */
+/** Wires the search box: Photon behind its own bulkhead, names behind the database's. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(SearchProperties.class)
 class SearchConfig {

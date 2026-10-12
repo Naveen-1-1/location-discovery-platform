@@ -3,9 +3,9 @@ spring:
     name: api              # becomes OpenTelemetry service.name
   threads:
     virtual:
-      enabled: true        # Tomcat request handling on virtual threads (ADR 0013)
+      enabled: true        # Tomcat request handling on virtual threads
   datasource:
-    # Neon direct (non-pooled) endpoint from .env (ADR 0033). verify-full checks the certificate and host name
+    # Neon direct (non-pooled) endpoint from .env. verify-full checks the certificate and host name
     # against the JVM trust store.
     url: jdbc:postgresql://${PGHOST}/${PGDATABASE}?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory&ApplicationName=api
     username: ${PGUSER}
@@ -22,12 +22,12 @@ spring:
 
 server:
   port: 8080
-  # Trust X-Forwarded-For only from proxies on loopback or private networks (Caddy in front, ADR 0028), so rate
+  # Trust X-Forwarded-For only from proxies on loopback or private networks (Caddy in front), so rate
   # limits see each client instead of the proxy. A client on the internet cannot set it for itself.
   forward-headers-strategy: native
   tomcat:
-    # A body nobody reads is swallowed to keep the connection open, at most this much; then the connection is closed
-    # (ADR 0044). The api reads no bodies at all: placemap.body-limit refuses them first.
+    # A body nobody reads is swallowed to keep the connection open, at most this much; then the connection is closed.
+    # The api reads no bodies at all: placemap.body-limit refuses them first.
     max-swallow-size: 64KB
 
 management:
@@ -76,21 +76,21 @@ jdbc:
 placemap:
   drills:
     enabled: ${PLACEMAP_DRILLS:false}
-  rate-limit:                    # ADR 0026: per client, over the limit means 429
+  rate-limit:                    # per client, over the limit means 429
     per-second: 10
     burst: 20
   nearby:
-    deadline: 1500ms             # ADR 0026
-    # The plan's 800 ms is for a local Valhalla; openrouteservice is across the internet (ADR 0033).
+    deadline: 1500ms
+    # The plan's 800 ms is for a local Valhalla; openrouteservice is across the internet.
     travel-time-timeout: 1s
   directions:                    # routes and isochrones: asked for on purpose, so they may take a few seconds
     deadline: 6s
     timeout: 5s
-  live:                          # live-hub (ADR 0024): nearby answers without live data after 150 ms
+  live:                          # live-hub: nearby answers without live data after 150 ms
     url: ${PLACEMAP_LIVE_URL:http://localhost:8081}
     timeout: 150ms
   routing:
-    concurrency: 8               # the routing bulkhead, shared by nearby, routes and isochrones (ADR 0026)
+    concurrency: 8               # the routing bulkhead, shared by nearby, routes and isochrones
     ors:
       api-key: ${ORS_API_KEY:}   # from .env; empty means straight-line distances only
       matrix-timeout: 1s         # a backstop: nearby enforces travel-time-timeout itself

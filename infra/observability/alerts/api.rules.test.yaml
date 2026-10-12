@@ -3,7 +3,7 @@ rule_files:
   - api.rules.yaml
 evaluation_interval: 1m
 tests:
-  # The alert drill (docs/runbooks/alert-drill.md): one failing request a second for three minutes.
+  # The alert drill: one failing request a second for three minutes.
   - interval: 1m
     input_series:
       - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/_drills/error", status="500"}'

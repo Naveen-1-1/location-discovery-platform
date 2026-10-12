@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Writes a batch's inspection history inside the batch's transaction (ADR 0020, 0034). Every statement is safe to
+ * Writes a batch's inspection history inside the batch's transaction. Every statement is safe to
  * repeat and gives the same result whatever order batches commit in, because a record's lines can fall into two
  * batches that commit in parallel:
  *

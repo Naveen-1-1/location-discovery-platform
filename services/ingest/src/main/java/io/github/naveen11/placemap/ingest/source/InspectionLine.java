@@ -7,7 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.Objects;
 
 /**
- * One line of a record's inspection history (ADR 0034): the inspection it belongs to and, if the line reports one, a
+ * One line of a record's inspection history: the inspection it belongs to and, if the line reports one, a
  * violation. An inspection is identified by record, time and result (Boston has 506 inspections with two results at
  * the same time).
  *
@@ -15,7 +15,7 @@ import java.util.Objects;
  */
 public record InspectionLine(String recordKey, OffsetDateTime inspectedAt, String result, Violation violation) {
 
-    /** Inspectors' comments are cut to this length to keep the full history within the free database (ADR 0034). */
+    /** Inspectors' comments are cut to this length to keep the full history within the free database. */
     public static final int MAX_COMMENT = 280;
 
     public InspectionLine {

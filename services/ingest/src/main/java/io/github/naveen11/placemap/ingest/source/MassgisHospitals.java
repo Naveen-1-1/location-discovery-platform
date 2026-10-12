@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Hospitals licensed by the Department of Public Health, from MassGIS (103 statewide on 2026-10-10; 23 in the four
- * towns). The only source that creates hospital places (ADR 0032): Overture's "hospitals" are mostly departments.
+ * towns). The only source that creates hospital places: Overture's "hospitals" are mostly departments.
  * The layer is EPSG:26986; the server converts to WGS84 for us.
  */
 @Component

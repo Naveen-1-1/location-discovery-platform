@@ -3,7 +3,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;   -- geography, KNN (<->), ST_DWithin
 CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- fuzzy place-name search (Phase 5)
 CREATE EXTENSION IF NOT EXISTS unaccent;  -- "Café" matches "cafe" (Phase 5)
--- h3 / h3_postgis are enabled in the migration that first uses them (Phase 3, ADR 0025).
+-- h3 / h3_postgis are enabled in the migration that first uses them (Phase 3).
 
 CREATE SCHEMA IF NOT EXISTS place;   -- places and their sources
 CREATE SCHEMA IF NOT EXISTS ingest;  -- import runs, checkpoints, rejects (Phase 2)
@@ -31,8 +31,8 @@ INSERT INTO place.category (code, label, sort_order) VALUES
     ('hospital',         'Hospitals',            120),
     ('community_centre', 'Community centres',    130);
 
--- One row per real-world place, whichever sources describe it (ADR 0022). Rows are retired, never deleted,
--- so saved lists keep working (ADR 0020).
+-- One row per real-world place, whichever sources describe it. Rows are retired, never deleted,
+-- so saved lists keep working.
 CREATE TABLE place.place (
     place_id   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name       text                   NOT NULL,

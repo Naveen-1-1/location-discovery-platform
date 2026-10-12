@@ -1,4 +1,4 @@
-"""Applies the observability config in this repo to the Grafana Cloud stack in .env (ADR 0033, 0035).
+"""Applies the observability config in this repo to the Grafana Cloud stack in .env.
 
 Creates or updates, idempotently:
   - the "placemap" folder

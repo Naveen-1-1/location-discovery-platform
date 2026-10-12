@@ -50,7 +50,7 @@ public record IngestProperties(
      * @param name {@code match-sample}, {@code match-evaluate}, {@code release} or {@code release-check}; empty for
      *     the importer
      * @param ownerLabels match-evaluate: the owner's blind labels, compared with the sample's
-     * @param releaseDir release: where each release's dated folder is built (ADR 0044)
+     * @param releaseDir release: where each release's dated folder is built
      * @param licencesDir release: the licence texts it ships
      * @param releaseFolder release-check: the folder to check; empty means the newest under releaseDir
      */
@@ -66,7 +66,7 @@ public record IngestProperties(
     }
 
     /**
-     * {@code placemap.ingest.geocoder.*}: Photon (ADR 0008), public during development (ADR 0033).
+     * {@code placemap.ingest.geocoder.*}: Photon, public during development.
      *
      * @param maxConcurrentCalls calls in flight across all runs (the plan's Semaphore(4))
      * @param callsPerSecond public Photon asks for fair use; our own instance can take more

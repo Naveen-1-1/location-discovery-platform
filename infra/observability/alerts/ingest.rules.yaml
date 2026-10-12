@@ -19,7 +19,6 @@ groups:
         annotations:
           summary: "the {{ $labels.source }} import failed"
           description: "A bad download, a safety limit, or too many attempts. The map keeps the last good import; the reason is in ingest.run.error."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
       - alert: IngestSafetyLimitTripped
         expr: >-
           sum by (source, limit) (
@@ -33,4 +32,3 @@ groups:
         annotations:
           summary: "the {{ $labels.limit }} limit stopped the {{ $labels.source }} import"
           description: "Too many rejected rows (over 2%) or records to retire (over 20%); nothing was retired. Check the source before re-running."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"

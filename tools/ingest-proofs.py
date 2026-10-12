@@ -1,4 +1,4 @@
-"""Crash tests and the backpressure benchmark for the importer (plan: Phase 2 exit; ADR 0020, 0033).
+"""Crash tests and the backpressure benchmark for the importer (plan: Phase 2 exit).
 
 Runs the real importer jar against a throwaway PostGIS container on this Mac, never against Neon.
 
@@ -236,7 +236,7 @@ class Ingest:
 
 
 class Toxiproxy:
-    """Toxiproxy in front of the container (ADR 0033): a TCP proxy that can add faults. A server already listening
+    """Toxiproxy in front of the container: a TCP proxy that can add faults. A server already listening
     (CI's container) is used as it is; otherwise the Homebrew binary is started and stopped with the run."""
 
     def __init__(self):

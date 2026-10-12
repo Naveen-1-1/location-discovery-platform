@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
-/** ADR 0026: 10 requests per second per client, bursts of 20, no raw IP addresses kept. */
+/** 10 requests per second per client, bursts of 20, no raw IP addresses kept. */
 class ClientRateLimiterTest {
 
     private final AtomicLong nanos = new AtomicLong();

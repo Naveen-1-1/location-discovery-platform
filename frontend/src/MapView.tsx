@@ -66,7 +66,7 @@ type Props = {
   isochrones: IsochroneCollection | undefined;
   /** Whether anything on screen came from the routing engine, which then needs its credit. */
   routingCredit: boolean;
-  /** Credits for display-only sources whose places are on screen (ADR 0029); each id names its map source. */
+  /** Credits for display-only sources whose places are on screen; each id names its map source. */
   credits: { id: string; html: string }[];
   /** The selected place's live data, if it has any. */
   selectedLive: PlaceLive | null;

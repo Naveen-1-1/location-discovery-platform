@@ -6,8 +6,8 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * Boston Centers for Youth &amp; Families sites (35 rows on 2026-10-11). An existence source for community centres
- * (ADR 0032), alongside Overture and OSM.
+ * Boston Centers for Youth &amp; Families sites (35 rows on 2026-10-11). An existence source for community centres,
+ * alongside Overture and OSM.
  *
  * <p>The list is hand-kept and needs some repair: sites are short names ("Pino") and get the centres' public names
  * ("BCYF Pino Community Center"); the trailing "*" some sites carry is dropped from the name; outdoor pools are

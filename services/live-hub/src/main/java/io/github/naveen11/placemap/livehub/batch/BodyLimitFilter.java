@@ -15,7 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Caps request bodies (ADR 0044). The only body live-hub reads is the api's batch request, which streams its JSON
+ * Caps request bodies. The only body live-hub reads is the api's batch request, which streams its JSON
  * without a length. A request declaring more than the cap gets 413 before anything reads it, and the connection is
  * closed; a body of unknown length is read through a stream that fails once it passes the cap, which ends the request
  * with 400. Either way at most the cap plus one byte is ever read.

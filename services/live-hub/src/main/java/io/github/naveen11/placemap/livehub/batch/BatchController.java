@@ -28,14 +28,14 @@ import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * {@code POST /internal/live/batch}: the current live data for many items at once, read from the snapshot in memory
- * (ADR 0024). The api calls it for each nearby search, with a 150 ms deadline. Internal only: it is not routed by
+ * {@code POST /internal/live/batch}: the current live data for many items at once, read from the snapshot in memory.
+ * The api calls it for each nearby search, with a 150 ms deadline. Internal only: it is not routed by
  * the frontend's proxy or Caddy.
  *
  * <p>Request {@code {"keys": ["bikes:<station_id>", ...]}}. Response {@code {"version": V, "topics": {"bikes":
  * {"stale": false, "updated": ms}}, "items": {"bikes:<station_id>": {...}}}}; unknown keys are left out.
  *
- * <p>The body is parsed here, by a reader with tight limits (ADR 0044): the request is two levels deep and its strings
+ * <p>The body is parsed here, by a reader with tight limits: the request is two levels deep and its strings
  * are short, so deeper nesting, long strings or a long document are refused with 400 before they cost anything. The
  * body's size is capped before that by {@link BodyLimitFilter}.
  */

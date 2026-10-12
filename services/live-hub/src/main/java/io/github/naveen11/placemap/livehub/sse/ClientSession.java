@@ -21,7 +21,7 @@ import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
- * One SSE connection (ADR 0023, 0041). The snapshot writer {@linkplain #deliver delivers} changes into the session's
+ * One SSE connection. The snapshot writer {@linkplain #deliver delivers} changes into the session's
  * {@link CoalescingMailbox} without ever blocking; the session's drain writes them to the client.
  *
  * <ul>

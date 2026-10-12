@@ -8,10 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * "Only one run per source at a time" (ADR 0021): a Postgres session-level advisory lock held on a dedicated
+ * "Only one run per source at a time": a Postgres session-level advisory lock held on a dedicated
  * connection for the whole run. If the process dies, even by kill -9, its connection drops and Postgres releases the
  * lock, so a crash never leaves a source locked. Needs a direct connection: session locks do not survive PgBouncer's
- * transaction pooling (ADR 0033).
+ * transaction pooling.
  *
  * <p>The same goes for a dropped connection while the process lives on (a network cut, crash test C2): Postgres
  * releases the lock silently. So the run's completion transaction runs on this connection ({@link #connection()}): if

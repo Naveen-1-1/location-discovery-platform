@@ -1,10 +1,10 @@
--- Phase 2, step 5: skipping unchanged downloads, and inspection history (ADR 0034, 0037).
+-- Phase 2, step 5: skipping unchanged downloads, and inspection history.
 
 -- A marker of the publisher's data read before downloading (a last-modified time, an ETag). When it matches the
 -- last successful run, the download is skipped.
 ALTER TABLE ingest.run ADD COLUMN source_version text;
 
--- Inspection history, stored compactly (ADR 0034). The inspected establishment is the source's record in
+-- Inspection history, stored compactly. The inspected establishment is the source's record in
 -- place.source_record (source, source_key), so it is matched to places like any other record; the history hangs
 -- off that key. History is kept even when the establishment's record is retired.
 CREATE TABLE place.inspection (
@@ -38,7 +38,7 @@ CREATE TABLE place.inspection_violation (
     PRIMARY KEY (inspection_id, line_hash)
 );
 
--- What the map's filters read (ADR 0034), so map queries never touch the history tables. Rebuilt for a source
+-- What the map's filters read, so map queries never touch the history tables. Rebuilt for a source
 -- whenever its import completes.
 CREATE TABLE place.inspection_summary (
     source                text        NOT NULL,

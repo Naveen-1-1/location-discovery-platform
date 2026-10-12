@@ -1,4 +1,4 @@
-"""The nightly check (ADR 0044): everything that can be proven without the cloud, in one run.
+"""The nightly check: everything that can be proven without the cloud, in one run.
 
   tools/dev.sh nightly [--only STEP,...] [--skip STEP,...] [--no-history] [--fetch-snapshots]
 
@@ -12,9 +12,9 @@ Steps, in this order; each runs even after an earlier one failed:
   c1         crash test C1 (kill -9) on a throwaway local database
   c2         crash test C2 (connection cuts through Toxiproxy)
 
-Logs go to target/nightly/<start time>/<step>.log. Unless --no-history (CI), a run adds a row to
-docs/benchmarks/nightly-runs.md. The last line is NIGHTLY PASSED or NIGHTLY FAILED. Phase 7 closes on three green runs
-in a row of nightly.yml on GitHub (ADR 0045); this command checks changes before a push.
+Logs go to target/nightly/<start time>/<step>.log. Unless --no-history (CI), a run adds a row to the local run
+history (HISTORY). The last line is NIGHTLY PASSED or NIGHTLY FAILED. Phase 7 closes on three green runs in a row of
+nightly.yml on GitHub; this command checks changes before a push.
 """
 
 import argparse
@@ -176,9 +176,7 @@ def took(seconds):
 
 def commit():
     head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    # The history file itself changes with every run, so it does not make the tree dirty.
-    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no", "--", ".",
-                            ":(exclude)docs/benchmarks/nightly-runs.md"],
+    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
                            cwd=ROOT, capture_output=True, text=True).stdout.strip()
     return head + ("+" if dirty else "")
 

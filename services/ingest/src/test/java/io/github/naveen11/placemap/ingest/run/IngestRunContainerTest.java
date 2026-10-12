@@ -39,7 +39,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Whole runs against the real migrations on our PostGIS image (ADR 0020, 0021). The "download" copies a local file,
+ * Whole runs against the real migrations on our PostGIS image. The "download" copies a local file,
  * so each test controls exactly what the publisher serves. Needs Docker; skipped (not failed) without it.
  */
 @Testcontainers(disabledWithoutDocker = true)

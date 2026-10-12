@@ -57,7 +57,7 @@ public class NearbyController {
     }
 
     /**
-     * How the answer's live data went (ADR 0024).
+     * How the answer's live data went.
      *
      * @param status {@code ok}, or {@code unavailable} when live-hub was slow or down and badges are missing
      * @param topics per live topic, whether its feed is stale and when it last answered
@@ -70,7 +70,7 @@ public class NearbyController {
      * @param mode walk, bike or drive; null for a straight-line search
      * @param travelTimeSource the routing engine that gave the travel times, or {@code straight_line}
      * @param fallback why a search with a mode has no travel times; null otherwise
-     * @param driveWithoutTraffic drive times assume empty roads (ADR 0006)
+     * @param driveWithoutTraffic drive times assume empty roads
      * @param live how the live data went; null when no place shown has any
      * @param hiddenForUnknownHours with {@code open=now}: places nearby left out because their hours are unknown
      */
@@ -93,7 +93,7 @@ public class NearbyController {
      * {@code mode}: the nearest candidates within the mode's search radius (capped by {@code radius} if given), sorted
      * by travel time.
      *
-     * <p>Filters (ADR 0042): {@code snap=true} accepts SNAP/EBT, {@code licensed=true} holds an active licence,
+     * <p>Filters: {@code snap=true} accepts SNAP/EBT, {@code licensed=true} holds an active licence,
      * {@code inspection=passed} passed its latest inspection, {@code open=now} is open now by its regular hours
      * (places with unknown hours are left out).
      */
@@ -179,7 +179,7 @@ public class NearbyController {
         }
     }
 
-    /** Overload answers 503 with Retry-After (ADR 0026): the database is saturated, or the deadline passed. */
+    /** Overload answers 503 with Retry-After: the database is saturated, or the deadline passed. */
     private static NearbyResult await(CompletableFuture<NearbyResult> future) {
         try {
             return future.join();

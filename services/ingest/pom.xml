@@ -13,7 +13,7 @@
 
   <artifactId>ingest</artifactId>
   <name>placemap :: services :: ingest</name>
-  <description>Long-running importer with its own scheduler (ADR 0020, 0021, 0036).
+  <description>Long-running importer with its own scheduler.
     Run locally: tools/dev.sh ingest   (or tools/dev.sh ingest-once SOURCE)</description>
 
   <dependencies>
@@ -46,7 +46,7 @@
       <groupId>ch.poole</groupId>
       <artifactId>OpeningHoursParser</artifactId>
     </dependency>
-    <!-- The geocoder's rate limit (ADR 0010: resilience parts come from libraries). -->
+    <!-- The geocoder's rate limit (resilience parts come from libraries). -->
     <dependency>
       <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-ratelimiter</artifactId>
@@ -61,7 +61,7 @@
       <groupId>org.duckdb</groupId>
       <artifactId>duckdb_jdbc</artifactId>
     </dependency>
-    <!-- The matcher's place index (ADR 0022). Native code: used only from platform threads. -->
+    <!-- The matcher's place index. Native code: used only from platform threads. -->
     <dependency>
       <groupId>com.uber</groupId>
       <artifactId>h3</artifactId>

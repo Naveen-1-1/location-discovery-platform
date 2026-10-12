@@ -2,9 +2,9 @@
  * Hand-written concurrency primitives shared by the ingest, live-hub and api services.
  *
  * <ul>
- *   <li>Ingest pipeline (ADR 0036): {@link io.github.naveen11.placemap.concurrent.BoundedChannel},
+ *   <li>Ingest pipeline: {@link io.github.naveen11.placemap.concurrent.BoundedChannel},
  *       {@link io.github.naveen11.placemap.concurrent.ContiguousWatermark}.
- *   <li>Live-hub fan-out (ADR 0023, 0041): {@link io.github.naveen11.placemap.concurrent.SnapshotPublisher},
+ *   <li>Live-hub fan-out: {@link io.github.naveen11.placemap.concurrent.SnapshotPublisher},
  *       {@link io.github.naveen11.placemap.concurrent.CoalescingMailbox},
  *       {@link io.github.naveen11.placemap.concurrent.SerialDrain}.
  * </ul>

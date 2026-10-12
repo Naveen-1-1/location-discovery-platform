@@ -23,7 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * One of MBTA's GTFS-Realtime files in their JSON form ({@code cdn.mbta.com/realtime/*_enhanced.json}, no key
  * needed), polled on a fixed interval. These are the plan's fallback feeds; they carry the same data as the V3
- * streams (ADR 0041).
+ * streams.
  *
  * <ul>
  *   <li>Asks for gzip, which shrinks the 2.2 MB trip updates to about 250 KB, and sends the last ETag so an unchanged

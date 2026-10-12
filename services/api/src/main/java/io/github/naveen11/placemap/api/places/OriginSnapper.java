@@ -8,7 +8,7 @@ import java.io.UncheckedIOException;
 import org.springframework.stereotype.Component;
 
 /**
- * Snaps a search origin to the centre of its H3 resolution-10 cell (ADR 0025). A cell covers about 15,000 m², so its
+ * Snaps a search origin to the centre of its H3 resolution-10 cell. A cell covers about 15,000 m², so its
  * corners are about 70 m from the centre. Everyone searching from the same cell shares one result, and the exact
  * position goes no further than this class: it is never logged, cached or sent to the routing engine.
  */

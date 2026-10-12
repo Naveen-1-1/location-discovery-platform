@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Wires nearby search with its database bulkhead (ADR 0026), exported as metrics. */
+/** Wires nearby search with its database bulkhead, exported as metrics. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(NearbyProperties.class)
 class NearbyConfig {
@@ -24,7 +24,7 @@ class NearbyConfig {
         return Clock.systemUTC();
     }
 
-    /** One bulkhead for every database search, nearby and name search alike (ADR 0026). */
+    /** One bulkhead for every database search, nearby and name search alike. */
     @Bean
     Bulkhead databaseBulkhead(NearbyProperties properties, MeterRegistry registry) {
         var bulkheads = BulkheadRegistry.ofDefaults();

@@ -1,6 +1,6 @@
 # Licence texts shipped with the data release
 
-`tools/dev.sh release` copies these into each release folder (ADR 0044), so the build needs no network. Retrieved
+`tools/dev.sh release` copies these into each release folder, so the build needs no network. Retrieved
 2026-10-11; re-fetch them when a licence or notice changes.
 
 | File | What it is | Shipped when | From |

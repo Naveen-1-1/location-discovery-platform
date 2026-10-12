@@ -19,7 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Public EV charging stations from the DOE's Alternative Fuels Data Center (4,615 open public stations in
- * Massachusetts on 2026-10-11, one request). The only source that creates EV-charging places (ADR 0032: 1,320 in
+ * Massachusetts on 2026-10-11, one request). The only source that creates EV-charging places (1,320 in
  * the four towns against OSM's 49).
  *
  * <p>The API needs a free key ({@code NLR_API_KEY} in {@code .env}). It is sent in the {@code X-Api-Key} header, never

@@ -14,7 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Refuses request bodies before anything reads them (ADR 0044). No api endpoint reads a body, so a request declaring
+ * Refuses request bodies before anything reads them. No api endpoint reads a body, so a request declaring
  * more than a few bytes gets 413, and one sending a body of unknown length (chunked) gets 411. The connection is then
  * closed, so the server neither reads nor swallows the rest of the body. Load scenario L9 measures it in Phase 8.
  */

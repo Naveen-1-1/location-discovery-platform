@@ -4,10 +4,10 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
- * One place, for its panel on the map: what it is, what the filters know about it (ADR 0042), and which sources
+ * One place, for its panel on the map: what it is, what the filters know about it, and which sources
  * describe it, so the map can credit them.
  *
- * @param liveKey the live-hub key for the place's live data, or null (ADR 0024)
+ * @param liveKey the live-hub key for the place's live data, or null
  * @param sources ids from data/sources.yaml of the live records behind the place, sorted
  */
 public record PlaceDetails(long id, String name, String category, String address, String phone, String website,

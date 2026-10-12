@@ -1,4 +1,4 @@
--- Phase 5: what the map's filters and a place's details read (ADR 0042), one row per place, so a nearby search never
+-- Phase 5: what the map's filters and a place's details read, one row per place, so a nearby search never
 -- touches the records, licences or inspection history. Refreshed for the places a run touched when it completes, and
 -- for any live place still without a row, so the first completion after this migration fills it for all places.
 

@@ -19,7 +19,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
- * The importer (ADR 0021). No web server: it only talks to the sources and the database.
+ * The importer. No web server: it only talks to the sources and the database.
  *
  * <ul>
  *   <li>Service mode (default): the scheduler imports each source on its cadence and resumes unfinished runs.

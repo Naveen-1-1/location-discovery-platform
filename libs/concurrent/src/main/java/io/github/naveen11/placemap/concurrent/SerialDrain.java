@@ -8,7 +8,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
 /**
- * Runs one subscriber's drain task on a shared executor, never two at once and never missing a signal (ADR 0041).
+ * Runs one subscriber's drain task on a shared executor, never two at once and never missing a signal.
  *
  * <p>This is how a fixed pool of threads serves many more connections than it has threads: a connection with news
  * calls {@link #signal()}, a free pool thread runs its drain task, which writes what is waiting and returns. A

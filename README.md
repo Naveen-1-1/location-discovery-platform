@@ -9,12 +9,10 @@ It is also a learning project. The three backend services I write contain real t
 load tests and crash tests prove that code holds up. Observability, CI/CD and infrastructure as code are part of
 the project from the start.
 
-> **Status:** Phase 7, hardening and the open data release ([ADR 0044](docs/adr/0044-hardening-and-data-release.md)):
-> request-body limits, burn-rate alerts on the api's SLOs, the ODbL release built locally (not yet published), and a
-> nightly check that passed locally on 2026-10-11. Phase 7 closes after three green nightly runs in a row on GitHub,
-> once the commits are pushed; every load and crash test runs off the cloud
-> ([ADR 0045](docs/adr/0045-testing-off-the-cloud.md)). Sign-in and saved lists were dropped
-> ([ADR 0043](docs/adr/0043-sign-in-and-lists-dropped.md)).
+> **Status:** Phase 7, hardening and the open data release: request-body limits, burn-rate alerts on the api's SLOs,
+> the ODbL release built locally (not yet published), and a nightly check that passed locally on 2026-10-11. Phase 7
+> closes after three green nightly runs in a row on GitHub; every load and crash test runs off the cloud. Sign-in and
+> saved lists were dropped.
 
 ## How it fits together
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
@@ -26,11 +24,9 @@ the project from the start.
 - **`api`:** nearby search sorted by travel time. It runs its lookups in parallel with deadlines, merges identical
   in-flight requests, and enforces per-client rate limits and per-dependency bulkheads.
 
-The reasoning behind every design choice is in [docs/adr](docs/adr/).
-
 ## Running locally
 Development is hybrid: the Java services run on your machine, while the database (Neon), monitoring (Grafana
-Cloud), and later routing and search use free cloud tiers (see [ADR 0033](docs/adr/0033-hybrid-development-setup.md)).
+Cloud), and later routing and search use free cloud tiers.
 
 Before you start: copy `.env.example` to `.env` and fill in the Neon and Grafana Cloud values.
 
@@ -58,34 +54,30 @@ tools/dev.sh live   # http://localhost:8081: live bikes, MBTA alerts, vehicles a
 tools/dev.sh web    # http://localhost:5173  ← open this
 ```
 Travel times, routes and reachable areas come from openrouteservice and need `ORS_API_KEY` in `.env` (a free
-account). Without it the map still works and sorts by straight-line distance
-([ADR 0040](docs/adr/0040-travel-time-search-in-development.md)).
+account). Without it the map still works and sorts by straight-line distance.
 
 Live data works without a key: Bluebikes and MBTA's realtime files are open. A free MBTA V3 key in `.env` as
 `MBTA_API_KEY` ([api-v3.mbta.com](https://api-v3.mbta.com)) streams MBTA alerts and vehicles as they change. Without
-`live` running, the map still works and simply shows no live counts
-([ADR 0041](docs/adr/0041-live-hub-in-development.md)).
+`live` running, the map still works and simply shows no live counts.
 
 **Importer (Phase 2):** imports official and open data into the database on each source's cadence and resumes
-any import that was interrupted (see [ADR 0020](docs/adr/0020-import-crash-safety.md) and
-[ADR 0021](docs/adr/0021-ingest-run-mode.md)).
+any import that was interrupted.
 ```bash
 tools/dev.sh ingest                                         # keeps running, imports when due
 tools/dev.sh ingest-once boston_active_food_licenses        # one import now, then exit (add --force to redo)
 ```
-Downloads are saved under `data/raw/` (git-ignored). Personal fields are never downloaded
-([ADR 0031](docs/adr/0031-personal-data-dropped-at-import.md)).
+Downloads are saved under `data/raw/` (git-ignored). Personal fields are never downloaded.
 
 **Filters and search (Phase 5):** "open now", "accepts SNAP/EBT", "licensed" and "passed inspection" work from facts
 each import stores per place; the search box finds places by name in the database and addresses through Photon, by way
-of the api so typed addresses never leave our servers ([ADR 0042](docs/adr/0042-sources-filters-search.md)).
+of the api so typed addresses never leave our servers.
 
 **Checking the importers and the matcher:**
 ```bash
 ./mvnw -pl services/ingest -am test -Dtest=SourceContractTest -Dsurefire.failIfNoSpecifiedTests=false -Dplacemap.contract=true
 tools/dev.sh match-sample     # data/eval/match-sample.csv: 400 scored cases to label, 100 marked for a blind check
 tools/dev.sh match-evaluate   # precision and recall per threshold from the labels (and the blind check)
-tools/dev.sh coverage         # docs/data/coverage.md from the database
+tools/dev.sh coverage         # a coverage report from the database
 ```
 The contract test fetches each source's real data and fails when a publisher changes what the importer reads; it also
 runs nightly in CI. The blind check is `tools/label/index.html`, opened in a browser.
@@ -99,27 +91,25 @@ integration tests; without Docker they are skipped.
 java -jar libs/concurrent-jmh/target/benchmarks.jar                   # JMH benchmarks
 ```
 The importer's crash tests and backpressure benchmark run the real jar against a throwaway local database and need
-Docker Desktop, Toxiproxy (`brew install toxiproxy`) and the snapshots in `data/raw`
-([ADR 0039](docs/adr/0039-crash-and-backpressure-proofs.md), results in [docs/benchmarks](docs/benchmarks)):
+Docker Desktop, Toxiproxy (`brew install toxiproxy`) and the snapshots in `data/raw`:
 ```bash
 tools/dev.sh proofs c1             # kill -9 at random moments, 20 trials
 tools/dev.sh proofs c2             # connection cuts during commits, 5 trials
 tools/dev.sh proofs backpressure   # the same import with and without 200 ms of database latency
 ```
 
-**Nightly check** ([ADR 0044](docs/adr/0044-hardening-and-data-release.md)): every check that needs no cloud, in one
+**Nightly check:** every check that needs no cloud, in one
 command that ends with `NIGHTLY PASSED` or `NIGHTLY FAILED`: promtool tests of the alerts, the frontend, the full
 `./mvnw verify` (Docker must be running), the release check, the contract tests, the full JCStress suite, and C1 and
-C2. Each run adds a row to [docs/benchmarks/nightly-runs.md](docs/benchmarks/nightly-runs.md); `nightly.yml` runs the
-same on GitHub. Needs promtool (`brew install prometheus`) besides the tools above.
+C2. `nightly.yml` runs the same on GitHub. Needs promtool (`brew install prometheus`) besides the tools above.
 ```bash
 tools/dev.sh nightly                       # everything, about 65 minutes (JCStress takes 45)
 tools/dev.sh nightly --only verify,c1      # some steps (a partial run is not counted)
 ```
 
-**Alerts:** burn-rate alerts on the api's availability and nearby latency ([docs/slo.md](docs/slo.md)), plus 5xx,
-pinning, import and stale-feed alerts, all by email; runbooks in [docs/runbooks](docs/runbooks). Apply them to Grafana
-Cloud with `python3 -I tools/grafana-apply.py`.
+**Alerts:** burn-rate alerts on the api's availability (99.5% of requests without a 5xx) and nearby latency (95%
+within 300 ms), plus 5xx, pinning, import and stale-feed alerts, all by email. Apply them to Grafana Cloud with
+`python3 -I tools/grafana-apply.py`.
 
 ## Licences
 - **Code:** MIT ([LICENSE](LICENSE)).

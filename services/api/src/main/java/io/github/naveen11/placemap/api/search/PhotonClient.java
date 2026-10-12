@@ -13,7 +13,7 @@ import org.springframework.http.client.observation.DefaultClientRequestObservati
 import org.springframework.web.client.RestClient;
 
 /**
- * Address search on Photon (ADR 0008): results inside the four towns' bounding box, nearest to the map first.
+ * Address search on Photon: results inside the four towns' bounding box, nearest to the map first.
  *
  * <p>Privacy: what people type is an address, so it never reaches logs or traces. The request is traced, but the
  * span's URL is recorded without its query string ({@link QueryFreeUrls}); errors name the host only. The location

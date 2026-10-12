@@ -1,4 +1,4 @@
--- Phase 2: import bookkeeping and per-source records (ADR 0020, 0021, 0031, 0036).
+-- Phase 2: import bookkeeping and per-source records.
 -- Matching tables (review queue, link provenance) arrive with the matcher in the next migration.
 
 -- One row per import attempt of one source. At most one unfinished run per source; the importer resumes it.
@@ -35,7 +35,7 @@ CREATE TABLE ingest.batch_done (
 );
 
 -- Rows that failed validation, kept for inspection. Inserted with their batch, so a redone batch cannot duplicate
--- them. Personal fields are never downloaded, so they cannot end up here (ADR 0031).
+-- them. Personal fields are never downloaded, so they cannot end up here.
 CREATE TABLE ingest.reject (
     run_id bigint NOT NULL REFERENCES ingest.run (run_id),
     seq    int    NOT NULL,
@@ -45,9 +45,9 @@ CREATE TABLE ingest.reject (
     PRIMARY KEY (run_id, seq, row_no)
 );
 
--- What one source says about one place (ADR 0022). Imports upsert on (source, source_key) and skip rows whose
+-- What one source says about one place. Imports upsert on (source, source_key) and skip rows whose
 -- content hash is unchanged; matching links records to places through place.place_source_link.
--- Records missing from a completed run are retired, never deleted (ADR 0020).
+-- Records missing from a completed run are retired, never deleted.
 CREATE TABLE place.source_record (
     source      text   NOT NULL,
     source_key  text   NOT NULL,

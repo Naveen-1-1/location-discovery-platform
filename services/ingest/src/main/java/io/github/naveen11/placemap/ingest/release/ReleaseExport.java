@@ -26,7 +26,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 /**
- * Builds the ODbL data release (ADR 0044) into {@code <releaseDir>/<date>/}: the places and their source records as
+ * Builds the ODbL data release into {@code <releaseDir>/<date>/}: the places and their source records as
  * GeoParquet, the licence, the attribution, the method, the licence texts the sources need and checksums.
  *
  * <p>Only records of sources marked {@code redistribution: "yes"} are read. Over them the app's own merge runs again

@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-/** One session in each connection mode (ADR 0023, 0041), with a fake clock for the watchdog's decisions. */
+/** One session in each connection mode, with a fake clock for the watchdog's decisions. */
 @Timeout(20)
 class ClientSessionTest {
 

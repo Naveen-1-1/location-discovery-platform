@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
 /**
- * What every routing adapter must do (ADR 0033): openrouteservice now, Valhalla at deployment. The cases check what a
+ * What every routing adapter must do: openrouteservice now, Valhalla at deployment. The cases check what a
  * correct engine does on real Boston streets, not exact numbers, so the same cases hold for both engines.
  */
 abstract class RoutingClientContract {

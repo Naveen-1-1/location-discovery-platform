@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  * A place's regular week of opening times, Boston local time, for the "open now" filter. Each day has its spans in
  * minutes after that day's midnight; a span may run past midnight (a bar open 17:00–02:00 is 1020–1560 on its day).
  *
- * <p>Only the regular week is kept: holidays, dated and seasonal rules are left out (owner decision, ADR 0042), so a
+ * <p>Only the regular week is kept: holidays, dated and seasonal rules are left out (owner decision), so a
  * place "closed on public holidays" shows as open on one. Hours that cannot be read at all are unknown, never
  * "closed": {@link #fromOsm} and the others return empty, and the filter then hides the place.
  */

@@ -8,8 +8,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.ToLongFunction;
 
 /**
- * Hands immutable, versioned snapshots and their per-key changes from one writer thread to many subscribers
- * (ADR 0023).
+ * Hands immutable, versioned snapshots and their per-key changes from one writer thread to many subscribers.
  *
  * <ul>
  *   <li><b>Single writer.</b> Only one thread may {@link #publish}; the first caller becomes the writer and any other

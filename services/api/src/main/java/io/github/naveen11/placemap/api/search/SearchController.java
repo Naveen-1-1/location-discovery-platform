@@ -42,7 +42,7 @@ public class SearchController {
         try {
             result = search.search(q, lat, lon, Deadline.after(properties.deadline()));
         } catch (BulkheadFullException e) {
-            // As nearby does (ADR 0026): the database has all the searches it can take.
+            // As nearby does: the database has all the searches it can take.
             var error = new ErrorResponseException(HttpStatus.SERVICE_UNAVAILABLE, e);
             error.setDetail("The database is busy. Try again in a moment.");
             error.getHeaders().set(HttpHeaders.RETRY_AFTER, "1");

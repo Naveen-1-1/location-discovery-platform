@@ -9,7 +9,7 @@ import java.util.Set;
 import org.apache.commons.text.similarity.JaroWinklerSimilarity;
 
 /**
- * Name and address comparison for matching (ADR 0022). Names are compared with Jaro-Winkler after normalising case,
+ * Name and address comparison for matching. Names are compared with Jaro-Winkler after normalising case,
  * accents and punctuation. Addresses are compared as house number plus street name, ignoring the street type,
  * because sources disagree on it: Boston licences say "100 Federal", Overture "100 Federal St", OSM "100 Federal
  * Street".

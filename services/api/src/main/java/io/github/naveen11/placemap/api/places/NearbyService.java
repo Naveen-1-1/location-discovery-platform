@@ -26,7 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Nearby search with travel times (plan: showcase 3; ADR 0025, 0026).
+ * Nearby search with travel times (plan: showcase 3).
  *
  * <ol>
  *   <li>The query (snapped cell, mode, categories, radius) keys an {@link AsyncLoadingCache}: concurrent identical

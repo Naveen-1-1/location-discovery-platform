@@ -1,7 +1,7 @@
 package io.github.naveen11.placemap.api.routing;
 
 /**
- * A routing call that gave no answer. Callers fall back (ADR 0026): nearby sorts by straight-line distance, while
+ * A routing call that gave no answer. Callers fall back: nearby sorts by straight-line distance, while
  * routes and isochrones report the failure.
  */
 public class RoutingException extends RuntimeException {

@@ -15,7 +15,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 /**
- * Every call to the routing engine goes through here (ADR 0026): one shared bulkhead that never waits, one circuit
+ * Every call to the routing engine goes through here: one shared bulkhead that never waits, one circuit
  * breaker, and a time limit enforced on this side whatever the adapter's own HTTP timeout. A late answer is
  * abandoned, so the caller's fallback or error goes out on time.
  */

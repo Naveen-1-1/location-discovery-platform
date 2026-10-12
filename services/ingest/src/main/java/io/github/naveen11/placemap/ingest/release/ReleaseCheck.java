@@ -21,15 +21,15 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Checks a built release folder (ADR 0044) and lists every problem; none means it may be published. Reads only the
+ * Checks a built release folder and lists every problem; none means it may be published. Reads only the
  * files and {@code data/sources.yaml}, never the database, so it can check a folder long after it was built.
  *
  * <ul>
  *   <li>The files are all there, {@code SHA256SUMS} matches them, and {@code LICENSE} is the ODbL text.
  *   <li>Both tables have exactly the expected columns: none named like personal data or comments, and none a source
- *       drops at import (ADR 0031).
+ *       drops at import.
  *   <li>Every record comes from a source marked {@code "yes"}, every place has one, and no value anywhere names a
- *       display-only source (ADR 0029).
+ *       display-only source.
  *   <li>Every place is a point inside the four towns (the importer's own area), and ids are unique.
  *   <li>{@code ATTRIBUTION.md} credits every source in the data.
  * </ul>

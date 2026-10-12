@@ -1,4 +1,4 @@
-"""Turns the backpressure benchmark's metrics into docs/benchmarks/backpressure.{svg,csv}.
+"""Turns the backpressure benchmark's metrics into a chart and a CSV (backpressure.svg and .csv in OUT).
 
 Usage:  python3 -I tools/backpressure-report.py [RESULTS_JSON]
 
@@ -6,7 +6,7 @@ Reads the run windows that `tools/dev.sh proofs backpressure` saved (services/in
 backpressure-results.json) and queries those windows from Grafana Cloud (GRAFANA_URL and GRAFANA_SA_TOKEN in .env).
 Writes the slow run as a chart (one row per measure, one y-axis per row; the baseline is too short for a time series
 at the export interval, so it is compared in the summary instead), every measure of both runs as CSV, and prints the
-summary for docs/benchmarks/backpressure.md.
+summary.
 """
 
 import csv

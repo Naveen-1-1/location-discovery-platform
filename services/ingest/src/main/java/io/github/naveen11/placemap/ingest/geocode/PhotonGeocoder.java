@@ -17,7 +17,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Photon (ADR 0008): the public instance during development (ADR 0033), our own at deployment, same API. Asks for
+ * Photon: the public instance during development, our own at deployment, same API. Asks for
  * house-level results inside the area's bounding box only.
  */
 public final class PhotonGeocoder implements Geocoder {

@@ -17,7 +17,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * MBTA V3 records (JSON:API) into the same items the open realtime files give, so clients cannot tell which source
- * is in use (ADR 0041).
+ * is in use.
  */
 public final class MbtaV3 {
 

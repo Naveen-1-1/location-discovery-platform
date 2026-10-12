@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Saved inputs under {@code <raw-dir>/<source>/<run_id>/} (ADR 0020): {@code snapshot.csv} plus a small
+ * Saved inputs under {@code <raw-dir>/<source>/<run_id>/}: {@code snapshot.csv} plus a small
  * {@code manifest.json}. Batches are always cut from this file, so a resumed run sees exactly the rows it started
  * with. Only the latest run's snapshot is kept per source.
  *

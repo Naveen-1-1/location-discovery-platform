@@ -24,7 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * One MBTA V3 streaming resource ({@code GET /alerts} or {@code /vehicles} with {@code Accept: text/event-stream}),
- * the plan's primary MBTA source (ADR 0041). The stream opens with a {@code reset} holding every record, then sends
+ * the plan's primary MBTA source. The stream opens with a {@code reset} holding every record, then sends
  * {@code add}, {@code update} and {@code remove} events as records change.
  *
  * <ul>

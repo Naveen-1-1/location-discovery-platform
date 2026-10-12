@@ -32,7 +32,7 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
-    <!-- Traces + metrics + logs over OTLP (ADR 0017 / 0033), plus virtual-thread pinning metrics. -->
+    <!-- Traces + metrics + logs over OTLP, plus virtual-thread pinning metrics. -->
     <dependency>
       <groupId>io.github.naveen-1-1.placemap</groupId>
       <artifactId>observability</artifactId>
@@ -51,7 +51,7 @@
       <groupId>com.github.ben-manes.caffeine</groupId>
       <artifactId>caffeine</artifactId>
     </dependency>
-    <!-- Bulkheads and the routing circuit breaker (ADR 0010, 0026): the core libraries, wired with @Bean. -->
+    <!-- Bulkheads and the routing circuit breaker: the core libraries, wired with @Bean. -->
     <dependency>
       <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-bulkhead</artifactId>
@@ -64,12 +64,12 @@
       <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-micrometer</artifactId>
     </dependency>
-    <!-- Per-client rate limits (ADR 0026). -->
+    <!-- Per-client rate limits. -->
     <dependency>
       <groupId>com.bucket4j</groupId>
       <artifactId>bucket4j_jdk17-core</artifactId>
     </dependency>
-    <!-- Snapping the search origin to an H3 cell (ADR 0025). Native code: each call takes microseconds. -->
+    <!-- Snapping the search origin to an H3 cell. Native code: each call takes microseconds. -->
     <dependency>
       <groupId>com.uber</groupId>
       <artifactId>h3</artifactId>

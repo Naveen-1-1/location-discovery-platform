@@ -11,7 +11,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
- * Gate G1 (ADR 0032), from {@code data/source-priority.yaml}: which sources may create a place in each category,
+ * Gate G1, from {@code data/source-priority.yaml}: which sources may create a place in each category,
  * which only enrich, and the Overture confidence rule. Also ranks sources per category, which decides whose name,
  * address and phone a merged place shows. Immutable.
  */
@@ -78,7 +78,7 @@ public final class SourcePriority {
     }
 
     /**
-     * Whether a record of one category may be the same place as a place of another (ADR 0042): the same category, a
+     * Whether a record of one category may be the same place as a place of another: the same category, a
      * pair listed under {@code compatible_categories}, or a record without a category (a licence of no app class).
      */
     public boolean compatible(String recordCategory, String placeCategory) {

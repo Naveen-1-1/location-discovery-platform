@@ -13,7 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 /**
- * ADR 0009: the showcase code does its own threading with java.util.concurrent, so Spring's {@code @Async} and
+ * The showcase code does its own threading with java.util.concurrent, so Spring's {@code @Async} and
  * {@code @Scheduled} (which would hide it) are banned in live-hub and the concurrency library.
  */
 class ArchitectureTest {
@@ -26,7 +26,7 @@ class ArchitectureTest {
     void noSpringAsyncOrScheduledMethods() {
         noMethods().should().beAnnotatedWith(Async.class)
                 .orShould().beAnnotatedWith(Scheduled.class)
-                .because("threads in showcase code are explicit (ADR 0009)")
+                .because("threads in showcase code are explicit")
                 .check(SHOWCASE);
     }
 
@@ -35,7 +35,7 @@ class ArchitectureTest {
         noClasses().should().beAnnotatedWith(Async.class)
                 .orShould().beAnnotatedWith(EnableAsync.class)
                 .orShould().beAnnotatedWith(EnableScheduling.class)
-                .because("threads in showcase code are explicit (ADR 0009)")
+                .because("threads in showcase code are explicit")
                 .check(SHOWCASE);
     }
 }

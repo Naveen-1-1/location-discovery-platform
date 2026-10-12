@@ -1,7 +1,7 @@
 {
   "uid": "placemap-api-red",
   "title": "placemap \u00b7 API RED",
-  "description": "Rate, Errors, Duration for the api service (ADR 0017). Source: infra/observability/grafana/dashboards/api-red.json",
+  "description": "Rate, Errors, Duration for the api service. Source: infra/observability/grafana/dashboards/api-red.json",
   "tags": [
     "placemap",
     "api",
@@ -164,7 +164,7 @@
       "id": 3,
       "type": "stat",
       "title": "p95 latency",
-      "description": "Laptop SLO for nearby: p95 < 300 ms (docs/slo.md)",
+      "description": "Laptop SLO for nearby: p95 < 300 ms",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -474,7 +474,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "DB connection pool (Hikari)",
-      "description": "'waiting' > 0 means requests queue for a DB connection: the bulkhead in Phase 3 caps this (ADR 0026)",
+      "description": "'waiting' > 0 means requests queue for a DB connection: the bulkhead in Phase 3 caps this",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -547,7 +547,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "DB connection acquire time (max)",
-      "description": "Spikes after idle periods are Neon waking from scale-to-zero (ADR 0033)",
+      "description": "Spikes after idle periods are Neon waking from scale-to-zero",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

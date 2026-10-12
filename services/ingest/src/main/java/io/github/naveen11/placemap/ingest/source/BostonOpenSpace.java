@@ -19,10 +19,10 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Boston's open-space parcels (557 on 2026-10-11), an existence source for parks next to OSM (ADR 0032, "polygons
+ * Boston's open-space parcels (557 on 2026-10-11), an existence source for parks next to OSM ("polygons
  * decide"). The CSV resource has no geometry, so the fetch reads the GeoJSON resource and keeps, per parcel, a point
  * that lies inside it and its outline simplified to about 2 m. Matching compares other records with the outline, so
- * an OSM park whose point is far from ours still matches (ADR 0022).
+ * an OSM park whose point is far from ours still matches.
  *
  * <p>Only parks, playgrounds, reservations, urban wilds and community gardens get the park category
  * ({@code TypeLong} in {@code data/categories.yaml}); cemeteries, traffic squares and plazas are skipped.

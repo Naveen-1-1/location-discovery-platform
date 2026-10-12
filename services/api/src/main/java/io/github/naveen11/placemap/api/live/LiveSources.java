@@ -4,7 +4,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Which place sources have live data in live-hub, and under which topic (ADR 0024). A place linked to one of them
+ * Which place sources have live data in live-hub, and under which topic. A place linked to one of them
  * gets a live key {@code topic:source_key}, the same key the map's live stream uses.
  */
 public final class LiveSources {

@@ -1,4 +1,4 @@
-# Coverage area (ADR 0005). Add a town here and re-run tools/fetch-area.sh to extend coverage.
+# Coverage area. Add a town here and re-run tools/fetch-area.sh to extend coverage.
 # Boundaries: MassGIS "Massachusetts Municipalities" (survey-based polygons, include water/harbor islands).
 boundary_source:
   publisher: MassGIS (Bureau of Geographic Information)

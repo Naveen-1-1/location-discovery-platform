@@ -26,7 +26,7 @@ public final class CsvRow {
         return record.toList();
     }
 
-    /** The row as column → value, for the reject table. Snapshots never contain personal fields (ADR 0031). */
+    /** The row as column → value, for the reject table. Snapshots never contain personal fields. */
     public Map<String, String> asMap() {
         var map = new LinkedHashMap<String, String>();
         for (String column : columns) {

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/** One place's details (ADR 0042). */
+/** One place's details. */
 @RestController
 @RequestMapping("/api")
 public class PlaceController {

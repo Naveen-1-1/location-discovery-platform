@@ -3,7 +3,7 @@ package io.github.naveen11.placemap.livehub.state;
 import java.time.Duration;
 import java.util.Map;
 
-/** What a feed hands to the snapshot writer. Feeds never touch live state themselves (single writer, ADR 0023). */
+/** What a feed hands to the snapshot writer. Feeds never touch live state themselves (single writer). */
 public sealed interface FeedUpdate {
 
     Topic topic();

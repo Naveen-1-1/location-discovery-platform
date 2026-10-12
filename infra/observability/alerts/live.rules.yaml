@@ -1,7 +1,7 @@
 # Alert rules for live-hub, in Prometheus rule-file format. Development uses the same rule as a Grafana-managed rule
 # (infra/observability/grafana/alerting/placemap-live.rules.json, applied by tools/grafana-apply.py).
 #
-# Departures are read only while someone is looking (ADR 0041), so their topic is stale whenever nobody is: it is
+# Departures are read only while someone is looking, so their topic is stale whenever nobody is: it is
 # left out.
 groups:
   - name: placemap-live
@@ -14,4 +14,3 @@ groups:
         annotations:
           summary: "the live {{ $labels.topic }} feed is stale"
           description: "live-hub has had no answer from the {{ $labels.topic }} feed for over 3x its ttl, for 2 minutes. The map marks that data out of date and keeps showing the last values."
-          runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/live-feed-stale.md"

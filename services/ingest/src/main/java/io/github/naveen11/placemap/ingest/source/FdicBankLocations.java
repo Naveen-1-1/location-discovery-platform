@@ -16,7 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Bank branches from the FDIC BankFind API (1,882 offices in Massachusetts on 2026-10-11, one request). The
- * authoritative existence source for banks (ADR 0032); credit unions come from Overture and OSM. Only full-service
+ * authoritative existence source for banks; credit unions come from Overture and OSM. Only full-service
  * branches get the bank category ({@code SERVTYPE} 11 and 12 in {@code data/categories.yaml}); loan, trust and
  * administrative offices are skipped. The service-type code is used rather than its description, which FDIC writes
  * in two different cases.

@@ -16,7 +16,7 @@ import org.springframework.util.unit.DataSize;
 class BodyLimitConfig {
 
     /**
-     * {@code placemap.body-limit.*} (ADR 0044).
+     * {@code placemap.body-limit.*}.
      *
      * @param max the largest request body the api accepts; it reads none, so this only spares harmless clients
      */

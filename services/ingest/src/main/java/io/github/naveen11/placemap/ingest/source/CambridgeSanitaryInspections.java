@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Cambridge's Sanitary Inspections since 2021: about 12,000 rows, one per violation line, grouped into inspection
- * cases (ADR 0034). The data names no permit number, so the establishment is identified by business name and address.
- * Each establishment's newest line describes its record, an enrichment for food places (ADR 0032).
+ * cases. The data names no permit number, so the establishment is identified by business name and address.
+ * Each establishment's newest line describes its record, an enrichment for food places.
  *
  * <p>Cambridge lists only the violations it found, so a line with a code is recorded as a failed check (Boston
  * instead lists every item checked, marked Pass or Fail).

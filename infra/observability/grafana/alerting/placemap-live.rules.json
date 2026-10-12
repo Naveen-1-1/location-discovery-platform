@@ -16,8 +16,7 @@
    },
    "annotations": {
     "summary": "the live {{ $labels.topic }} feed is stale",
-    "description": "live-hub has had no answer from the {{ $labels.topic }} feed for over 3x its ttl, for 2 minutes. The map marks that data out of date and keeps showing the last values. See the runbook.",
-    "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/live-feed-stale.md"
+    "description": "live-hub has had no answer from the {{ $labels.topic }} feed for over 3x its ttl, for 2 minutes. The map marks that data out of date and keeps showing the last values."
    },
    "notification_settings": {
     "receiver": "email-placemap"

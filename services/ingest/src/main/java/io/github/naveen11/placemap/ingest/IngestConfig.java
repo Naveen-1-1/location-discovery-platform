@@ -52,7 +52,7 @@ class IngestConfig {
         return AreaPostcodes.load(properties.areaConfigFile());
     }
 
-    /** Shared by every run, so the call limits hold across runs (ADR 0008, 0033). */
+    /** Shared by every run, so the call limits hold across runs. */
     @Bean
     Geocoding geocoding(IngestProperties properties, CoverageArea area, DataSource dataSource) {
         IngestProperties.Geocoder settings = properties.geocoder();

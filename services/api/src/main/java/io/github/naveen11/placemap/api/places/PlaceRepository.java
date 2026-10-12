@@ -19,7 +19,7 @@ public class PlaceRepository {
     // must match the partial index predicate. KNN orders by distance on a sphere, while the distance we show is the
     // accurate spheroid one; the two can disagree by a few metres. The outer query re-sorts those few hundred rows
     // by the displayed distance, so the list can never show 1,122 m above 1,120 m. The live-data link is looked up
-    // out there too, for those few hundred rows only, so it cannot get in the way of the index scan. Filters (ADR 0042)
+    // out there too, for those few hundred rows only, so it cannot get in the way of the index scan. Filters
     // are EXISTS tests on place_facts inside, so the place table stays the scan's only table and the LIMIT counts
     // places that pass them; the facts shown as badges are joined outside.
     private static final String NEARBY_SQL = """
@@ -119,7 +119,7 @@ public class PlaceRepository {
 
     /**
      * With "open now" on: places within the radius that pass the other filters but whose hours are unknown, so the
-     * list can say how many it left out (ADR 0042).
+     * list can say how many it left out.
      */
     public int unknownHours(double lat, double lon, int radiusMeters, List<String> categories, PlaceFilters filters) {
         var others = new PlaceFilters(filters.acceptsSnap(), filters.licensed(), filters.passedInspection(), null);

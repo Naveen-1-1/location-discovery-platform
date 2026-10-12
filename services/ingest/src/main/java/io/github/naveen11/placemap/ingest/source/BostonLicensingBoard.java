@@ -7,10 +7,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Licences granted by the Boston Licensing Board (3,601 rows on 2026-10-11): restaurants (common victuallers), bars,
- * liquor stores, inns. An enrichment source for food places (ADR 0032), notable for the hours each premises is
+ * liquor stores, inns. An enrichment source for food places, notable for the hours each premises is
  * licensed to open and close. Those are the latest hours allowed, not necessarily when it is open, so they rank below
  * a place's published opening hours. Coordinates are MA State Plane feet (EPSG:2249). The applicant, manager and
- * phone fields are never requested (ADR 0031), nor are the free-text premises descriptions.
+ * phone fields are never requested, nor are the free-text premises descriptions.
  *
  * <p>About 18 licence numbers appear twice as identical rows, so a licence's rows are read as lines of one record.
  */

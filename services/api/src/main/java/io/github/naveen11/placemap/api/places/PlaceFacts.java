@@ -3,7 +3,7 @@ package io.github.naveen11.placemap.api.places;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
- * What the filters know about a place, shown as badges (ADR 0042).
+ * What the filters know about a place, shown as badges.
  *
  * @param inspection the latest inspection: {@code passed}, {@code failed} or {@code other}; null if never inspected
  * @param openNow whether the regular week says open at the time of this answer; null when the hours are unknown.

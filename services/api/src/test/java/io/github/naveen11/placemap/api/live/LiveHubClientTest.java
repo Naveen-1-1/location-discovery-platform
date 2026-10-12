@@ -22,7 +22,7 @@ import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-/** The live-hub batch call (ADR 0024): what it returns, and that it never makes a search wait past 150 ms. */
+/** The live-hub batch call: what it returns, and that it never makes a search wait past 150 ms. */
 class LiveHubClientTest {
 
     private static final Duration TIMEOUT = Duration.ofMillis(150);
@@ -52,7 +52,7 @@ class LiveHubClientTest {
 
     @Test
     void aSlowLiveHubIsCutOffAtTheTimeout() {
-        // Answers after a full second, as a stuck live-hub would (ADR 0024's follow-up, without a network).
+        // Answers after a full second, as a stuck live-hub would (without a network).
         RestClient slow = RestClient.builder().baseUrl("http://live-hub")
                 .requestFactory((URI uri, HttpMethod method) -> new MockClientHttpRequest(method, uri) {
                     @Override

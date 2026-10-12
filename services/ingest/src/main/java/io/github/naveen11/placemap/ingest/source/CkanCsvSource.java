@@ -13,7 +13,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * A City of Boston dataset downloaded from its CKAN datastore dump (Analyze Boston). The dump API can return chosen
- * columns in a chosen order: we ask only for {@link #columns()}, so personal fields are never downloaded (ADR 0031),
+ * columns in a chosen order: we ask only for {@link #columns()}, so personal fields are never downloaded,
  * and sort by the natural key, so unchanged data gives a byte-identical snapshot and the run is skipped.
  */
 public abstract class CkanCsvSource implements SourceAdapter {

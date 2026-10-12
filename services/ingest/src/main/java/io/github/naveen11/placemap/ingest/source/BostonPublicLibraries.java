@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
- * The Boston Public Library's 26 locations. An enrichment source for libraries (ADR 0032): Overture and OSM already
+ * The Boston Public Library's 26 locations. An enrichment source for libraries: Overture and OSM already
  * have them, so these records are matched to those places, never create them. The branch name ("West End") alone
  * would barely resemble "West End Branch, Boston Public Library", so the record is named the way the library names
  * its branches.

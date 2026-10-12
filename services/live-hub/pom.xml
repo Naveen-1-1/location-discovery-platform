@@ -13,7 +13,7 @@
 
   <artifactId>live-hub</artifactId>
   <name>placemap :: services :: live-hub</name>
-  <description>Live bike and transit updates: polls the feeds, keeps one snapshot, pushes changes over SSE (ADR 0018, 0023).</description>
+  <description>Live bike and transit updates: polls the feeds, keeps one snapshot, pushes changes over SSE.</description>
 
   <dependencies>
     <dependency>
@@ -28,7 +28,7 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
-    <!-- Traces + metrics + logs over OTLP (ADR 0017 / 0033), plus virtual-thread pinning metrics. -->
+    <!-- Traces + metrics + logs over OTLP, plus virtual-thread pinning metrics. -->
     <dependency>
       <groupId>io.github.naveen-1-1.placemap</groupId>
       <artifactId>observability</artifactId>

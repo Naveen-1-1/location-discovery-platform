@@ -8,10 +8,10 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * Boston's Food Establishment Inspections: the full history since 2006, about 905,000 rows of one violation line each
- * (ADR 0034). Every row is history; each licence's newest line also describes the establishment, which becomes this
- * source's record: an enrichment for food places, and an existence source for active retail groceries (ADR 0032).
- * The owner's and the people's names are never requested (ADR 0031).
+ * Boston's Food Establishment Inspections: the full history since 2006, about 905,000 rows of one violation line each.
+ * Every row is history; each licence's newest line also describes the establishment, which becomes this
+ * source's record: an enrichment for food places, and an existence source for active retail groceries.
+ * The owner's and the people's names are never requested.
  */
 @Component
 public class BostonFoodInspections extends CkanCsvSource {

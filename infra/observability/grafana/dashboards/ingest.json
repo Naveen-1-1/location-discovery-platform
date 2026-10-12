@@ -588,7 +588,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Match decisions per second",
-      "description": "What matching decided for each record (ADR 0022): link to a place, create one, keep an earlier link, send to review, or leave unlinked.",
+      "description": "What matching decided for each record: link to a place, create one, keep an earlier link, send to review, or leave unlinked.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

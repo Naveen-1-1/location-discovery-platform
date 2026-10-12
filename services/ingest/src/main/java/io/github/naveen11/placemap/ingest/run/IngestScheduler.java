@@ -20,8 +20,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 
 /**
- * The importer's own timetable (ADR 0021), written with plain {@code java.util.concurrent} instead of
- * {@code @Scheduled} (ADR 0009).
+ * The importer's own timetable, written with plain {@code java.util.concurrent} instead of
+ * {@code @Scheduled}.
  *
  * <ul>
  *   <li>One platform thread ticks every minute and only decides what is due: a source with an unfinished run (resume),

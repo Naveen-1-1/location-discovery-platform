@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Tracks the highest batch number N such that every batch 0..N is done, while batches finish out of order on many
- * threads (ADR 0020, 0036). Lock-free: threads publish finished batch numbers in a concurrent set and move the
+ * threads. Lock-free: threads publish finished batch numbers in a concurrent set and move the
  * watermark forward with compare-and-set, helping each other along.
  *
  * <p>Guarantees, checked by Lincheck and JCStress:

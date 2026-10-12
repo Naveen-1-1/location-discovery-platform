@@ -17,12 +17,12 @@ public record SourceDefinition(
     public record Access(String method, String url, String apiKeyEnv) {
     }
 
-    /** Sources are enabled unless the registry says {@code enabled: false} (e.g. ADR 0030). */
+    /** Sources are enabled unless the registry says {@code enabled: false} (e.g. the WIC and HIP lists). */
     public boolean isEnabled() {
         return enabled == null || enabled;
     }
 
-    /** Personal fields that must never be downloaded or stored (ADR 0031). */
+    /** Personal fields that must never be downloaded or stored. */
     @Override
     public List<String> dropFields() {
         return dropFields == null ? List.of() : dropFields;

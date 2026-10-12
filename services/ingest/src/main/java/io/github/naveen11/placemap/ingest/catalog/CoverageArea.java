@@ -14,7 +14,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The four towns (ADR 0005), from {@code data/area/area.geojson} (EPSG:4326, written by tools/fetch-area.sh).
+ * The four towns, from {@code data/area/area.geojson} (EPSG:4326, written by tools/fetch-area.sh).
  * Point checks go through a {@link Checker}; each parse worker takes its own, so no geometry index is shared
  * between threads.
  */

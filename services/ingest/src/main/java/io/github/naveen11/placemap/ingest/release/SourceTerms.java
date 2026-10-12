@@ -10,7 +10,7 @@ import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
- * What {@code data/sources.yaml} says about each source's licence: the part the data release needs (ADR 0044), which
+ * What {@code data/sources.yaml} says about each source's licence: the part the data release needs, which
  * the importer's {@code SourceDefinition} leaves out.
  *
  * @param redistribution {@code yes}, {@code display-only} or {@code unknown}

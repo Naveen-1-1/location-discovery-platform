@@ -1,7 +1,7 @@
 {
   "uid": "placemap-live-hub",
   "title": "placemap \u00b7 Live hub",
-  "description": "Live bikes and MBTA data: feeds, the snapshot writer, client mailboxes and streams, and the api's live calls (ADR 0018, 0023, 0024, 0041). Source: infra/observability/grafana/dashboards/live-hub.json",
+  "description": "Live bikes and MBTA data: feeds, the snapshot writer, client mailboxes and streams, and the api's live calls. Source: infra/observability/grafana/dashboards/live-hub.json",
   "tags": [
     "placemap",
     "live-hub"
@@ -217,7 +217,7 @@
       "id": 4,
       "type": "stat",
       "title": "Nearby answers with live data",
-      "description": "Share of the api's live-hub calls that answered within 150 ms (ADR 0024).",
+      "description": "Share of the api's live-hub calls that answered within 150 ms.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -697,7 +697,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "MBTA V3 streams",
-      "description": "1 while the topic's V3 stream is connected (needs MBTA_API_KEY). While it is 0, that topic is read from MBTA's open realtime files instead (ADR 0041).",
+      "description": "1 while the topic's V3 stream is connected (needs MBTA_API_KEY). While it is 0, that topic is read from MBTA's open realtime files instead.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

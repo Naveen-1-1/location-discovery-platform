@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 
 /**
  * A place's regular week of opening times as minute ranges since Monday 00:00, Boston time, read from the
- * {@code open_week} multirange the importer stores (ADR 0042).
+ * {@code open_week} multirange the importer stores.
  */
 public record OpenWeek(List<int[]> ranges) {
 

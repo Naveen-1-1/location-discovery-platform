@@ -23,8 +23,7 @@ tests:
         alertname: ApiAvailabilityBurnFast
         exp_alerts: [&fast {exp_labels: {severity: page, slo: api-availability}, exp_annotations: {
             summary: "the api is spending its error budget 14x too fast",
-            description: "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days.",
-            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"}}]
+            description: "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days."}}]
       - eval_time: 15m
         alertname: ApiAvailabilityBurnSlow
         exp_alerts: []
@@ -35,8 +34,7 @@ tests:
         alertname: ApiAvailabilityBurnSlow
         exp_alerts: [&slow {exp_labels: {severity: page, slo: api-availability}, exp_annotations: {
             summary: "the api is spending its error budget 6x too fast",
-            description: "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days.",
-            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"}}]
+            description: "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days."}}]
       - eval_time: 50m
         alertname: ApiAvailabilityBurnFast
         exp_alerts: []
@@ -81,8 +79,7 @@ tests:
         alertname: NearbyLatencyBurnFast
         exp_alerts: [{exp_labels: {severity: page, slo: nearby-latency}, exp_annotations: {
             summary: "nearby search is spending its latency budget 14x too fast",
-            description: "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days.",
-            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"}}]
+            description: "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days."}}]
       - eval_time: 15m
         alertname: NearbyLatencyBurnSlow
         exp_alerts: []
@@ -90,8 +87,7 @@ tests:
         alertname: NearbyLatencyBurnSlow
         exp_alerts: [&latencySlow {exp_labels: {severity: page, slo: nearby-latency}, exp_annotations: {
             summary: "nearby search is spending its latency budget 6x too fast",
-            description: "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days.",
-            runbook_url: "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"}}]
+            description: "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days."}}]
 
   # Half the successful searches are slow: only the slow burn fires. Slow failures and other endpoints do not count.
   - interval: 1m
@@ -110,7 +106,7 @@ tests:
         alertname: NearbyLatencyBurnSlow
         exp_alerts: [*latencySlow]
 
-  # The alert drill with no other traffic (docs/runbooks/alert-drill.md): 120 failing requests in two minutes.
+  # The alert drill with no other traffic: 120 failing requests in two minutes.
   - interval: 1m
     input_series:
       - series: 'http_server_requests_seconds{job="placemap/api", uri="/api/_drills/error", status="500"}'

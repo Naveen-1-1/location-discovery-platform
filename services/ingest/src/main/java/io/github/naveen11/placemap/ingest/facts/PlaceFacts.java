@@ -17,7 +17,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Rebuilds {@code place.place_facts} for the places a completing run touched (ADR 0042), inside the run's completion
+ * Rebuilds {@code place.place_facts} for the places a completing run touched, inside the run's completion
  * transaction, after the places themselves are refreshed. Facts come from all of a place's live records, whichever
  * source they are from:
  *

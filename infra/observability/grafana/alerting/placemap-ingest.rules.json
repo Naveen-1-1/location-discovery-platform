@@ -16,8 +16,7 @@
    },
    "annotations": {
     "summary": "the {{ $labels.source }} import failed",
-    "description": "A run of {{ $labels.source }} was closed as FAILED: a bad download, a safety limit, or too many attempts. The map keeps the last good import. The reason is in ingest.run.error; see the runbook.",
-    "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+    "description": "A run of {{ $labels.source }} was closed as FAILED: a bad download, a safety limit, or too many attempts. The map keeps the last good import. The reason is in ingest.run.error."
    },
    "notification_settings": {
     "receiver": "email-placemap"
@@ -75,8 +74,7 @@
    },
    "annotations": {
     "summary": "the {{ $labels.limit }} limit stopped the {{ $labels.source }} import",
-    "description": "Completing the run would have stored too many rejected rows (over 2%) or retired too many records (over 20%), so nothing was retired and the run failed. Check the source before re-running; see the runbook.",
-    "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/ingest-run-failed.md"
+    "description": "Completing the run would have stored too many rejected rows (over 2%) or retired too many records (over 20%), so nothing was retired and the run failed. Check the source before re-running."
    },
    "notification_settings": {
     "receiver": "email-placemap"

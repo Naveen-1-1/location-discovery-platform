@@ -5,8 +5,8 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * Travel times, routes and isochrones from a routing engine: openrouteservice during development, self-hosted
- * Valhalla at deployment (ADR 0006, 0033). Every method throws {@link RoutingException} when the engine gives no
- * answer, so callers can fall back (ADR 0026).
+ * Valhalla at deployment. Every method throws {@link RoutingException} when the engine gives no
+ * answer, so callers can fall back.
  */
 public interface RoutingClient {
 

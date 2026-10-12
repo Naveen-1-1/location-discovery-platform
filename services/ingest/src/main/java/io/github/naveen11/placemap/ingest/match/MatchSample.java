@@ -24,7 +24,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Draws the matching evaluation's sample (ADR 0022: "a rule-based score with a hand-labelled evaluation").
+ * Draws the matching evaluation's sample.
  *
  * <p>Every live, located record of each evaluated source is scored, with the matcher's own code, against the records
  * of <em>other</em> sources within 100 m that belong to a live place, best record per place. That is what the matcher

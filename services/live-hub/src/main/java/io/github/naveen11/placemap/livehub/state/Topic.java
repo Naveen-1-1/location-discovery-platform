@@ -6,7 +6,7 @@ import java.util.Optional;
 
 /**
  * A kind of live data. Each topic comes from one feed and has its own items, keyed by the publisher's id, and its own
- * health: it is stale once its feed has not answered for 3× the feed's ttl (ADR 0024).
+ * health: it is stale once its feed has not answered for 3× the feed's ttl.
  *
  * <p>Streamed topics go to every client that subscribes. A topic that is not streamed is too big to send everyone
  * (every stop's next departures, about 2 MB); clients ask for one item of it at a time instead.

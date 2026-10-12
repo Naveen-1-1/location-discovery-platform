@@ -19,13 +19,13 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Pharmacies (organisations, NPI-2) from the CMS NPPES registry: an enrichment source that also corroborates Overture's
- * pharmacies, about a fifth of which are drug companies (ADR 0032). The registry has no coordinates, so records are
+ * pharmacies, about a fifth of which are drug companies. The registry has no coordinates, so records are
  * placed by the geocode stage from their practice address.
  *
  * <p>The API returns at most 200 records a request and 1,200 a search, so the fetch searches each of the four towns'
  * ZIP codes ({@code data/area.yaml}). A record can turn up under two codes (its mailing address matches too); it is
  * kept once. Only the practice ({@code LOCATION}) address is kept, and the authorised official's name and phone, which
- * every record carries, are never written anywhere (ADR 0031).
+ * every record carries, are never written anywhere.
  */
 @Component
 public class NppesPharmacies implements SourceAdapter {

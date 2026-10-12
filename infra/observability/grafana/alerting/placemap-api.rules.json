@@ -13,8 +13,7 @@
       "labels": { "severity": "page", "service": "api" },
       "annotations": {
         "summary": "api is returning 5xx errors",
-        "description": "More than 6 server errors per minute for a minute. Open the 'placemap · API RED' dashboard, then the traces with status=500.",
-        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/alert-drill.md"
+        "description": "More than 6 server errors per minute for a minute. Open the 'placemap · API RED' dashboard, then the traces with status=500."
       },
       "notification_settings": { "receiver": "email-placemap" },
       "data": [

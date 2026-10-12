@@ -6,7 +6,7 @@ export type Category = { code: string; label: string };
 
 export type TravelMode = "walk" | "bike" | "drive";
 
-/** What the filters know about a place (ADR 0042). */
+/** What the filters know about a place. */
 export type PlaceFacts = {
   acceptsSnap: boolean;
   /** Holds an active Boston or Cambridge food or premises licence. */

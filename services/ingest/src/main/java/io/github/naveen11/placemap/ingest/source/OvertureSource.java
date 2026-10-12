@@ -15,13 +15,13 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Overture Maps Places (ADR 0004, 0032), read straight from the release's GeoParquet on S3 with DuckDB. Only rows
+ * Overture Maps Places, read straight from the release's GeoParquet on S3 with DuckDB. Only rows
  * whose bounding box falls in the four towns' envelope are fetched (DuckDB pushes that filter into the Parquet
  * scan), and only the columns below. Rows come out sorted by Overture id, so the same release always gives a
  * byte-identical snapshot.
  *
  * <p>Out-of-scope rows are skipped, not rejected: places in the envelope but outside the towns, places with no app
- * category, and places Overture marks permanently closed (ADR 0032). The confidence rule (stand alone at 0.9 or
+ * category, and places Overture marks permanently closed. The confidence rule (stand alone at 0.9 or
  * above, otherwise needs corroboration) belongs to matching, so confidence is kept in attrs.
  */
 @Component

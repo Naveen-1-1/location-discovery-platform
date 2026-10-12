@@ -13,7 +13,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.locationtech.jts.io.WKTReader;
 
-/** The decision rules of ADR 0022 and gate G1 (ADR 0032) against a hand-built index around Boston Common. */
+/** The matcher's decision rules and gate G1 against a hand-built index around Boston Common. */
 class MatcherTest {
 
     private static final SourcePriority PRIORITY = SourcePriority.load(TestData.REPO.resolve("data/source-priority.yaml"));
@@ -232,7 +232,7 @@ class MatcherTest {
 
     @Test
     void aDifferentKindOfPlaceNeitherLinksNorHoldsARecordBack() {
-        // MGH's medical library sits in the hospital and shares its name: before ADR 0042 the hospital went to review.
+        // MGH's medical library sits in the hospital and shares its name: before the compatible-kinds rule the hospital went to review.
         Matcher matcher = matcher("massgis_hospitals", Map.of(),
                 place(1, "Massachusetts General Hospital Library", "library", 20, "55 Fruit St", OSM));
         SourceRow hospital = SourceRow.of("2168", "Massachusetts General Hospital", "hospital", LON, LAT, "55 Fruit Street",

@@ -17,7 +17,7 @@
     Picked up automatically through Spring Boot auto-configuration.</description>
 
   <dependencies>
-    <!-- Traces + metrics + logs over OTLP (ADR 0017 / 0033). -->
+    <!-- Traces + metrics + logs over OTLP. -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-opentelemetry</artifactId>

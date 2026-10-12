@@ -1,7 +1,7 @@
 package io.github.naveen11.placemap.api.places;
 
 /**
- * The filters of a nearby search (ADR 0042), part of the key its result is shared under.
+ * The filters of a nearby search, part of the key its result is shared under.
  *
  * @param openAt minute of the week (Boston time, since Monday 00:00) the places must be open at, rounded down to five
  *     minutes so that searches a few seconds apart share a result; null when not filtering on hours. Places whose hours

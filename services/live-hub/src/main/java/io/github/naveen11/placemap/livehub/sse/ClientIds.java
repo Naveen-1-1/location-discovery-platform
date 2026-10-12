@@ -8,7 +8,7 @@ import java.util.HexFormat;
 
 /**
  * Turns a client address into the key its connection limit is counted under: a salted SHA-256 hash, as for the
- * api's rate limits (ADR 0026), so no address is ever stored. The salt is random per process.
+ * api's rate limits, so no address is ever stored. The salt is random per process.
  */
 final class ClientIds {
 

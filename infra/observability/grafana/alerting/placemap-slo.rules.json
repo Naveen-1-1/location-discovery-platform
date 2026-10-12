@@ -17,8 +17,7 @@
       },
       "annotations": {
         "summary": "the api is spending its error budget 14x too fast",
-        "description": "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days.",
-        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
+        "description": "Over 7.2% of api requests failed with 5xx in the last hour and the last 5 minutes. At this rate the 30-day budget (0.5%) lasts two days."
       },
       "notification_settings": {
         "receiver": "email-placemap"
@@ -77,8 +76,7 @@
       },
       "annotations": {
         "summary": "the api is spending its error budget 6x too fast",
-        "description": "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days.",
-        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/api-availability-burn.md"
+        "description": "Over 3% of api requests failed with 5xx in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (0.5%) lasts five days."
       },
       "notification_settings": {
         "receiver": "email-placemap"
@@ -137,8 +135,7 @@
       },
       "annotations": {
         "summary": "nearby search is spending its latency budget 14x too fast",
-        "description": "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days.",
-        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"
+        "description": "Over 72% of successful nearby searches took longer than 300 ms in the last hour and the last 5 minutes. At this rate the 30-day budget (5% slow) lasts two days."
       },
       "notification_settings": {
         "receiver": "email-placemap"
@@ -197,8 +194,7 @@
       },
       "annotations": {
         "summary": "nearby search is spending its latency budget 6x too fast",
-        "description": "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days.",
-        "runbook_url": "https://github.com/Naveen-1-1/place-discovery-map/blob/main/docs/runbooks/nearby-latency-burn.md"
+        "description": "Over 30% of successful nearby searches took longer than 300 ms in the last 6 hours and the last 30 minutes. At this rate the 30-day budget (5% slow) lasts five days."
       },
       "notification_settings": {
         "receiver": "email-placemap"

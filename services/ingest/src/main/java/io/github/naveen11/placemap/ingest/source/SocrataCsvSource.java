@@ -22,7 +22,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * A City of Cambridge dataset from its Socrata API. Asks for only {@link #columns()} ({@code $select}), so personal
- * fields are never downloaded (ADR 0031), sorted by a unique key ({@code $order}) so pages are stable and unchanged data
+ * fields are never downloaded, sorted by a unique key ({@code $order}) so pages are stable and unchanged data
  * gives a byte-identical snapshot. Pages of 50,000 rows are joined into one CSV file.
  */
 public abstract class SocrataCsvSource implements SourceAdapter {

@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * {@code placemap.rate-limit.*}, defaults from ADR 0026.
+ * {@code placemap.rate-limit.*}: limits per client; over the limit means 429.
  *
  * @param perSecond requests a client may make per second, on average
  * @param burst requests a client may make at once after being idle

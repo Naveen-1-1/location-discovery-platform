@@ -15,7 +15,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Bluebikes docks from the GBFS {@code station_information} feed (626 docks on 2026-10-11, about a third inside the
- * four towns). The only source that creates bike-share places (ADR 0032), display-only under ADR 0029. Live bike
+ * four towns). The only source that creates bike-share places, display-only. Live bike
  * counts come from {@code station_status} in live-hub, keyed by the same {@code station_id}.
  *
  * <p>The feed is one JSON document. The fetch keeps a fixed set of fields per dock and writes them as the snapshot

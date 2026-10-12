@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * {@code GET /live?topics=bikes,...}: one SSE stream per browser tab (ADR 0018). Holds the request open with
+ * {@code GET /live?topics=bikes,...}: one SSE stream per browser tab. Holds the request open with
  * {@link AsyncContext} and hands it to {@link LiveHub}; the request thread returns at once.
  *
  * <p>A plain servlet rather than a Spring MVC endpoint: the stream needs nothing from MVC, and its writes then go
@@ -40,7 +40,7 @@ public final class LiveServlet extends HttpServlet {
                     + streamed().stream().map(Topic::wire).toList());
             return;
         }
-        String client = clientIds.of(request.getRemoteAddr()); // the real client behind a trusted proxy (ADR 0028)
+        String client = clientIds.of(request.getRemoteAddr()); // the real client behind a trusted proxy
 
         response.setContentType("text/event-stream");
         response.setCharacterEncoding("UTF-8");

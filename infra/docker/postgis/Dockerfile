@@ -1,5 +1,5 @@
 # PostGIS 3.6 + h3 on Postgres 18, for amd64 and arm64.
-# The official postgis/postgis image is amd64-only (docs/phase0-toolchain.md). Used by integration tests now and
+# The official postgis/postgis image is amd64-only. Used by integration tests now and
 # self-hosted deployments later. The base image already carries the PGDG apt repository.
 FROM postgres:18-bookworm
 

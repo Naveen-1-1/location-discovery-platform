@@ -38,7 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Runs one import of one source from start to finish, or resumes it (ADR 0020, 0021):
+ * Runs one import of one source from start to finish, or resumes it:
  *
  * <ol>
  *   <li>Take the source's advisory lock, or skip if another process holds it.

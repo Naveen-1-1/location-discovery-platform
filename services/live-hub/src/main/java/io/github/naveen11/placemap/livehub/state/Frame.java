@@ -3,7 +3,7 @@ package io.github.naveen11.placemap.livehub.state;
 import java.nio.charset.StandardCharsets;
 
 /**
- * One server-sent event, serialized once by the snapshot writer and shared by every client that gets it (ADR 0023).
+ * One server-sent event, serialized once by the snapshot writer and shared by every client that gets it.
  * Frames are compared by identity: {@link #RESYNC} and {@link #HEARTBEAT} are markers, not data.
  */
 public final class Frame {
@@ -11,7 +11,7 @@ public final class Frame {
     /** "Send this client the whole current snapshot": a new connection's first frame, and what an overflow leaves. */
     public static final Frame RESYNC = new Frame(-1, 0, new byte[0]);
 
-    /** An SSE comment that keeps proxies and the browser from timing the stream out (ADR 0018). */
+    /** An SSE comment that keeps proxies and the browser from timing the stream out. */
     public static final Frame HEARTBEAT = new Frame(-1, 0, ": hb\n\n".getBytes(StandardCharsets.US_ASCII));
 
     private final long version;

@@ -20,7 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The search box (ADR 0008, 0042): place names from our database and addresses from Photon, asked at the same time.
+ * The search box: place names from our database and addresses from Photon, asked at the same time.
  *
  * <ul>
  *   <li>Names go through the database bulkhead that nearby uses, so a burst of typing cannot starve map searches.

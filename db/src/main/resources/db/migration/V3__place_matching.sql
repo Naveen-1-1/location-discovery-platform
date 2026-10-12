@@ -1,4 +1,4 @@
--- Phase 2, step 4: Overture and OSM imports and record matching (ADR 0022, 0032).
+-- Phase 2, step 4: Overture and OSM imports and record matching.
 
 -- Rows that are valid but out of scope (outside the four towns, no app category, permanently closed). They are not
 -- stored and do not count toward the 2% reject limit.
@@ -7,7 +7,7 @@ ALTER TABLE ingest.batch_done ADD COLUMN skipped int NOT NULL DEFAULT 0;
 -- How each record came to belong to its place:
 --   id            joined on a shared identifier
 --   score         the rule-based score reached 0.80
---   corroborated  a low-confidence Overture place confirmed by another source's place nearby (ADR 0032)
+--   corroborated  a low-confidence Overture place confirmed by another source's place nearby
 --   created       no match, and the source may create places in that category
 ALTER TABLE place.place_source_link
     ADD COLUMN method     text,
@@ -22,7 +22,7 @@ ALTER TABLE place.place_source_link
     ALTER COLUMN method SET NOT NULL,
     ADD CONSTRAINT place_source_link_method CHECK (method IN ('id', 'score', 'corroborated', 'created'));
 
--- Borderline matches (score 0.60–0.80) wait here for a person; the record stays unlinked meanwhile (ADR 0022).
+-- Borderline matches (score 0.60–0.80) wait here for a person; the record stays unlinked meanwhile.
 CREATE TABLE place.match_review (
     source     text        NOT NULL,
     source_key text        NOT NULL,

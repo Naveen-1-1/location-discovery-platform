@@ -21,7 +21,7 @@ class BostonActiveFoodLicensesTest {
 
     private final BostonActiveFoodLicenses adapter = new BostonActiveFoodLicenses();
 
-    /** ADR 0031 proof: the columns we download, and therefore everything downstream, exclude the personal fields. */
+    /** The columns we download, and therefore everything downstream, exclude the personal fields. */
     @Test
     void neverRequestsPersonalFields() {
         List<String> dropFields = TestData.catalog().get(BostonActiveFoodLicenses.ID).dropFields();

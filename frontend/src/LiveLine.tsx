@@ -16,7 +16,7 @@ export function liveFor(p: NearbyPlace, live: LiveState, result: NearbyResponse 
   return { topic, item, stale: health?.stale ?? false };
 }
 
-/** The line for a place's live data, with an "out of date" badge while the feed is stale (ADR 0024). */
+/** The line for a place's live data, with an "out of date" badge while the feed is stale. */
 export function LiveLine({ live }: { live: PlaceLive | null }) {
   if (!live) return null;
   const text = live.topic === "bikes" ? describeDock(live.item as DockStatus) : describeAlerts(live.item as StopAlerts);
