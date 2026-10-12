@@ -34,7 +34,7 @@ jobs:
       - name: Build and test
         run: ./mvnw -B -ntp verify
 
-      - name: JCStress (sanity mode; full suite runs nightly)
+      - name: JCStress (sanity mode; the full suite runs in nightly.yml)
         run: ./mvnw -B -ntp -pl libs/concurrent-jcstress -am verify -Pjcstress -Djcstress.mode=sanity -DskipTests
 
       - name: JMH smoke (one short iteration, proves the harness runs)

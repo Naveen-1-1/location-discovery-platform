@@ -1,0 +1,166 @@
+name: nightly
+
+# Phase 7's nightly check on GitHub (ADR 0044): the steps of tools/dev.sh nightly, one job each, so they run side by
+# side. The source contract tests run in contracts-nightly.yml. The release check needs the owner's local release
+# (built from Neon), so it runs only in the local command. Load tests L1–L10 and C3–C6 come in Phase 8.
+on:
+  schedule:
+    - cron: '41 5 * * *'   # 05:41 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  alerts:
+    name: alert rules (promtool)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install promtool 3.15.0 (checksum from the release's sha256sums.txt)
+        run: |
+          curl -fsSLo prometheus.tar.gz \
+            https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-amd64.tar.gz
+          echo "2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0  prometheus.tar.gz" | sha256sum -c -
+          tar -xzf prometheus.tar.gz --strip-components=1 prometheus-3.15.0.linux-amd64/promtool
+          sudo mv promtool /usr/local/bin/
+
+      - run: python3 tools/nightly.py --only promtool --no-history
+
+  frontend:
+    name: frontend typecheck and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      - run: python3 tools/nightly.py --only frontend --no-history
+
+  verify:
+    name: ./mvnw verify, container tests included
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Install osmium (the OSM importer's tests run it)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+
+      # Fails if Docker is missing or any container test was skipped.
+      - run: python3 tools/nightly.py --only verify --no-history
+
+      - name: Upload the logs and test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verify-reports
+          path: |
+            target/nightly/
+            **/target/surefire-reports/
+          if-no-files-found: ignore
+
+  jcstress:
+    name: full JCStress suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Reads JCStress's own results line: its exit code does not always report failed tests.
+      - run: python3 tools/nightly.py --only jcstress --no-history
+
+      - name: Upload the JCStress report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jcstress-report-full
+          path: libs/concurrent-jcstress/target/results/
+          if-no-files-found: ignore
+
+  crash:
+    name: crash tests C1 and C2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Install osmium (importing OSM to make its snapshot)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+
+      - name: Week (the input snapshots are made once a week)
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      # The trials need saved OSM and Overture snapshots; without them, --fetch-snapshots imports each source once
+      # into the throwaway database (a ~300 MB OSM download), and this cache keeps them for the week.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            data/raw/osm_geofabrik_massachusetts
+            data/raw/overture_places
+          key: proof-snapshots-${{ steps.week.outputs.week }}
+
+      # C2 cuts connections through Toxiproxy; on the host network the driver finds it on 127.0.0.1:8474.
+      - name: Start Toxiproxy 2.12.0
+        run: >-
+          docker run -d --name toxiproxy --network host
+          ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e
+
+      - name: Build the importer
+        run: ./mvnw -B -ntp -pl services/ingest -am package -DskipTests
+
+      - run: python3 tools/nightly.py --only c1,c2 --no-history --fetch-snapshots
+
+      - name: Upload the trial logs and results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crash-tests
+          path: |
+            target/nightly/
+            services/ingest/target/proofs/*.json
+            services/ingest/target/proofs/*/*/*.log
+          if-no-files-found: ignore

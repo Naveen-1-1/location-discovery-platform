@@ -12,8 +12,10 @@ Overture snapshot. A trial passes when its result has the same fingerprint as a 
 is duplicated. The fingerprint covers every table the import writes, with place ids replaced by stable anchors (a
 place's smallest "source:key"), because ids depend on commit order.
 
-Needs Docker Desktop running and the snapshots that a real import saved in data/raw. c2 and backpressure also need
-Toxiproxy (brew install toxiproxy); backpressure reads the OTEL_EXPORTER_OTLP_* settings from .env.
+Needs Docker Desktop running and the snapshots that a real import saved in data/raw; with --fetch, a missing snapshot
+is made by importing that source once into the throwaway database (how the nightly CI job gets them). c2 and
+backpressure also need Toxiproxy: the Homebrew binary (brew install toxiproxy), or a server already listening on
+127.0.0.1:8474, such as CI's container. backpressure reads the OTEL_EXPORTER_OTLP_* settings from .env.
 """
 
 import argparse
@@ -68,6 +70,9 @@ FINGERPRINT_PARTS = {
                                FROM place.inspection_violation v JOIN place.inspection i USING (inspection_id)""",
     "violation_code": "SELECT to_jsonb(c) FROM place.violation_code c",
     "inspection_summary": "SELECT to_jsonb(s) FROM place.inspection_summary s",
+    "place_facts": """SELECT to_jsonb(f) - 'place_id' - 'refreshed_at' || jsonb_build_object('anchor', a.anchor)
+                      FROM place.place_facts f LEFT JOIN anchor a USING (place_id)""",
+    "geocode_cache": "SELECT to_jsonb(g) - 'created_at' FROM ingest.geocode_cache g",
     "reject": "SELECT to_jsonb(j) - 'run_id' FROM ingest.reject j",
     "batch_done": "SELECT to_jsonb(b) - 'run_id' - 'keys' - 'done_at' FROM ingest.batch_done b",
 }
@@ -177,7 +182,8 @@ class Database:
     def unfingerprinted_tables(self, db):
         rows = self.query(db, "SELECT schemaname || '.' || tablename FROM pg_tables WHERE schemaname IN "
                               "('place', 'ingest')")
-        covered = {f"{'ingest' if n in ('reject', 'batch_done') else 'place'}.{n}" for n in FINGERPRINT_PARTS}
+        covered = {f"{'ingest' if n in ('reject', 'batch_done', 'geocode_cache') else 'place'}.{n}"
+                   for n in FINGERPRINT_PARTS}
         return sorted({r[0] for r in rows} - covered - NOT_FINGERPRINTED)
 
     def attempts(self, db, source):
@@ -190,12 +196,13 @@ class Ingest:
 
     live = set()
 
-    def __init__(self, source, db, port, work_dir, name, extra=(), env=None):
+    def __init__(self, source, db, port, work_dir, name, extra=(), env=None, raw_dir=None):
+        """Reads the pinned snapshot; with raw_dir, downloads the source into it instead."""
         work_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = work_dir / f"{name}.log"
-        cmd = JAVA + ["-jar", str(JAR), f"--placemap.ingest.once={source}",
-                      f"--placemap.ingest.pinned-snapshot={pinned(source)}",
-                      f"--placemap.ingest.raw-dir={work_dir / 'raw'}",
+        input_args = ([f"--placemap.ingest.raw-dir={raw_dir}"] if raw_dir else
+                      [f"--placemap.ingest.pinned-snapshot={pinned(source)}", f"--placemap.ingest.raw-dir={work_dir / 'raw'}"])
+        cmd = JAVA + ["-jar", str(JAR), f"--placemap.ingest.once={source}", *input_args,
                       f"--spring.datasource.url=jdbc:postgresql://127.0.0.1:{port}/{db}"
                       "?ApplicationName=ingest&reWriteBatchedInserts=true",
                       "--spring.datasource.username=postgres", f"--spring.datasource.password={PASSWORD}", *extra]
@@ -229,27 +236,40 @@ class Ingest:
 
 
 class Toxiproxy:
-    """The Homebrew Toxiproxy binary in front of the container (ADR 0033): a TCP proxy that can add faults."""
+    """Toxiproxy in front of the container (ADR 0033): a TCP proxy that can add faults. A server already listening
+    (CI's container) is used as it is; otherwise the Homebrew binary is started and stopped with the run."""
 
     def __init__(self):
+        self.proc = None
+        try:
+            self.call("GET", "/version")
+            say("Using the Toxiproxy server already running on " + TOXIPROXY)
+        except OSError:
+            self.proc = self.spawn()
+        try:
+            self.call("DELETE", "/proxies/postgres")  # left over from an interrupted run
+        except OSError:
+            pass
+        self.call("POST", "/proxies", {"name": "postgres", "listen": f"127.0.0.1:{PROXY_PORT}",
+                                       "upstream": f"127.0.0.1:{DB_PORT}", "enabled": True})
+
+    def spawn(self):
         exe = shutil.which("toxiproxy-server")
         if not exe:
             sys.exit("Toxiproxy is not installed. Run: brew install toxiproxy")
         WORK.mkdir(parents=True, exist_ok=True)
         with open(WORK / "toxiproxy.log", "w", encoding="utf-8") as log:
-            self.proc = subprocess.Popen([exe, "-host", "127.0.0.1", "-port", TOXIPROXY.rsplit(":", 1)[1]],
-                                         stdout=log, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen([exe, "-host", "127.0.0.1", "-port", TOXIPROXY.rsplit(":", 1)[1]],
+                                    stdout=log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 10
         while True:
             try:
                 self.call("GET", "/version")
-                break
+                return proc
             except OSError:
-                if time.monotonic() > deadline or self.proc.poll() is not None:
+                if time.monotonic() > deadline or proc.poll() is not None:
                     sys.exit(f"Toxiproxy did not start; see {WORK / 'toxiproxy.log'}")
                 time.sleep(0.2)
-        self.call("POST", "/proxies", {"name": "postgres", "listen": f"127.0.0.1:{PROXY_PORT}",
-                                       "upstream": f"127.0.0.1:{DB_PORT}", "enabled": True})
 
     @staticmethod
     def call(method, path, body=None):
@@ -268,6 +288,12 @@ class Toxiproxy:
         self.call("DELETE", f"/proxies/postgres/toxics/{name}")
 
     def stop(self):
+        if self.proc is None:
+            try:
+                self.call("DELETE", "/proxies/postgres")
+            except OSError:
+                pass
+            return
         self.proc.terminate()
         self.proc.wait()
 
@@ -292,19 +318,39 @@ def pin(source):
     say(f"  {source}: {target.stat().st_size / 1e6:.1f} MB, sha256 {digest[:12]} (from {runs[-1].relative_to(ROOT)})")
 
 
-def prepare(mode, sources, build):
+def saved(source):
+    return any((ROOT / "data/raw" / source).glob("*/snapshot.csv"))
+
+
+def fetch(mode, sources):
+    """Imports each source without a saved snapshot once into a scratch database, which saves one in data/raw."""
+    for source in sources:
+        if saved(source):
+            continue
+        say(f"No saved snapshot for {source}: importing it once into a scratch database to make one...")
+        DB.migrate("fetch")
+        ingest = Ingest(source, "fetch", DB_PORT, WORK / mode / "fetch", source, extra=NO_TELEMETRY,
+                        raw_dir=ROOT / "data/raw")
+        if ingest.wait() != 0 or not saved(source):
+            sys.exit(f"Fetching {source} failed; see {ingest.log_path}")
+        say(f"  done in {ingest.elapsed():.0f} s")
+
+
+def prepare(mode, sources, build, fetch_missing=False):
     if subprocess.run(["docker", "info"], capture_output=True).returncode:
         sys.exit("Docker is not running. Start Docker Desktop and try again.")
     if not shutil.which("java"):
         sys.exit("java is not on the PATH")
     shutil.rmtree(WORK / mode, ignore_errors=True)
-    say("Pinning the input snapshots:")
-    for source in sources:
-        pin(source)
     if build:
         say("Building the importer jar...")
         run(["./mvnw", "-q", "-B", "-ntp", "-pl", "services/ingest", "-am", "package", "-DskipTests"], cwd=ROOT)
     DB.start()
+    if fetch_missing:
+        fetch(mode, sources)
+    say("Pinning the input snapshots:")
+    for source in sources:
+        pin(source)
     migrations = DB.migrate("base")
     say(f"Base database: {len(migrations)} migrations ({migrations[-1]}); importing {BASE_SOURCE} for its places...")
     base = Ingest(BASE_SOURCE, "base", DB_PORT, WORK / mode / "base", "base", extra=NO_TELEMETRY)
@@ -423,7 +469,7 @@ def c1_trial(number, trials, golden, total, rng):
 
 def c1(args):
     rng = random.Random(args.seed)
-    prepare("c1", [BASE_SOURCE, TRIAL_SOURCE], not args.no_build)
+    prepare("c1", [BASE_SOURCE, TRIAL_SOURCE], not args.no_build, args.fetch)
     golden, total, _ = clean_run("c1")
     say(f"C1: {args.trials} trials, each killed (kill -9) 1 to 3 times, seed {args.seed}")
     results = [c1_trial(n, args.trials, golden, total, rng) for n in range(1, args.trials + 1)]
@@ -487,7 +533,7 @@ def c2_trial(number, trials, golden, toxiproxy, cuts, rng):
 
 def c2(args):
     rng = random.Random(args.seed)
-    prepare("c2", [BASE_SOURCE, TRIAL_SOURCE], not args.no_build)
+    prepare("c2", [BASE_SOURCE, TRIAL_SOURCE], not args.no_build, args.fetch)
     toxiproxy = Toxiproxy()
     try:
         golden, _, _ = clean_run("c2")
@@ -570,6 +616,7 @@ def main():
         p.add_argument("--seed", type=int, default=random.randrange(1_000_000))
         p.add_argument("--no-build", action="store_true", help="use the jar already in services/ingest/target")
         p.add_argument("--keep", action="store_true", help="leave the database container running afterwards")
+        p.add_argument("--fetch", action="store_true", help="make missing input snapshots by importing them once")
     sub.choices["c2"].add_argument("--cuts", type=int, default=15, help="connection cuts per trial")
     sub.choices["c2"].add_argument("--latency", type=int, default=30, help="ms added to every database reply")
     p = sub.add_parser("backpressure")

@@ -16,6 +16,7 @@
 #   tools/dev.sh coverage         write docs/data/coverage.md: places, sources, facts and geocodes in the database
 #   tools/dev.sh release          build the ODbL data release from Neon into data/release/<date>/ (not published)
 #   tools/dev.sh release-check [DIR]   check a built release (default: the newest); no database needed
+#   tools/dev.sh nightly [--only STEP,...]   every check that needs no cloud, ending NIGHTLY PASSED or FAILED (ADR 0044)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -123,10 +124,18 @@ case "${1:-help}" in
     exec java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.tool.name="$1"
     ;;
   release-check)
-    load_env
+    # Reads only the files: the database settings are placeholders and nothing is exported.
     [[ -f services/ingest/target/ingest.jar ]] || ./mvnw -q -B -pl services/ingest -am package -DskipTests
     exec java "${JAVA_FLAGS[@]}" -jar services/ingest/target/ingest.jar --placemap.ingest.tool.name=release-check \
+      --spring.datasource.url=jdbc:postgresql://localhost/unused --spring.datasource.username=unused \
+      --spring.datasource.password=unused --management.otlp.metrics.export.enabled=false \
+      --management.tracing.export.otlp.enabled=false --management.logging.export.otlp.enabled=false \
       ${2:+--placemap.ingest.tool.release-folder="$2"}
+    ;;
+  nightly)
+    load_env   # the contract tests read NLR_API_KEY; nothing else in .env changes what runs
+    shift
+    exec python3 -I tools/nightly.py "$@"
     ;;
   coverage)
     load_env
