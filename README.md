@@ -9,9 +9,10 @@ It is also a learning project. The three backend services I write contain real t
 load tests and crash tests prove that code holds up. Observability, CI/CD and infrastructure as code are part of
 the project from the start.
 
-> **Status:** Phase 5: every planned source is imported, the map filters by open now, SNAP, licence and inspection,
-> and a search box finds places and addresses. Next is Phase 7: hardening and the open data release. Sign-in and
-> saved lists were dropped ([ADR 0043](docs/adr/0043-sign-in-and-lists-dropped.md)).
+> **Status:** Phase 7, hardening and the open data release ([ADR 0044](docs/adr/0044-hardening-and-data-release.md)):
+> request-body limits, burn-rate alerts on the api's SLOs, the ODbL release built locally (not yet published), and a
+> nightly check that must pass on three different days. Sign-in and saved lists were dropped
+> ([ADR 0043](docs/adr/0043-sign-in-and-lists-dropped.md)).
 
 ## How it fits together
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
@@ -104,8 +105,25 @@ tools/dev.sh proofs c2             # connection cuts during commits, 5 trials
 tools/dev.sh proofs backpressure   # the same import with and without 200 ms of database latency
 ```
 
+**Nightly check** ([ADR 0044](docs/adr/0044-hardening-and-data-release.md)): every check that needs no cloud, in one
+command that ends with `NIGHTLY PASSED` or `NIGHTLY FAILED`: promtool tests of the alerts, the frontend, the full
+`./mvnw verify` (Docker must be running), the release check, the contract tests, the full JCStress suite, and C1 and
+C2. Each run adds a row to [docs/benchmarks/nightly-runs.md](docs/benchmarks/nightly-runs.md); `nightly.yml` runs the
+same on GitHub. Needs promtool (`brew install prometheus`) besides the tools above.
+```bash
+tools/dev.sh nightly                       # everything, about 65 minutes (JCStress takes 45)
+tools/dev.sh nightly --only verify,c1      # some steps (a partial run is not counted)
+```
+
+**Alerts:** burn-rate alerts on the api's availability and nearby latency ([docs/slo.md](docs/slo.md)), plus 5xx,
+pinning, import and stale-feed alerts, all by email; runbooks in [docs/runbooks](docs/runbooks). Apply them to Grafana
+Cloud with `python3 -I tools/grafana-apply.py`.
+
 ## Licences
 - **Code:** MIT ([LICENSE](LICENSE)).
-- **Place data:** the merged place data will be published under ODbL 1.0, with attribution to OpenStreetMap
-  contributors, Overture Maps Foundation and each official source (see `data/sources.yaml`).
-- **Live MBTA and Bluebikes data:** displayed in the app but not republished.
+- **Place data:** the merged place data is released under ODbL 1.0, with attribution to OpenStreetMap contributors,
+  Overture Maps Foundation and each official source (see `data/sources.yaml`). `tools/dev.sh release` builds it into
+  `data/release/<date>/` (places GeoParquet, their source records, `LICENSE`, `ATTRIBUTION.md`, `METHOD.md`), and
+  `tools/dev.sh release-check` checks a built folder. It is published as a GitHub Release once the owner decides to.
+- **Live MBTA and Bluebikes data:** displayed in the app but not republished; transit stops and bike docks are not in
+  the release.
