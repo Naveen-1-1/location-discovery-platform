@@ -12,9 +12,9 @@ Steps, in this order; each runs even after an earlier one failed:
   c1         crash test C1 (kill -9) on a throwaway local database
   c2         crash test C2 (connection cuts through Toxiproxy)
 
-Logs go to target/nightly/<start time>/<step>.log. Unless --no-history (CI), a full run adds a row to
-docs/benchmarks/nightly-runs.md. The last line is NIGHTLY PASSED or NIGHTLY FAILED; Phase 7 is done after full green
-runs on three different days.
+Logs go to target/nightly/<start time>/<step>.log. Unless --no-history (CI), a run adds a row to
+docs/benchmarks/nightly-runs.md. The last line is NIGHTLY PASSED or NIGHTLY FAILED. Phase 7 closes on three green runs
+in a row of nightly.yml on GitHub (ADR 0045); this command checks changes before a push.
 """
 
 import argparse
@@ -30,7 +30,6 @@ ROOT = Path(__file__).resolve().parent.parent
 HISTORY = ROOT / "docs/benchmarks/nightly-runs.md"
 JAR = ROOT / "services/ingest/target/ingest.jar"
 JAVA = ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow"]
-GREEN_DAYS_NEEDED = 3
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The release check reads only files: no database and no telemetry.
 OFFLINE = ["--spring.datasource.url=jdbc:postgresql://localhost/unused", "--spring.datasource.username=unused",
@@ -184,17 +183,6 @@ def commit():
     return head + ("+" if dirty else "")
 
 
-def green_days():
-    if not HISTORY.exists():
-        return []
-    days = set()
-    for line in HISTORY.read_text(encoding="utf-8").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) > 3 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", cells[0]) and cells[3] == "PASSED":
-            days.add(cells[0])
-    return sorted(days)
-
-
 def record(started, revision, results, total, result):
     cells = [started.strftime("%Y-%m-%d"), started.strftime("%H:%M"), f"`{revision}`", result]
     for name in NAMES:
@@ -253,15 +241,12 @@ def main():
     result = "FAILED" if failed else "PASSED" if full else "PARTIAL"
     if not args.no_history:
         record(started, revision, results, total, result)
-    days = green_days()
     if failed:
         print(f"NIGHTLY FAILED in {took(total)}: {', '.join(failed)}")
     elif not full:
-        print(f"NIGHTLY PASSED in {took(total)} for {', '.join(results)} only; a partial run does not count "
-              "towards Phase 7's exit")
+        print(f"NIGHTLY PASSED in {took(total)} for {', '.join(results)} only (a partial run)")
     else:
-        print(f"NIGHTLY PASSED in {took(total)}: green on {len(days)} of the {GREEN_DAYS_NEEDED} days Phase 7 needs"
-              + (f" ({', '.join(days)})" if days else ""))
+        print(f"NIGHTLY PASSED in {took(total)}: every step")
     sys.exit(1 if failed else 0)
 
 

@@ -11,7 +11,9 @@ the project from the start.
 
 > **Status:** Phase 7, hardening and the open data release ([ADR 0044](docs/adr/0044-hardening-and-data-release.md)):
 > request-body limits, burn-rate alerts on the api's SLOs, the ODbL release built locally (not yet published), and a
-> nightly check that must pass on three different days. Sign-in and saved lists were dropped
+> nightly check that passed locally on 2026-10-11. Phase 7 closes after three green nightly runs in a row on GitHub,
+> once the commits are pushed; every load and crash test runs off the cloud
+> ([ADR 0045](docs/adr/0045-testing-off-the-cloud.md)). Sign-in and saved lists were dropped
 > ([ADR 0043](docs/adr/0043-sign-in-and-lists-dropped.md)).
 
 ## How it fits together
