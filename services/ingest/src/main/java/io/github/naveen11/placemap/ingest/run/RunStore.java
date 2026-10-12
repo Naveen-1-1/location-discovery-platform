@@ -317,7 +317,7 @@ public class RunStore {
      *   <li>Each attribute comes from the best-ranked live record that has it. Rank is the record's source position
      *       in data/source-priority.yaml for the record's category: existence sources first, then enrichment ones.
      *   <li>A place stays live only while some live record comes from an existence source for its category;
-     *       otherwise it is retired (never deleted, so saved lists keep working). A returning record revives it.
+     *       otherwise it is retired (never deleted, so place ids stay stable, ADR 0043). A returning record revives it.
      *   <li>Rows are only rewritten when something changed, so {@code updated_at} means "really changed".
      * </ul>
      *

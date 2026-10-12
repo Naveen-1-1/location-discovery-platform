@@ -13,7 +13,7 @@
 
   <artifactId>api</artifactId>
   <name>placemap :: services :: api</name>
-  <description>Search, nearby, routing proxy, saved lists. Run locally: tools/dev.sh api</description>
+  <description>Nearby, search, place details and the routing proxy. Run locally: tools/dev.sh api</description>
 
   <dependencies>
     <dependency>

@@ -107,7 +107,7 @@ case "${1:-help}" in
       SELECT n.nspname || '.' || c.relname AS table_name, c.reltuples::bigint AS approx_rows,
              pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relkind = 'r' AND n.nspname IN ('place', 'ingest', 'app')
+      WHERE c.relkind = 'r' AND n.nspname IN ('place', 'ingest')
       ORDER BY pg_total_relation_size(c.oid) DESC;" \
       -c "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;"
     ;;

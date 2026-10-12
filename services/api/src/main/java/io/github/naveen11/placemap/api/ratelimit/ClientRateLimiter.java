@@ -16,8 +16,8 @@ import java.util.HexFormat;
  * Per-client request limits (ADR 0026): one token bucket per client, refilled at {@code perSecond} up to
  * {@code burst}, held in a bounded map so a flood of distinct clients cannot exhaust memory.
  *
- * <p>A client is identified by a salted SHA-256 hash of its IP address (its user id once sign-in exists, Phase 6), so
- * the raw address is never stored. The salt is random per process, so a hash means nothing outside it.
+ * <p>A client is identified by a salted SHA-256 hash of its IP address, so the raw address is never stored. The salt
+ * is random per process, so a hash means nothing outside it.
  *
  * <p>A bucket left alone for as long as it takes to refill completely is no different from a new one, so idle buckets
  * are dropped after that time.

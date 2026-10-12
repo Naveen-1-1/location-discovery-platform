@@ -3,15 +3,15 @@
 A map app for finding places in Boston, Cambridge, Somerville and Brookline. It covers food, groceries, pharmacies,
 gyms, parks, banks, transit, bike share, EV charging and more. Places can be filtered using official public data
 (health inspections, licences, SNAP acceptance, live bike and train availability) and sorted by distance or real
-travel time. The app also gives walk, bike and drive directions, shows the area reachable within N minutes, and
-saves lists of places.
+travel time. The app also gives walk, bike and drive directions and shows the area reachable within N minutes.
 
 It is also a learning project. The three backend services I write contain real thread and concurrency code, and
 load tests and crash tests prove that code holds up. Observability, CI/CD and infrastructure as code are part of
 the project from the start.
 
 > **Status:** Phase 5: every planned source is imported, the map filters by open now, SNAP, licence and inspection,
-> and a search box finds places and addresses. Sign-in and saved lists come in Phase 6.
+> and a search box finds places and addresses. Next is Phase 7: hardening and the open data release. Sign-in and
+> saved lists were dropped ([ADR 0043](docs/adr/0043-sign-in-and-lists-dropped.md)).
 
 ## How it fits together
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
