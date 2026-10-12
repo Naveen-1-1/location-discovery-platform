@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -114,7 +115,7 @@ final class ReleaseDocs {
             if (source.licenceUrl() != null) {
                 out.append(" (").append(source.licenceUrl()).append(")");
             }
-            out.append("\n- Records in this release: ").append(records).append("\n");
+            out.append("\n- Records in this release: ").append(String.format(Locale.ROOT, "%,d", records)).append("\n");
             if (!source.providers().isEmpty()) {
                 out.append("- Credit: ").append(source.attribution().lines().findFirst().orElse("")).append("\n");
                 providerCredits(out, providers);
@@ -157,14 +158,14 @@ final class ReleaseDocs {
         }
         var categories = new StringBuilder("| Category | Places |\n|---|---:|\n");
         summary.byCategory().forEach((category, n) -> categories.append("| ").append(category).append(" | ")
-                .append(n).append(" |\n"));
+                .append(String.format(Locale.ROOT, "%,d", n)).append(" |\n"));
         var sources = new StringBuilder("| Source | Records |\n|---|---:|\n");
         terms.values().stream().filter(s -> summary.bySource().containsKey(s.id()))
                 .forEach(s -> sources.append("| ").append(s.name()).append(" (`").append(s.id()).append("`) | ")
-                        .append(summary.bySource().get(s.id())).append(" |\n"));
+                        .append(String.format(Locale.ROOT, "%,d", summary.bySource().get(s.id()))).append(" |\n"));
         return template.replace("{{date}}", date.toString())
-                .replace("{{places}}", String.format("%,d", summary.places()))
-                .replace("{{records}}", String.format("%,d", summary.records()))
+                .replace("{{places}}", String.format(Locale.ROOT, "%,d", summary.places()))
+                .replace("{{records}}", String.format(Locale.ROOT, "%,d", summary.records()))
                 .replace("{{by_category}}", categories.toString().strip())
                 .replace("{{by_source}}", sources.toString().strip());
     }

@@ -128,14 +128,14 @@ class ReleaseExportContainerTest {
 
     @Test
     void releasesOpenPlacesWithOpenValuesOnly() throws Exception {
-        ReleaseExport.Summary summary = ReleaseExport.build(dataSource, TERMS, PRIORITY, LICENCES, releaseDir, DATE);
+        ReleaseExport.Summary summary = ReleaseExport.build(dataSource, TERMS, PRIORITY, TestData.area(), LICENCES, releaseDir, DATE);
 
         Path folder = releaseDir.resolve("2026-10-11");
         assertThat(summary.folder()).isEqualTo(folder);
         assertThat(summary.places()).isEqualTo(3);
         assertThat(summary.byCategory()).containsExactly(Map.entry("bank", 1), Map.entry("food", 2));
         assertThat(summary.overtureProviders()).containsExactly("Foursquare", "Overture", "meta");
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES)).isEmpty();
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area())).isEmpty();
         try (Stream<Path> files = Files.list(releaseDir)) {
             assertThat(files.map(p -> p.getFileName().toString())).containsExactly("2026-10-11"); // no partial left
         }
@@ -174,8 +174,8 @@ class ReleaseExportContainerTest {
         assertThat(folder.resolve("licences/Foursquare-NOTICE.txt")).exists();
 
         // A second build the same day replaces the first.
-        ReleaseExport.build(dataSource, TERMS, PRIORITY, LICENCES, releaseDir, DATE);
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES)).isEmpty();
+        ReleaseExport.build(dataSource, TERMS, PRIORITY, TestData.area(), LICENCES, releaseDir, DATE);
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area())).isEmpty();
     }
 
     private static void place(String name, String shown, String category, String retiredAt) {

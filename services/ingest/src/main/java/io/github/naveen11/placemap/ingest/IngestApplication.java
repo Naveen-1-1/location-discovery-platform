@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.ingest;
 
+import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.match.MatchEvaluation;
 import io.github.naveen11.placemap.ingest.match.MatchSample;
@@ -39,7 +40,8 @@ public class IngestApplication {
         var context = SpringApplication.run(IngestApplication.class, args);
         var properties = context.getBean(IngestProperties.class);
         if (properties.toolMode()) {
-            int code = runTool(properties, context.getBean(DataSource.class), context.getBean(SourcePriority.class));
+            int code = runTool(properties, context.getBean(DataSource.class), context.getBean(SourcePriority.class),
+                    context.getBean(CoverageArea.class));
             System.exit(SpringApplication.exit(context, () -> code));
         }
         if (properties.onceMode()) {
@@ -52,7 +54,8 @@ public class IngestApplication {
         }
     }
 
-    private static int runTool(IngestProperties properties, DataSource dataSource, SourcePriority priority) {
+    private static int runTool(IngestProperties properties, DataSource dataSource, SourcePriority priority,
+            CoverageArea area) {
         IngestProperties.Tool tool = properties.tool();
         try {
             switch (tool.name()) {
@@ -63,7 +66,7 @@ public class IngestApplication {
                 case "match-evaluate" -> System.out.print(MatchEvaluation.report(tool.sample(), tool.ownerLabels()));
                 case "release" -> {
                     var summary = ReleaseExport.build(dataSource, SourceTerms.load(properties.sourcesFile()), priority,
-                            tool.licencesDir(), tool.releaseDir(), LocalDate.now(BOSTON));
+                            area, tool.licencesDir(), tool.releaseDir(), LocalDate.now(BOSTON));
                     System.out.printf("release built in %s: %,d places from %,d source records; checks passed%n",
                             summary.folder(), summary.places(), summary.records());
                     summary.byCategory().forEach((category, n) -> System.out.printf("  %-17s %,6d%n", category, n));
@@ -76,7 +79,7 @@ public class IngestApplication {
                         return 0;
                     }
                     List<String> problems = ReleaseCheck.check(folder, SourceTerms.load(properties.sourcesFile()),
-                            tool.licencesDir());
+                            tool.licencesDir(), area);
                     problems.forEach(p -> System.out.println("  - " + p));
                     System.out.println((problems.isEmpty() ? "RELEASE CHECK PASSED: " : "RELEASE CHECK FAILED: ")
                             + folder);

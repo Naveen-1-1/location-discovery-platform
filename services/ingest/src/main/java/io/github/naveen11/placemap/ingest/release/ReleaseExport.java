@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.ingest.release;
 
+import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.source.OvertureSource;
 import java.io.IOException;
@@ -117,7 +118,7 @@ public final class ReleaseExport {
     }
 
     public static Summary build(DataSource dataSource, Map<String, SourceTerms> terms, SourcePriority priority,
-            Path licencesDir, Path releaseDir, LocalDate date) throws IOException, SQLException {
+            CoverageArea area, Path licencesDir, Path releaseDir, LocalDate date) throws IOException, SQLException {
         Path folder = releaseDir.resolve(date.toString());
         Path partial = releaseDir.resolve("." + date + ".partial");
         deleteTree(partial);
@@ -125,7 +126,7 @@ public final class ReleaseExport {
         try {
             Summary summary = export(dataSource, terms, priority, partial);
             ReleaseDocs.write(partial, terms, licencesDir, date, summary);
-            List<String> problems = ReleaseCheck.check(partial, terms, licencesDir);
+            List<String> problems = ReleaseCheck.check(partial, terms, licencesDir, area);
             if (!problems.isEmpty()) {
                 throw new IllegalStateException("the release failed its checks:\n  - " + String.join("\n  - ", problems));
             }

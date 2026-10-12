@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.ingest.release;
 
+import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import tools.jackson.databind.JsonNode;
@@ -28,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  *       drops at import (ADR 0031).
  *   <li>Every record comes from a source marked {@code "yes"}, every place has one, and no value anywhere names a
  *       display-only source (ADR 0029).
- *   <li>Every place has a point inside the area's box, and ids are unique.
+ *   <li>Every place is a point inside the four towns (the importer's own area), and ids are unique.
  *   <li>{@code ATTRIBUTION.md} credits every source in the data.
  * </ul>
  */
@@ -37,8 +39,7 @@ public final class ReleaseCheck {
     // Column names that would mean personal data or free text written by people, whatever the source.
     private static final Pattern PERSONAL = Pattern.compile(
             "comment|owner|applicant|manager|first_?name|last_?name|surname|email|official|inspector|phone_");
-    /** The four towns with a margin, as (west, south, east, north). */
-    private static final double[] AREA_BOX = {-71.20, 42.22, -70.98, 42.42};
+    private static final Pattern POINT = Pattern.compile("POINT \\((\\S+) (\\S+)\\)");
     /** Every text column, scanned for display-only source ids. */
     private static final Map<String, List<String>> TEXT_COLUMNS = Map.of(
             "places", List.of("name", "category", "address", "phone", "website", "hours", "hours_source",
@@ -49,12 +50,12 @@ public final class ReleaseCheck {
     private ReleaseCheck() {
     }
 
-    public static List<String> check(Path folder, Map<String, SourceTerms> terms, Path licencesDir) {
+    public static List<String> check(Path folder, Map<String, SourceTerms> terms, Path licencesDir, CoverageArea area) {
         var problems = new ArrayList<String>();
         try {
             files(folder, licencesDir, problems);
             if (problems.isEmpty()) {
-                data(folder, terms, problems);
+                data(folder, terms, area, problems);
             }
         } catch (IOException | SQLException e) {
             problems.add("could not read the release: " + e);
@@ -110,7 +111,7 @@ public final class ReleaseCheck {
         }
     }
 
-    private static void data(Path folder, Map<String, SourceTerms> terms, List<String> problems)
+    private static void data(Path folder, Map<String, SourceTerms> terms, CoverageArea area, List<String> problems)
             throws SQLException, IOException {
         Set<String> releasable = new TreeSet<>();
         Set<String> displayOnly = new TreeSet<>();
@@ -161,6 +162,7 @@ public final class ReleaseCheck {
                 }
             }
             geoMetadata(s, folder, problems);
+            points(s, area.checker(), problems);
             String attribution = Files.readString(folder.resolve(ReleaseDocs.ATTRIBUTION));
             try (var sources = s.executeQuery("SELECT DISTINCT source FROM place_sources ORDER BY 1")) {
                 while (sources.next()) {
@@ -172,7 +174,7 @@ public final class ReleaseCheck {
         }
     }
 
-    /** The GeoParquet metadata DuckDB wrote: WKB points, all inside the area's box. */
+    /** The GeoParquet metadata DuckDB wrote: the geometry column, as WKB points. */
     private static void geoMetadata(java.sql.Statement s, Path folder, List<String> problems) throws SQLException {
         String meta = "";
         try (var geo = s.executeQuery("SELECT decode(value) FROM parquet_kv_metadata('"
@@ -191,10 +193,24 @@ public final class ReleaseCheck {
         if (!column.path("geometry_types").toString().equals("[\"Point\"]")) {
             problems.add("places.parquet holds geometries other than points: " + column.path("geometry_types"));
         }
-        JsonNode bbox = column.path("bbox");
-        if (bbox.size() != 4 || bbox.get(0).asDouble() < AREA_BOX[0] || bbox.get(1).asDouble() < AREA_BOX[1]
-                || bbox.get(2).asDouble() > AREA_BOX[2] || bbox.get(3).asDouble() > AREA_BOX[3]) {
-            problems.add("places.parquet has points outside the area: bounding box " + bbox);
+    }
+
+    /** Every point inside the four towns, checked with the importer's own polygons. */
+    private static void points(java.sql.Statement s, CoverageArea.Checker area, List<String> problems)
+            throws SQLException {
+        var outside = new ArrayList<Long>();
+        try (var rows = s.executeQuery("SELECT place_id, CAST(geometry AS VARCHAR) FROM places WHERE geometry IS NOT NULL")) {
+            while (rows.next()) {
+                Matcher point = POINT.matcher(rows.getString(2));
+                if (!point.matches() || !area.covers(Double.parseDouble(point.group(1)),
+                        Double.parseDouble(point.group(2)))) {
+                    outside.add(rows.getLong(1));
+                }
+            }
+        }
+        if (!outside.isEmpty()) {
+            problems.add(outside.size() + " places outside the four towns, such as " + outside.subList(0,
+                    Math.min(5, outside.size())));
         }
     }
 

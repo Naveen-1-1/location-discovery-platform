@@ -51,7 +51,7 @@ class ReleaseCheckTest {
 
     @Test
     void aWellFormedReleasePasses() throws Exception {
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES)).isEmpty();
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area())).isEmpty();
         assertThat(Files.readString(folder.resolve(ReleaseDocs.LICENSE)))
                 .startsWith("## Open Data Commons Open Database License (ODbL)");
         assertThat(Files.readString(folder.resolve(ReleaseDocs.SUMS)).lines().map(l -> l.substring(66)))
@@ -84,7 +84,7 @@ class ReleaseCheckTest {
     void recordsFromADisplayOnlySourceFailTheCheck() throws Exception {
         rewrite("INSERT INTO place_sources VALUES (2, 'mbta_gtfs', 'place-pktrm', 'score', 0.9)");
 
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES)).contains(
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area())).contains(
                 "1 records from a source not marked \"yes\"",
                 "1 values in place_sources naming the display-only source mbta_gtfs");
     }
@@ -93,14 +93,14 @@ class ReleaseCheckTest {
     void aPlaceWithoutAnOpenRecordFailsTheCheck() throws Exception {
         rewrite("DELETE FROM place_sources WHERE place_id = 2");
 
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES)).containsExactly("1 places without a source record");
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area())).containsExactly("1 places without a source record");
     }
 
     @Test
     void aPersonalDataColumnFailsTheCheck() throws Exception {
         rewrite("ALTER TABLE places ADD COLUMN inspector_comment VARCHAR");
 
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES)).anySatisfy(p -> assertThat(p)
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area())).anySatisfy(p -> assertThat(p)
                 .contains("places.inspector_comment looks like personal data or free text"));
     }
 
@@ -108,8 +108,8 @@ class ReleaseCheckTest {
     void aPointOutsideTheAreaFailsTheCheck() throws Exception {
         rewrite("UPDATE places SET wkt = 'POINT(-75.5 35.2)' WHERE place_id = 2"); // the Atlantic off the Carolinas
 
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES))
-                .anySatisfy(p -> assertThat(p).startsWith("places.parquet has points outside the area"));
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area()))
+                .containsExactly("1 places outside the four towns, such as [2]");
     }
 
     @Test
@@ -117,7 +117,7 @@ class ReleaseCheckTest {
         Files.writeString(folder.resolve(ReleaseDocs.METHOD), "edited\n");
         Files.writeString(folder.resolve("notes.txt"), "stray\n");
 
-        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES))
+        assertThat(ReleaseCheck.check(folder, TERMS, LICENCES, TestData.area()))
                 .contains("METHOD.md does not match its SHA256SUMS line", "notes.txt is not in SHA256SUMS");
     }
 
