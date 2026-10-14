@@ -1,0 +1,10 @@
+# Prometheus inside the load-test stack. Nothing is scraped: the api and live-hub push OTLP metrics to
+# /api/v1/otlp/v1/metrics, and k6 remote-writes its results to /api/v1/write. Exponential histograms arrive as native
+# histograms, so the same queries work here as on Grafana Cloud.
+global:
+  evaluation_interval: 15s
+
+otlp:
+  # job="placemap/api" and instance come from service.namespace, service.name and service.instance.id, as on Grafana
+  # Cloud; deployment.environment tells a run's services apart from anything else.
+  promote_resource_attributes: [deployment.environment]

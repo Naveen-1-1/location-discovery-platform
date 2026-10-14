@@ -1,0 +1,151 @@
+# The whole app on one machine, for the load and crash tests. Nothing in it calls a cloud service: our own PostGIS
+# (filled by the importer), our own Valhalla, and stand-ins for Photon and the Bluebikes feed. tools/load-tests.py
+# drives it (it sets the CPU sets and builds the images); ports are bound to 127.0.0.1 only.
+#
+# Toxiproxy sits between the services and what they depend on (the database, Valhalla, the Bluebikes feed), so a
+# scenario can slow or cut each one. Memory limits follow the plan's local budget.
+name: placemap-load
+
+# Metrics go to the stack's own Prometheus every 5 s; traces and logs stay in the containers.
+x-telemetry: &telemetry
+  PLACEMAP_ENV: load
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://prometheus:9090/api/v1/otlp/v1/metrics
+  MANAGEMENT_OTLP_METRICS_EXPORT_STEP: 5s
+  MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED: "false"
+  MANAGEMENT_LOGGING_EXPORT_OTLP_ENABLED: "false"
+
+services:
+  postgis:
+    image: placemap/postgis-test           # the crash tests' image: PostGIS and h3 on Postgres 18, amd64 and arm64
+    build: ../docker/postgis
+    environment:
+      POSTGRES_PASSWORD: load              # a throwaway database reachable only from this machine
+      POSTGRES_DB: placemap
+    command: >-
+      postgres -c shared_buffers=384MB -c effective_cache_size=1GB -c work_mem=16MB -c max_connections=60
+      -c jit=off -c random_page_cost=1.1
+    shm_size: 256m
+    mem_limit: 1536m
+    cpuset: ${PLACEMAP_SUT_CPUS:?set by tools/load-tests.py}
+    volumes:
+      - db:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:55440:5432"             # the seed's importer and the driver's checks
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "placemap"]
+      interval: 2s
+      retries: 60
+
+  valhalla:
+    image: ghcr.io/valhalla/valhalla:3.9.0@sha256:511c095b8caf393dccceb8b519ec96b6f85a0166b2288ba014a8a748acc5a63c
+    command: ["valhalla_service", "/data/valhalla.json", "${PLACEMAP_VALHALLA_THREADS:-4}"]
+    mem_limit: 1g
+    cpuset: ${PLACEMAP_SUT_CPUS}
+    volumes:
+      - ../../data/valhalla:/data:ro       # tools/build-valhalla-tiles.sh
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8002/status"]
+      interval: 2s
+      retries: 60
+
+  standins:
+    image: python:3.14.7-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    command: ["python3", "-I", "/standins/standins.py", "--stations", "/seed/stations.txt",
+              "--changes-per-second", "${PLACEMAP_BIKE_CHANGES:-5}"]
+    mem_limit: 128m
+    cpuset: ${PLACEMAP_SUT_CPUS}
+    volumes:
+      - ../../load/standins:/standins:ro
+      - ../../data/load:/seed:ro           # the station ids the seed wrote
+    ports:
+      - "127.0.0.1:58088:8080"             # the seed's importer geocodes against it
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 2s
+      retries: 30
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    mem_limit: 128m
+    cpuset: ${PLACEMAP_SUT_CPUS}
+    volumes:
+      - ./load/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - "127.0.0.1:58474:8474"             # its API, for the scenarios' faults
+
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=3d
+      - --web.enable-otlp-receiver
+      - --web.enable-remote-write-receiver
+    mem_limit: 768m
+    cpuset: ${PLACEMAP_LOAD_CPUS:?set by tools/load-tests.py}   # with the load generators, not the services tested
+    volumes:
+      - ../observability/prometheus/load.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    ports:
+      - "127.0.0.1:59090:9090"
+
+  live-hub:
+    image: placemap/live-hub:load
+    build:
+      context: ../../services/live-hub/target
+      dockerfile: ../../../infra/docker/java-service/Dockerfile
+      args:
+        JAR: live-hub.jar
+    environment:
+      <<: *telemetry
+      PLACEMAP_LIVE_THREADS: ${PLACEMAP_LIVE_THREADS:-virtual}            # or pool, for L8
+      PLACEMAP_LIVE_BLUEBIKES_URL: http://toxiproxy:18080/gbfs/en/station_status.json
+      PLACEMAP_LIVE_BLUEBIKES_MININTERVAL: 1s                            # the stand-in's ttl is 1 s
+      PLACEMAP_LIVE_MBTA_ENABLED: "false"
+    mem_limit: 1g
+    cpuset: ${PLACEMAP_SUT_CPUS}
+    ports:
+      - "127.0.0.1:58081:8081"
+    depends_on:
+      toxiproxy: {condition: service_started}
+    healthcheck:
+      # The JRE image has no curl or wget; bash speaks enough HTTP for this.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 2s
+      retries: 60
+
+  api:
+    image: placemap/api:load
+    build:
+      context: ../../services/api/target
+      dockerfile: ../../../infra/docker/java-service/Dockerfile
+      args:
+        JAR: api.jar
+    environment:
+      <<: *telemetry
+      SPRING_DATASOURCE_URL: jdbc:postgresql://toxiproxy:15432/placemap?sslmode=disable&ApplicationName=api
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: load
+      SPRING_DATASOURCE_HIKARI_MINIMUMIDLE: "10"     # a local database never scales to zero
+      PLACEMAP_ROUTING_ENGINE: valhalla
+      PLACEMAP_VALHALLA_URL: http://toxiproxy:18002
+      PLACEMAP_NEARBY_TRAVELTIMETIMEOUT: 800ms       # the plan's value for an engine on the same network
+      PLACEMAP_LIVE_URL: http://live-hub:8081
+      PLACEMAP_SEARCH_PHOTONURL: http://standins:8080/api/
+    mem_limit: 768m
+    cpuset: ${PLACEMAP_SUT_CPUS}
+    ports:
+      - "127.0.0.1:58080:8080"
+    depends_on:
+      postgis: {condition: service_healthy}
+      valhalla: {condition: service_healthy}
+      toxiproxy: {condition: service_started}
+    healthcheck:
+      # The JRE image has no curl or wget; bash speaks enough HTTP for this.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 2s
+      retries: 60
+
+volumes:
+  db:
+  prometheus:

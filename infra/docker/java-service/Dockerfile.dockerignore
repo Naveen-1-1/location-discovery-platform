@@ -1,0 +1,3 @@
+# The build context is a service's target folder: send Docker only the jar.
+*
+!*.jar
