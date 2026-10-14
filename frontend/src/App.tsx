@@ -238,7 +238,13 @@ export function App() {
           route={routeTo === selected?.id ? route.data : undefined}
           routeState={route.isFetching ? "loading" : route.isError ? (route.error as Error).message : null}
           isochrones={showArea && mode !== null ? area.data : undefined}
-          routingCredit={routed || (showArea && area.data !== undefined) || route.data !== undefined}
+          routingEngine={
+            routed
+              ? result.travelTimeSource
+              : showArea && area.data !== undefined
+                ? area.data.travelTimeSource
+                : (route.data?.properties.travelTimeSource ?? null)
+          }
           credits={credits}
           vehicles={vehicles}
           selectedLive={selected ? liveOf(selected) : null}

@@ -3,6 +3,7 @@
 #
 #   tools/dev.sh migrate   apply database migrations to Neon
 #   tools/dev.sh tiles     build the Boston basemap file for the frontend
+#   tools/dev.sh valhalla [--serve]   build Massachusetts routing tiles for our own Valhalla (--serve: run it on :8002)
 #   tools/dev.sh api       build and start the api service on :8080
 #   tools/dev.sh live      build and start live-hub on :8081 (live bikes over SSE; PLACEMAP_LIVE_THREADS=pool to compare)
 #   tools/dev.sh web       start the map frontend on :5173 (proxies /api to :8080 and /live to :8081)
@@ -62,6 +63,10 @@ case "${1:-help}" in
     ;;
   tiles)
     tools/build-pmtiles.sh
+    ;;
+  valhalla)
+    shift
+    exec tools/build-valhalla-tiles.sh "$@"
     ;;
   api)
     load_env

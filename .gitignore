@@ -29,6 +29,7 @@ data/release/
 *.pmtiles
 *.parquet
 valhalla_tiles/
+data/valhalla/
 photon_data/
 
 # k6 / load-test output

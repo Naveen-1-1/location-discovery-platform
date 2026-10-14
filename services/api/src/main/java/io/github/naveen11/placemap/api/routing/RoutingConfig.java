@@ -17,7 +17,10 @@ import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-/** Wires the routing engine: openrouteservice when ORS_API_KEY is set, otherwise a client that always falls back. */
+/**
+ * Wires the routing engine: our own Valhalla when {@code placemap.routing.engine=valhalla}; otherwise openrouteservice
+ * when ORS_API_KEY is set, or a client that always falls back.
+ */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(RoutingProperties.class)
 class RoutingConfig {
@@ -41,6 +44,13 @@ class RoutingConfig {
 
     @Bean
     RoutingClient routingClient(RoutingProperties properties, RestClient.Builder builder) {
+        if (properties.engine() == RoutingProperties.Engine.VALHALLA) {
+            RoutingProperties.Valhalla valhalla = properties.valhalla();
+            log.info("Routing with Valhalla at {}", valhalla.baseUrl());
+            RestClient.Builder base = ValhallaRoutingClient.configure(builder, valhalla);
+            return new ValhallaRoutingClient(base.clone().requestFactory(jdk(valhalla.matrixTimeout())).build(),
+                    base.clone().requestFactory(jdk(valhalla.timeout())).build(), valhalla.maxSnapMeters());
+        }
         RoutingProperties.Ors ors = properties.ors();
         if (ors.apiKey() == null || ors.apiKey().isBlank()) {
             log.warn("ORS_API_KEY is not set: travel times fall back to straight-line distance");

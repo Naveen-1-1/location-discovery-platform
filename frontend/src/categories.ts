@@ -39,7 +39,14 @@ export const MODE_VERBS = { walk: "walking", bike: "cycling", drive: "driving" }
 export const ISOCHRONE_MINUTES = [5, 10, 15] as const;
 export const ISOCHRONE_COLORS: Record<number, string> = { 5: "#1c5cab", 10: "#3987e5", 15: "#86b6ef" };
 
-export const ROUTING_CREDIT = 'Routing © <a href="https://openrouteservice.org">openrouteservice.org</a>';
+/**
+ * The routing engine's credit, by the api's travelTimeSource. Valhalla routes over OpenStreetMap, which the basemap
+ * already credits.
+ */
+export const ROUTING_CREDITS: Record<string, string> = {
+  openrouteservice: 'Routing © <a href="https://openrouteservice.org">openrouteservice.org</a>',
+  valhalla: 'Routing: <a href="https://github.com/valhalla/valhalla">Valhalla</a>',
+};
 
 /** Credits for display-only sources, shown while their places are on screen. */
 export const BIKE_SHARE_CREDIT = 'Bike share data © <a href="https://bluebikes.com/system-data">Bluebikes</a>';

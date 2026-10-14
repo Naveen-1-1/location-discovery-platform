@@ -78,7 +78,7 @@ export type NearbyResponse = {
   maxSnapErrorMeters: number;
   mode: TravelMode | null;
   radiusMeters: number;
-  /** The routing engine that gave the travel times ("openrouteservice"), or "straight_line". */
+  /** The routing engine that gave the travel times ("openrouteservice", "valhalla"), or "straight_line". */
   travelTimeSource: string;
   /** Why a search with a mode has no travel times ("timeout", "breaker_open", …); null otherwise. */
   fallback: string | null;

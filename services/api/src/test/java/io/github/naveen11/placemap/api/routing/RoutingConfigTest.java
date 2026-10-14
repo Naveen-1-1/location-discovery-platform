@@ -36,4 +36,13 @@ class RoutingConfigTest {
         runner.withPropertyValues("placemap.routing.ors.api-key=test-key")
                 .run(context -> assertThat(context.getBean(RoutingClient.class)).isInstanceOf(OrsRoutingClient.class));
     }
+
+    @Test
+    void theValhallaEngineNeedsNoKey() {
+        runner.withPropertyValues("placemap.routing.engine=valhalla")
+                .run(context -> {
+                    assertThat(context.getBean(RoutingClient.class)).isInstanceOf(ValhallaRoutingClient.class);
+                    assertThat(context.getBean(GuardedRouting.class).engine()).isEqualTo("valhalla");
+                });
+    }
 }

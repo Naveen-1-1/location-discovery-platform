@@ -90,7 +90,10 @@ placemap:
     url: ${PLACEMAP_LIVE_URL:http://localhost:8081}
     timeout: 150ms
   routing:
+    engine: ${PLACEMAP_ROUTING_ENGINE:ors}   # ors, or valhalla: our own engine (the load-test stack)
     concurrency: 8               # the routing bulkhead, shared by nearby, routes and isochrones
+    valhalla:
+      base-url: ${PLACEMAP_VALHALLA_URL:http://localhost:8002}
     ors:
       api-key: ${ORS_API_KEY:}   # from .env; empty means straight-line distances only
       matrix-timeout: 1s         # a backstop: nearby enforces travel-time-timeout itself

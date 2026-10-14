@@ -56,6 +56,10 @@ tools/dev.sh web    # http://localhost:5173  ← open this
 Travel times, routes and reachable areas come from openrouteservice and need `ORS_API_KEY` in `.env` (a free
 account). Without it the map still works and sorts by straight-line distance.
 
+Or route with our own Valhalla, which the load tests use: `tools/dev.sh valhalla --serve` builds Massachusetts
+routing tiles in Docker (a ~300 MB OpenStreetMap download, then a few minutes) and serves them on `localhost:8002`;
+start the api with `PLACEMAP_ROUTING_ENGINE=valhalla tools/dev.sh api`.
+
 Live data works without a key: Bluebikes and MBTA's realtime files are open. A free MBTA V3 key in `.env` as
 `MBTA_API_KEY` ([api-v3.mbta.com](https://api-v3.mbta.com)) streams MBTA alerts and vehicles as they change. Without
 `live` running, the map still works and simply shows no live counts.
@@ -87,6 +91,7 @@ Requires JDK 25 (Temurin) and Maven 3.9.6 or newer. Docker Desktop must be runni
 integration tests; without Docker they are skipped.
 ```bash
 ./mvnw verify                                                         # unit + Lincheck tests
+./mvnw -pl services/api -am verify -Dplacemap.valhalla-url=http://localhost:8002   # + routing contract on Valhalla
 ./mvnw -pl libs/concurrent-jcstress -am verify -Pjcstress -DskipTests # JCStress (quick mode)
 java -jar libs/concurrent-jmh/target/benchmarks.jar                   # JMH benchmarks
 ```

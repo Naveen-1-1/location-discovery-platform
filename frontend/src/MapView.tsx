@@ -24,7 +24,7 @@ import {
   formatDuration,
   ISOCHRONE_COLORS,
   MODE_VERBS,
-  ROUTING_CREDIT,
+  ROUTING_CREDITS,
 } from "./categories";
 import { basemapStyle } from "./mapStyle";
 // MapLibre finds its worker relative to its own module URL, which breaks once a bundler moves that module (Vite's dep
@@ -64,8 +64,8 @@ type Props = {
   /** "loading", an error message, or null. */
   routeState: string | null;
   isochrones: IsochroneCollection | undefined;
-  /** Whether anything on screen came from the routing engine, which then needs its credit. */
-  routingCredit: boolean;
+  /** The routing engine anything on screen came from, which then needs its credit; null for none. */
+  routingEngine: string | null;
   /** Credits for display-only sources whose places are on screen; each id names its map source. */
   credits: { id: string; html: string }[];
   /** The selected place's live data, if it has any. */
@@ -80,7 +80,8 @@ type Props = {
 };
 
 export function MapView(props: Props) {
-  const { origin, radius, places, selected, mode, resultMode, route, routeState, isochrones, routingCredit } = props;
+  const { origin, radius, places, selected, mode, resultMode, route, routeState, isochrones, routingEngine } = props;
+  const routingCredit = routingEngine === null ? undefined : ROUTING_CREDITS[routingEngine];
   const style = useMemo(basemapStyle, []);
   const map = useRef<MapRef>(null);
 
@@ -187,9 +188,10 @@ export function MapView(props: Props) {
         />
       </Source>
       {/* Puts the routing engine's credit in the attribution while anything on screen comes from it. MapLibre only
-          credits sources a visible layer uses, hence the empty, transparent layer. */}
+          credits sources a visible layer uses, hence the empty, transparent layer; the key swaps the source when the
+          engine changes, since a source keeps the attribution it was added with. */}
       {routingCredit && (
-        <Source id="routing-credit" type="geojson" data={EMPTY} attribution={ROUTING_CREDIT}>
+        <Source key={routingCredit} id="routing-credit" type="geojson" data={EMPTY} attribution={routingCredit}>
           <Layer id="routing-credit" type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
         </Source>
       )}

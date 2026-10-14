@@ -8,10 +8,20 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 /**
  * {@code placemap.routing.*}.
  *
+ * @param engine which routing engine answers: the hosted openrouteservice, or our own Valhalla
  * @param concurrency the routing bulkhead: calls to the engine in flight at once
  */
 @ConfigurationProperties("placemap.routing")
-public record RoutingProperties(@DefaultValue("8") int concurrency, @DefaultValue Ors ors) {
+public record RoutingProperties(
+        @DefaultValue("ors") Engine engine,
+        @DefaultValue("8") int concurrency,
+        @DefaultValue Ors ors,
+        @DefaultValue Valhalla valhalla) {
+
+    public enum Engine {
+        ORS,
+        VALHALLA
+    }
 
     /**
      * The hosted openrouteservice API.
@@ -26,6 +36,19 @@ public record RoutingProperties(@DefaultValue("8") int concurrency, @DefaultValu
             @DefaultValue("https://api.openrouteservice.org") URI baseUrl,
             String apiKey,
             @DefaultValue("1s") Duration matrixTimeout,
+            @DefaultValue("5s") Duration timeout,
+            @DefaultValue("350") double maxSnapMeters) {}
+
+    /**
+     * Our own Valhalla with Massachusetts tiles (tools/build-valhalla-tiles.sh).
+     *
+     * @param matrixTimeout the plan's 800 ms for an engine on the same network
+     * @param timeout routes and isochrones
+     * @param maxSnapMeters the same rule as for openrouteservice, so both engines reach the same places
+     */
+    public record Valhalla(
+            @DefaultValue("http://localhost:8002") URI baseUrl,
+            @DefaultValue("800ms") Duration matrixTimeout,
             @DefaultValue("5s") Duration timeout,
             @DefaultValue("350") double maxSnapMeters) {}
 }

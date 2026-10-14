@@ -4,8 +4,8 @@ import java.util.List;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Travel times, routes and isochrones from a routing engine: openrouteservice during development, self-hosted
- * Valhalla at deployment. Every method throws {@link RoutingException} when the engine gives no
+ * Travel times, routes and isochrones from a routing engine: the hosted openrouteservice during development, our own
+ * Valhalla in the load-test stack. Every method throws {@link RoutingException} when the engine gives no
  * answer, so callers can fall back.
  */
 public interface RoutingClient {
