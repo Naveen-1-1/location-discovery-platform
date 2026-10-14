@@ -219,6 +219,10 @@ public final class SseIdleClient {
             stats.slowChecked = true;
             streams.forEach(Stream::close);
             threads.shutdownNow();
+            // Stay a moment, as a browser that closed a tab does: live-hub's next writes then meet a closed socket and
+            // a reset, instead of a host that vanished with the container, which leaves its sessions open until
+            // their send buffers fill.
+            TimeUnit.SECONDS.sleep(3);
         }
         for (Stream s : streams) {
             if (!s.slow && s.disconnectedAt != 0) {
@@ -267,6 +271,7 @@ public final class SseIdleClient {
         private volatile Socket socket;
         private volatile InputStream slowInput;
         volatile long disconnectedAt; // nanoTime when a stream that had its snapshot ended; 0 once recovered
+        private boolean recovered; // only a stream's first recovery counts, so each stream counts once
         private long retryMillis = 3000;
 
         Stream(int index, boolean slow) {
@@ -304,7 +309,10 @@ public final class SseIdleClient {
                                 stats.opened();
                                 long down = disconnectedAt;
                                 if (down != 0) {
-                                    stats.recoveries.add(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - down));
+                                    if (!recovered) {
+                                        stats.recoveries.add(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - down));
+                                        recovered = true;
+                                    }
                                     disconnectedAt = 0;
                                 }
                                 if (slow) {

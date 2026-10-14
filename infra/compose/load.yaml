@@ -9,6 +9,7 @@ name: placemap-load
 # Metrics go to the stack's own Prometheus every 5 s; traces and logs stay in the containers.
 x-telemetry: &telemetry
   PLACEMAP_ENV: load
+  JAVA_TOOL_OPTIONS: ${PLACEMAP_JAVA_OPTIONS:-}   # extra JVM flags for a diagnosis, e.g. -XX:+PrintClassHistogram
   MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://prometheus:9090/api/v1/otlp/v1/metrics
   MANAGEMENT_OTLP_METRICS_EXPORT_STEP: 5s
   MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED: "false"

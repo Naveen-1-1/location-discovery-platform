@@ -405,7 +405,14 @@ class Run:
     def record(self, name, passed, line, details):
         self.results[name] = {"passed": passed, "line": line, **details}
         say(f"{name} {'PASSED' if passed else 'FAILED'}: {line}")
+        if not passed:
+            self.save_logs(name)
         self.save()
+
+    def save_logs(self, name, services=("api", "live-hub", "valhalla")):
+        """The services' recent logs, next to the scenario's own, before anything restarts them."""
+        result = compose("logs", "--no-color", "--tail", "400", *services, check=False, env=self.env)
+        (self.dir / f"{name}.services.log").write_text(result.stdout + result.stderr, encoding="utf-8")
 
     def save(self):
         (self.dir / "results.json").write_text(json.dumps({
@@ -589,8 +596,23 @@ class Sampler:
         return sum(self.cpu) / len(self.cpu) if self.cpu else 0
 
 
+def live_sessions_settled(limit=120):
+    """Waits until live-hub has no open streams left from an earlier scenario; returns the seconds it took, or None."""
+    start = time.time()
+    while time.time() - start < limit:
+        if prom_value('sum(placemap_live_sessions{job="placemap/live-hub"})', default=0) == 0:
+            return time.time() - start
+        time.sleep(5)  # metrics arrive every 5 s
+    return None
+
+
 def sse(r, name, clients, seconds, slow_share=0.0, ramp=250):
     """Runs the idle-stream client; returns its summary (or {} if it failed)."""
+    settled = live_sessions_settled()
+    if settled is None:
+        say(f"  live-hub still holds streams from before {name} after 120 s; starting anyway")
+    elif settled > 10:
+        say(f"  live-hub took {settled:.0f} s to let go of the streams from before {name}")
     args = ["--profile", "tools", "run", "--rm", "--no-deps", "-T", "--user", f"{os.getuid()}:{os.getgid()}",
             "sse-client", "--url", "http://live-hub:8081/live?topics=bikes", "--clients", str(clients),
             "--ramp", str(ramp), "--duration", str(seconds), "--slow-share", str(slow_share),
@@ -657,6 +679,7 @@ def scenario_l7(r):
 
 
 def restart_live_hub(r, threads):
+    r.save_logs(f"live-hub-before-{threads}", services=("live-hub",))
     r.env["PLACEMAP_LIVE_THREADS"] = threads
     compose("up", "-d", "--force-recreate", "--no-deps", "live-hub", env=r.env)
     wait_healthy(["live-hub"])
@@ -826,6 +849,7 @@ def scenario_c5(r):
     kill_after = 40 if r.quick else 60  # after the ramp and the steady start
 
     def kill():
+        r.save_logs("C5-before-kill", services=("live-hub",))
         run(["docker", "kill", "-s", "KILL", compose("ps", "-q", "live-hub").strip()])
         compose("up", "-d", "--no-deps", "live-hub")  # a supervisor would start it again at once
     at(time.time() + clients / 250 + 10 + kill_after, kill)

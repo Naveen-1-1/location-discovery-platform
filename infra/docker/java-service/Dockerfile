@@ -9,6 +9,7 @@ USER 10001:10001
 # As tools/dev.sh: H3 and DuckDB load native code and protobuf uses sun.misc.Unsafe, both expected.
 # Under 1.8 GB the JVM picks the Serial collector, which stops the service for every collection; G1 is its choice on
 # any larger machine, so the tests measure the collector a real deployment runs. The heap gets 70% of the container's
-# memory limit; the rest is for the JIT, metaspace, platform thread stacks and network buffers.
+# memory limit; the rest is for the JIT, metaspace, platform thread stacks and network buffers. A service whose heap
+# runs out exits, as a supervisor would want, instead of limping on with failing threads.
 ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", \
-            "-XX:+UseG1GC", "-XX:MaxRAMPercentage=70", "-jar", "/app/service.jar"]
+            "-XX:+UseG1GC", "-XX:MaxRAMPercentage=70", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/service.jar"]
