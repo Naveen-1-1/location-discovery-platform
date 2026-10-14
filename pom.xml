@@ -28,6 +28,7 @@
     <module>services/api</module>
     <module>services/ingest</module>
     <module>services/live-hub</module>
+    <module>load/sse-idle-client</module>
   </modules>
 
   <properties>

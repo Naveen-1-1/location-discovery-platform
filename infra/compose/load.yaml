@@ -38,11 +38,12 @@ services:
 
   valhalla:
     image: ghcr.io/valhalla/valhalla:3.9.0@sha256:511c095b8caf393dccceb8b519ec96b6f85a0166b2288ba014a8a748acc5a63c
-    command: ["valhalla_service", "/data/valhalla.json", "${PLACEMAP_VALHALLA_THREADS:-4}"]
+    command: ["bash", "/serve.sh", "${PLACEMAP_VALHALLA_THREADS:-4}"]   # settings for 1×200 matrices in 1 GB
     mem_limit: 1g
     cpuset: ${PLACEMAP_SUT_CPUS}
     volumes:
       - ../../data/valhalla:/data:ro       # tools/build-valhalla-tiles.sh
+      - ../docker/valhalla/serve.sh:/serve.sh:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8002/status"]
       interval: 2s
@@ -104,6 +105,8 @@ services:
       PLACEMAP_LIVE_MBTA_ENABLED: "false"
     mem_limit: 1g
     cpuset: ${PLACEMAP_SUT_CPUS}
+    ulimits:
+      nofile: 65536                        # every stream is a socket
     ports:
       - "127.0.0.1:58081:8081"
     depends_on:
@@ -134,6 +137,8 @@ services:
       PLACEMAP_SEARCH_PHOTONURL: http://standins:8080/api/
     mem_limit: 768m
     cpuset: ${PLACEMAP_SUT_CPUS}
+    ulimits:
+      nofile: 65536                        # L10 holds 2,000 slow connections
     ports:
       - "127.0.0.1:58080:8080"
     depends_on:
@@ -145,6 +150,54 @@ services:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
       interval: 2s
       retries: 60
+
+  # The load generators, run one scenario at a time by tools/load-tests.py, on their own CPUs.
+  k6:
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+    profiles: [tools]
+    mem_limit: 2g
+    cpuset: ${PLACEMAP_LOAD_CPUS}
+    volumes:
+      - ../../load/k6:/scripts:ro
+      - ${PLACEMAP_RUN_DIR:-../../target/load/none}:/work     # origins in, summaries out
+    environment:
+      API: http://api:8080
+      LIVE: http://live-hub:8081
+      WORK: /work
+      K6_NO_USAGE_REPORT: "true"                # k6 otherwise reports each run to Grafana
+      K6_AUTO_EXTENSION_RESOLUTION: "false"     # and could download extensions
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM: "true"
+      # Tags that become labels in Prometheus: never the URL, which holds a different origin each time.
+      K6_SYSTEM_TAGS: status,method,scenario,expected_response,check,error_code
+
+  # Holds thousands of live-hub streams open and measures their lag (L6-L8, C5).
+  sse-client:
+    image: placemap/sse-idle-client:load
+    build:
+      context: ../../load/sse-idle-client/target
+      dockerfile: ../../../infra/docker/java-service/Dockerfile
+      args:
+        JAR: sse-idle-client.jar
+    profiles: [tools]
+    mem_limit: 1g
+    cpuset: ${PLACEMAP_LOAD_CPUS}
+    ulimits:
+      nofile: 65536
+    volumes:
+      - ${PLACEMAP_RUN_DIR:-../../target/load/none}:/work
+
+  # Slowloris against the api (L10).
+  slowhttptest:
+    image: placemap/slowhttptest:load
+    build: ../docker/slowhttptest
+    profiles: [tools]
+    mem_limit: 512m
+    cpuset: ${PLACEMAP_LOAD_CPUS}
+    ulimits:
+      nofile: 65536
+    volumes:
+      - ${PLACEMAP_RUN_DIR:-../../target/load/none}:/work
 
 volumes:
   db:
