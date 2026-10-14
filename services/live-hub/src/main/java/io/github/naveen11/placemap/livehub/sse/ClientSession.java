@@ -171,10 +171,14 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
         close(reason, true);
     }
 
-    /** {@code interruptDrain} is false when the drain itself closes: there is no write to break, it is the caller. */
-    private void close(End reason, boolean interruptDrain) {
+    /**
+     * {@code interruptDrain} is false when the drain itself closes: there is no write to break, it is the caller.
+     *
+     * @return whether this call closed the session
+     */
+    private boolean close(End reason, boolean interruptDrain) {
         if (!mailbox.close()) {
-            return;
+            return false;
         }
         end = reason;
         onClose.accept(this);
@@ -189,6 +193,7 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
             }
             wake(); // one more turn, to end the response
         }
+        return true;
     }
 
     /**
@@ -199,8 +204,11 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
     void check(long evictAfterNanos, long heartbeatNanos) {
         long now = nanoClock.getAsLong();
         long writing = writeStartedNanos;
-        if ((writing != NOT_WRITING && now - writing > evictAfterNanos) || mailbox.oldestWaitNanos() > evictAfterNanos) {
-            close(End.SLOW);
+        long behind = Math.max(writing == NOT_WRITING ? 0 : now - writing, mailbox.oldestWaitNanos());
+        if (behind > evictAfterNanos) {
+            if (close(End.SLOW, true)) {
+                metrics.evicted(behind);
+            }
         } else if (now - lastWriteNanos > heartbeatNanos) {
             offer(LiveKey.HEARTBEAT, Frame.HEARTBEAT);
         }

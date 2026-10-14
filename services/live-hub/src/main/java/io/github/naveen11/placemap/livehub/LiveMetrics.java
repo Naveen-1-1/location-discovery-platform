@@ -21,6 +21,7 @@ public class LiveMetrics {
     private final Counter snapshotsSent;
     private final Timer publish;
     private final Timer fanoutLag;
+    private final Timer evictedBehind;
 
     public LiveMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -39,6 +40,11 @@ public class LiveMetrics {
                 .register(registry);
         this.fanoutLag = Timer.builder("placemap.live.fanout.lag")
                 .description("From a snapshot's publication until a change from it was written to a client")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.evictedBehind = Timer.builder("placemap.live.evictions.behind")
+                .description("How far behind a slow client was when the watchdog evicted it: its stuck write or its "
+                        + "oldest waiting frame")
                 .publishPercentileHistogram()
                 .register(registry);
     }
@@ -77,6 +83,10 @@ public class LiveMetrics {
 
     public void fanoutLag(long nanos) {
         fanoutLag.record(Math.max(0, nanos), TimeUnit.NANOSECONDS);
+    }
+
+    public void evicted(long behindNanos) {
+        evictedBehind.record(behindNanos, TimeUnit.NANOSECONDS);
     }
 
     public <T> void gauge(String name, String description, T state, ToDoubleFunction<T> value) {

@@ -17,6 +17,7 @@ import java.util.EnumSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -127,6 +128,11 @@ class ClientSessionTest {
         assertThat(session.end()).isEqualTo(ClientSession.End.SLOW);
         await("the interrupted drain ends the response", () -> sink.completes.get() == 1);
         assertThat(cleanups.get()).isEqualTo(1);
+        // How far behind it was, recorded once even if the watchdog looks again.
+        session.check(EVICT, HEARTBEAT);
+        var behind = registry.get("placemap.live.evictions.behind").timer();
+        assertThat(behind.count()).isEqualTo(1);
+        assertThat(behind.max(TimeUnit.NANOSECONDS)).isEqualTo((double) EVICT + 1);
     }
 
     @Test
