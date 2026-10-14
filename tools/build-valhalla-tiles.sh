@@ -69,6 +69,6 @@ fi
 
 if [[ ${1:-} == --serve ]]; then
   echo "Serving on http://127.0.0.1:8002 (Ctrl-C stops it)"
-  exec docker run --rm --name placemap-valhalla -p 127.0.0.1:8002:8002 -v "$PWD/$OUT:/data:ro" "$IMAGE" \
-    valhalla_service /data/valhalla.json 2
+  exec docker run --rm --name placemap-valhalla -p 127.0.0.1:8002:8002 -v "$PWD/$OUT:/data:ro" \
+    -v "$PWD/infra/docker/valhalla/serve.sh:/serve.sh:ro" --memory 1g "$IMAGE" bash /serve.sh 2
 fi

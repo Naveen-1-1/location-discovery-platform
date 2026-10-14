@@ -68,7 +68,8 @@ class ValhallaRoutingClientTest {
                         {"sources": [{"lat": 42.355, "lon": -71.0656, "search_cutoff": 350.0}],
                          "targets": [{"lat": 42.3561, "lon": -71.0656}, {"lat": 42.3736, "lon": -71.119},
                                      {"lat": 42.3, "lon": -70.8}],
-                         "costing": "pedestrian", "units": "kilometers", "verbose": true}
+                         "costing": "pedestrian", "units": "kilometers", "verbose": true,
+                         "expansion_max_distance": 67997}
                         """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess(fixture("matrix-pedestrian.json"), MediaType.APPLICATION_JSON));
 
@@ -76,6 +77,19 @@ class ValhallaRoutingClientTest {
 
         // The point at sea was moved 955 m to an island and given a 46-minute walk (by ferry); it is unreachable.
         assertThat(legs).containsExactly(new Leg(148, 210), new Leg(3786, 5307), null);
+        server.verify();
+    }
+
+    @Test
+    void theSearchStopsAtThreeTimesTheFarthestTargetButNeverUnderTwoKilometres() {
+        server.expect(requestTo("http://valhalla.test/sources_to_targets"))
+                .andExpect(content().json("{\"expansion_max_distance\": 2000}", JsonCompareMode.LENIENT))
+                .andRespond(withSuccess("""
+                        {"sources_to_targets": [[{"from_index": 0, "to_index": 0, "time": 99, "distance": 0.1}]],
+                         "targets": [{"lat": 42.3561, "lon": -71.0656}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.travelTimes(COMMON, List.of(FROG_POND), TravelMode.DRIVE)).containsExactly(new Leg(99, 100));
         server.verify();
     }
 

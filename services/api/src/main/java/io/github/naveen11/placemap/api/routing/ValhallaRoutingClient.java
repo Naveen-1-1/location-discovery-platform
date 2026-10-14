@@ -37,6 +37,11 @@ import tools.jackson.databind.node.ObjectNode;
  * {@code maxSnapMeters} counts as unreachable (the matrix lists where it moved each target), and an origin, a route's
  * ends or an isochrone's centre may only be moved that far, so the engine itself refuses anything further.
  *
+ * <p>The matrix search stops at a road distance of {@value #DETOUR} times the farthest target's straight-line distance
+ * (at least {@value #MIN_EXPANSION_METERS} m), and a target further than that by road is unreachable. Without the
+ * limit a car matrix searched far past its targets: 1 to 3 s for 200 places within 1.4 km of Boston Common, against
+ * 60 to 80 ms with it.
+ *
  * <p>Error messages never include Valhalla's own text, which can echo the request.
  */
 public final class ValhallaRoutingClient implements RoutingClient {
@@ -49,6 +54,11 @@ public final class ValhallaRoutingClient implements RoutingClient {
      * 441 location unreachable, 442 no path found, 443 the exact route algorithm found none.
      */
     static final Set<Integer> UNROUTABLE_CODES = Set.of(170, 171, 441, 442, 443);
+
+    /** How much longer than the straight line a route to a target may be before the matrix stops looking. */
+    static final int DETOUR = 3;
+
+    static final int MIN_EXPANSION_METERS = 2_000;
 
     private static final Pattern ERROR_CODE = Pattern.compile("\"error_code\"\\s*:\\s*(\\d+)");
     private static final int MAX_ERROR_BODY = 4_096;
@@ -88,8 +98,10 @@ public final class ValhallaRoutingClient implements RoutingClient {
         }
         // Targets keep Valhalla's own search distance: one cut off fails the whole call (error 170), so the distance
         // each was moved is checked here instead.
+        double farthest = targets.stream().mapToDouble(t -> distanceMeters(origin, t.lat(), t.lon())).max().orElse(0);
         var request = new MatrixRequest(List.of(Location.near(origin, maxSnapMeters)),
-                targets.stream().map(Location::of).toList(), costing(mode), "kilometers", true);
+                targets.stream().map(Location::of).toList(), costing(mode), "kilometers", true,
+                Math.max(MIN_EXPANSION_METERS, (int) Math.ceil(DETOUR * farthest)));
         MatrixResponse response = post(matrix, "/sources_to_targets", request, MatrixResponse.class);
 
         List<Position> snapped = response.targets();
@@ -273,7 +285,7 @@ public final class ValhallaRoutingClient implements RoutingClient {
     }
 
     record MatrixRequest(List<Location> sources, List<Location> targets, String costing, String units,
-            boolean verbose) {}
+            boolean verbose, @JsonProperty("expansion_max_distance") int expansionMaxDistance) {}
 
     record RouteRequest(List<Location> locations, String costing, String units,
             @JsonProperty("directions_type") String directionsType) {}
