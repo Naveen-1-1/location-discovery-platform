@@ -48,3 +48,8 @@ __pycache__/
 /docs/
 /spikes/
 /LOCAL-DOCS.md
+
+# The owner's own work kept in this folder, not part of the project
+/.claude/skills/
+/out/
+/resume/
