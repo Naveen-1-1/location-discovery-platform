@@ -12,7 +12,8 @@ the project from the start.
 > **Status:** Phase 7, hardening and the open data release: request-body limits, burn-rate alerts on the api's SLOs,
 > the ODbL release built locally (not yet published), and a nightly check that passed locally on 2026-10-11. Phase 7
 > closes after three green nightly runs in a row on GitHub; every load and crash test runs off the cloud. Sign-in and
-> saved lists were dropped.
+> saved lists were dropped. Phase 8, the load and crash tests, has started: the whole app runs in Docker with its own
+> routing engine, and `load-nightly.yml` will give the authoritative numbers.
 
 ## How it fits together
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
@@ -111,6 +112,20 @@ C2. `nightly.yml` runs the same on GitHub. Needs promtool (`brew install prometh
 tools/dev.sh nightly                       # everything, about 65 minutes (JCStress takes 45)
 tools/dev.sh nightly --only verify,c1      # some steps (a partial run is not counted)
 ```
+
+**Load and crash tests:** the whole app in Docker on one machine, with nothing calling a cloud service: PostGIS filled
+by the importer, our own Valhalla, stand-ins for Photon and the Bluebikes feed, Toxiproxy in front of each dependency,
+and Prometheus for the measurements. k6 sends the requests, a small Java client holds thousands of live streams open,
+and slowhttptest plays a slowloris attacker.
+```bash
+tools/dev.sh valhalla           # once: Massachusetts routing tiles (a ~300 MB download, then a few minutes)
+tools/dev.sh load seed          # once: import every source saved in data/raw into the stack's database
+tools/dev.sh load up            # start the stack (ports on 127.0.0.1 only)
+tools/dev.sh load run all       # L1-L10 and C3-C6, each ending PASSED or FAILED; --quick checks the setup
+tools/dev.sh load down
+```
+Results go to `load/results/`. Numbers from a laptop are indicative; `load-nightly.yml` runs the same on a GitHub
+runner (4 vCPU, 16 GB) for the authoritative ones, seeding its database from the sources themselves once a week.
 
 **Alerts:** burn-rate alerts on the api's availability (99.5% of requests without a 5xx) and nearby latency (95%
 within 300 ms), plus 5xx, pinning, import and stale-feed alerts, all by email. Apply them to Grafana Cloud with

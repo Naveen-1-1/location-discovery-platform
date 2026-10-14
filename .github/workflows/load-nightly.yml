@@ -1,0 +1,107 @@
+name: load-nightly
+
+# The load and crash tests (L1-L10, C3-C6) with the whole app inside one GitHub runner (4 vCPU, 16 GB): the
+# authoritative numbers. Nothing here calls a cloud service: tools/load-tests.py starts our own PostGIS, Valhalla and
+# stand-ins in Docker. The routing tiles and the seeded database are made once a week and kept in the Actions cache.
+on:
+  schedule:
+    - cron: '23 7 * * *'   # 07:23 UTC daily, after nightly.yml
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'Scenarios to run, space-separated (all, or e.g. "L1 C3")'
+        default: all
+      quick:
+        description: 'Shorter scenarios, to check the setup'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-nightly
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: load and crash tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Install osmium (the seed imports OSM)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+
+      - name: Week (tiles and the database are made once a week)
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the routing tiles
+        id: tiles
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/valhalla
+          key: valhalla-tiles-${{ steps.week.outputs.week }}-${{ hashFiles('tools/build-valhalla-tiles.sh') }}
+
+      - name: Build the routing tiles (Massachusetts, about 300 MB download)
+        if: steps.tiles.outputs.cache-hit != 'true'
+        run: tools/build-valhalla-tiles.sh
+
+      # The seed's database depends on the migrations, the source definitions and the importer's code.
+      - name: Restore the seeded database
+        id: seed
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/load
+          key: load-seed-${{ steps.week.outputs.week }}-${{ hashFiles('db/src/main/resources/db/migration/*.sql', 'data/*.yaml', 'services/ingest/src/main/**') }}
+
+      - name: Seed the database from the sources themselves
+        if: steps.seed.outputs.cache-hit != 'true'
+        run: python3 tools/load-tests.py seed --fetch
+
+      - name: Start the stack
+        run: python3 tools/load-tests.py up
+
+      - name: Run the scenarios
+        env:
+          SCENARIOS: ${{ inputs.scenarios || 'all' }}
+          QUICK: ${{ inputs.quick && '--quick' || '' }}
+        run: |
+          # shellcheck disable=SC2086
+          python3 tools/load-tests.py run $SCENARIOS $QUICK | tee load-run.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Load and crash tests'
+            echo '```'
+            grep -E '^(Run |[LC][0-9]+ (PASSED|FAILED)|LOAD )' load-run.log || echo 'no results'
+            echo '```'
+            cat load/results/*/L8.md 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: load-results
+          path: |
+            load/results/
+            target/load/seed/*.log
+          if-no-files-found: ignore
+
+      - name: Stop the stack
+        if: always()
+        run: python3 tools/load-tests.py down --volumes

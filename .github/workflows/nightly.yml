@@ -2,7 +2,8 @@ name: nightly
 
 # Phase 7's nightly check on GitHub: the steps of tools/dev.sh nightly, one job each, so they run side by
 # side. The source contract tests run in contracts-nightly.yml. The release check needs the owner's local release
-# (built from Neon), so it runs only in the local command. Load tests L1–L10 and C3–C6 come in Phase 8.
+# (built from Neon), so it runs only in the local command. The load and crash tests L1–L10 and C3–C6 run in
+# load-nightly.yml.
 on:
   schedule:
     - cron: '41 5 * * *'   # 05:41 UTC daily
