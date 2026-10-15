@@ -31,6 +31,7 @@ MEASURES = [
     ("heap", [
         ("heap", f'sum(jvm_memory_used_bytes{{{SEL}, area="heap"}}) / 1e6')]),
 ]
+HEAP_LIMIT_MB = 1024 ** 3 / 1e6  # -Xmx1g, the plan's budget
 
 
 def load_env():
