@@ -41,7 +41,7 @@
         <artifactId>maven-shade-plugin</artifactId>
         <executions>
           <execution>
-            <id>runnable-jar</id>
+            <id>default</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -49,7 +49,7 @@
             <configuration>
               <finalName>sse-idle-client</finalName>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-              <transformers>
+              <transformers combine.self="override">
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>io.github.naveen11.placemap.load.SseIdleClient</mainClass>
                 </transformer>

@@ -52,7 +52,7 @@
         <artifactId>maven-shade-plugin</artifactId>
         <executions>
           <execution>
-            <id>jcstress-uberjar</id>
+            <id>default</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -60,7 +60,7 @@
             <configuration>
               <finalName>jcstress</finalName>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-              <transformers>
+              <transformers combine.self="override">
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>org.openjdk.jcstress.Main</mainClass>
                 </transformer>

@@ -116,36 +116,9 @@
   <build>
     <finalName>ingest</finalName>
     <plugins>
-      <!-- Exposes ${org.mockito:mockito-core:jar} (the jar's path) for the surefire argLine below. -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>properties</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <!-- Same as services/api: load Mockito's agent at JVM start instead of self-attaching at runtime. -->
-          <argLine>-javaagent:${org.mockito:mockito-core:jar}</argLine>
-        </configuration>
-      </plugin>
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>repackage</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>

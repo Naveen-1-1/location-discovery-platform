@@ -94,7 +94,6 @@ integration tests; without Docker they are skipped.
 ./mvnw verify                                                         # unit + Lincheck tests
 ./mvnw -pl services/api -am verify -Dplacemap.valhalla-url=http://localhost:8002   # + routing contract on Valhalla
 ./mvnw -pl libs/concurrent-jcstress -am verify -Pjcstress -DskipTests # JCStress (quick mode)
-java -jar libs/concurrent-jmh/target/benchmarks.jar                   # JMH benchmarks
 ```
 The importer's crash tests and backpressure benchmark run the real jar against a throwaway local database and need
 Docker Desktop, Toxiproxy (`brew install toxiproxy`) and the snapshots in `data/raw`:

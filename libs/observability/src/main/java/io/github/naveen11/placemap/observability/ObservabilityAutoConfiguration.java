@@ -1,6 +1,5 @@
 package io.github.naveen11.placemap.observability;
 
-import io.micrometer.java21.instrument.binder.jdk.VirtualThreadMetrics;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
 import org.springframework.beans.factory.InitializingBean;
@@ -16,15 +15,5 @@ public class ObservabilityAutoConfiguration {
     @Bean
     InitializingBean openTelemetryAppenderInstaller(ObjectProvider<OpenTelemetry> openTelemetry) {
         return () -> openTelemetry.ifAvailable(OpenTelemetryAppender::install);
-    }
-
-    /**
-     * Publishes jvm.threads.virtual.pinned (a virtual thread blocked while pinned to its carrier) and
-     * jvm.threads.virtual.submit.failed, read from JFR events. Pinning is the main way virtual threads lose their
-     * scalability, so the JVM/threads dashboard alerts on it.
-     */
-    @Bean(destroyMethod = "close")
-    VirtualThreadMetrics virtualThreadMetrics() {
-        return new VirtualThreadMetrics();
     }
 }
