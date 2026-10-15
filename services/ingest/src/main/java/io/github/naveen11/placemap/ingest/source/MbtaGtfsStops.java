@@ -2,9 +2,7 @@ package io.github.naveen11.placemap.ingest.source;
 
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,6 +16,7 @@ import java.util.zip.ZipFile;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.commons.io.input.BOMInputStream;
 import org.springframework.stereotype.Component;
 
 /**
@@ -79,12 +78,9 @@ public class MbtaGtfsStops implements SourceAdapter {
             if (stops == null) {
                 throw new IOException("GTFS zip has no stops.txt");
             }
-            try (var reader = new BufferedReader(new InputStreamReader(file.getInputStream(stops), StandardCharsets.UTF_8))) {
-                reader.mark(1);
-                if (reader.read() != '\uFEFF') { // GTFS files often start with a byte-order mark
-                    reader.reset();
-                }
-                CSVParser parser = CSVParser.parse(reader, GTFS);
+            // GTFS files often start with a byte-order mark.
+            try (var in = BOMInputStream.builder().setInputStream(file.getInputStream(stops)).get()) {
+                CSVParser parser = CSVParser.parse(in, StandardCharsets.UTF_8, GTFS);
                 List<String> header = parser.getHeaderNames();
                 for (String column : COLUMNS) {
                     if (!header.contains(column)) {
@@ -123,20 +119,12 @@ public class MbtaGtfsStops implements SourceAdapter {
         if (name == null) {
             return RowResult.rejected("missing stop_name");
         }
-        double lon;
-        double lat;
-        try {
-            lon = Double.parseDouble(Optional.ofNullable(row.get("stop_lon")).orElse(""));
-            lat = Double.parseDouble(Optional.ofNullable(row.get("stop_lat")).orElse(""));
-        } catch (NumberFormatException e) {
-            return RowResult.rejected("unreadable coordinates");
+        ParseContext.ReadPoint point = context.readPoint(row.get("stop_lon"), row.get("stop_lat"));
+        if (point.failure() != null) {
+            return point.failure();
         }
-        Optional<String> problem = context.pointProblem(lon, lat);
-        if (problem.isPresent()) {
-            return ParseContext.OUTSIDE_AREA.equals(problem.get())
-                    ? RowResult.skipped(problem.get())
-                    : RowResult.rejected(problem.get());
-        }
+        double lon = point.lon();
+        double lat = point.lat();
         var attrs = new LinkedHashMap<String, String>();
         attrs.put("location_type", locationType);
         for (String column : List.of("stop_code", "wheelchair_boarding", "municipality", "on_street", "at_street",

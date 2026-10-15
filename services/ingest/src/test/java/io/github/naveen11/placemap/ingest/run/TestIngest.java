@@ -10,11 +10,13 @@ import io.github.naveen11.placemap.ingest.snapshot.SnapshotStore;
 import io.github.naveen11.placemap.ingest.source.SourceAdapter;
 import io.github.naveen11.placemap.ingest.source.SourceAdapters;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.net.URI;
 import java.nio.file.Path;
-import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import javax.sql.DataSource;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 
 /** Builds a run coordinator the way IngestConfig does, over the real registry files, for the container tests. */
 final class TestIngest {
@@ -24,14 +26,29 @@ final class TestIngest {
     private TestIngest() {
     }
 
+    /** The settings as Spring binds them: every default, plus what the tests choose. */
     static IngestProperties properties(Path rawDir, int batchSize, double maxRetireShare) {
         Path data = TestData.REPO.resolve("data");
-        return new IngestProperties(data.resolve("sources.yaml"), data.resolve("categories.yaml"),
-                data.resolve("source-priority.yaml"), data.resolve("area/area.geojson"), data.resolve("area.yaml"), rawDir,
-                batchSize, 2, 2, 2, 1, Duration.ofMinutes(1), Duration.ofSeconds(20), Duration.ofHours(1), 3, 0.02,
-                maxRetireShare, null, false, null,
-                new IngestProperties.Geocoder(URI.create("https://photon.invalid/api/"), 4, 100, Duration.ofSeconds(5)),
-                new IngestProperties.Tool(null, null, null, 100, 1, null, null, null));
+        var settings = new LinkedHashMap<String, Object>();
+        settings.put("sources-file", data.resolve("sources.yaml"));
+        settings.put("categories-file", data.resolve("categories.yaml"));
+        settings.put("source-priority-file", data.resolve("source-priority.yaml"));
+        settings.put("area-file", data.resolve("area/area.geojson"));
+        settings.put("area-config-file", data.resolve("area.yaml"));
+        settings.put("raw-dir", rawDir);
+        settings.put("batch-size", batchSize);
+        settings.put("parse-workers", 2);
+        settings.put("match-workers", 2);
+        settings.put("upsert-workers", 2);
+        settings.put("max-concurrent-runs", 1);
+        settings.put("max-retire-share", maxRetireShare);
+        settings.put("geocoder.url", "https://photon.invalid/api/");
+        settings.put("geocoder.calls-per-second", 100);
+        settings.put("geocoder.timeout", "5s");
+        settings.put("tool.seed", 1);
+        var source = new MapConfigurationPropertySource();
+        settings.forEach((name, value) -> source.put("placemap.ingest." + name, value.toString()));
+        return new Binder(source).bindOrCreate("placemap.ingest", IngestProperties.class);
     }
 
     static RunCoordinator coordinator(DataSource dataSource, Path rawDir, int batchSize, HttpDownloader http,
@@ -41,7 +58,8 @@ final class TestIngest {
 
     /** A geocoder that never finds anything, over the real cache table. */
     static Geocoding noGeocoder(DataSource dataSource) {
-        return new Geocoding(query -> List.of(), new JdbcGeocodeCache(dataSource), 4, 100);
+        var cache = new JdbcGeocodeCache(dataSource, new DataSourceTransactionManager(dataSource));
+        return new Geocoding(query -> List.of(), cache, 4, 100);
     }
 
     static RunCoordinator coordinator(DataSource dataSource, IngestProperties properties, HttpDownloader http,

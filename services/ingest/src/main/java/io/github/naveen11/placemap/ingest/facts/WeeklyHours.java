@@ -285,34 +285,25 @@ public final class WeeklyHours {
     // ------------------------------------------------------------------------------------------ output
 
     /**
-     * The week as a Postgres {@code int4multirange} of minutes since Monday 00:00, overlaps merged; a span past
-     * Sunday midnight continues on Monday morning.
+     * The week as a Postgres {@code int4multirange} literal of minutes since Monday 00:00; a span past Sunday midnight
+     * continues on Monday morning. Postgres sorts the ranges and merges overlapping and adjacent ones as it reads them.
      */
     public String multirange() {
-        var ranges = new ArrayList<int[]>();
+        var ranges = new ArrayList<String>();
         for (DayOfWeek day : DayOfWeek.values()) {
             int base = day.ordinal() * DAY;
             for (Span span : days.get(day)) {
                 int from = base + span.start();
                 int to = base + span.end();
                 if (to <= WEEK) {
-                    ranges.add(new int[] {from, to});
+                    ranges.add("[" + from + "," + to + ")");
                 } else {
-                    ranges.add(new int[] {from, WEEK});
-                    ranges.add(new int[] {0, to - WEEK});
+                    ranges.add("[" + from + "," + WEEK + ")");
+                    ranges.add("[0," + (to - WEEK) + ")");
                 }
             }
         }
-        ranges.sort((a, b) -> a[0] != b[0] ? Integer.compare(a[0], b[0]) : Integer.compare(a[1], b[1]));
-        var merged = new ArrayList<int[]>();
-        for (int[] range : ranges) {
-            if (!merged.isEmpty() && range[0] <= merged.getLast()[1]) {
-                merged.getLast()[1] = Math.max(merged.getLast()[1], range[1]);
-            } else {
-                merged.add(range.clone());
-            }
-        }
-        return merged.stream().map(r -> "[" + r[0] + "," + r[1] + ")").collect(Collectors.joining(",", "{", "}"));
+        return ranges.stream().collect(Collectors.joining(",", "{", "}"));
     }
 
     /** "Mon–Fri 07:00–23:00; Sat 09:00–14:00; Sun closed": consecutive days with the same spans grouped. */

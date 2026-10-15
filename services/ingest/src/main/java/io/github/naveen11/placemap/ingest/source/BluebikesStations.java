@@ -8,7 +8,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -57,7 +56,7 @@ public class BluebikesStations implements SourceAdapter {
             var row = new ArrayList<String>(COLUMNS.size());
             for (String column : COLUMNS) {
                 JsonNode value = station.path(column);
-                row.add(value.isMissingNode() || value.isNull() ? "" : value.asString());
+                row.add(value.asString(""));
             }
             rows.add(row);
         }
@@ -79,21 +78,13 @@ public class BluebikesStations implements SourceAdapter {
         if (name == null) {
             return RowResult.rejected("missing name");
         }
-        double lon;
-        double lat;
-        try {
-            lon = Double.parseDouble(Optional.ofNullable(row.get("lon")).orElse(""));
-            lat = Double.parseDouble(Optional.ofNullable(row.get("lat")).orElse(""));
-        } catch (NumberFormatException e) {
-            return RowResult.rejected("unreadable coordinates");
+        // Bluebikes also serves Everett, Newton, Salem and more: those docks are skipped, not rejected.
+        ParseContext.ReadPoint point = context.readPoint(row.get("lon"), row.get("lat"));
+        if (point.failure() != null) {
+            return point.failure();
         }
-        Optional<String> problem = context.pointProblem(lon, lat);
-        if (problem.isPresent()) {
-            // Bluebikes also serves Everett, Newton, Salem and more; those docks are valid, just not ours.
-            return ParseContext.OUTSIDE_AREA.equals(problem.get())
-                    ? RowResult.skipped(problem.get())
-                    : RowResult.rejected(problem.get());
-        }
+        double lon = point.lon();
+        double lat = point.lat();
         String category = context.categories().officialCategory(ID, row::get).orElse(null);
         var attrs = new LinkedHashMap<String, String>();
         for (String column : List.of("short_name", "capacity", "region_id", "station_type", "has_kiosk")) {

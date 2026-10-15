@@ -212,23 +212,12 @@ public class OsmSource implements SourceAdapter {
         if (category.isEmpty()) {
             return RowResult.skipped("no app category");
         }
-        if (row.get("lon") == null || row.get("lat") == null) {
-            return RowResult.rejected("no coordinates");
+        ParseContext.ReadPoint point = context.readPoint(row.get("lon"), row.get("lat"));
+        if (point.failure() != null) {
+            return point.failure();
         }
-        double lon;
-        double lat;
-        try {
-            lon = Double.parseDouble(row.get("lon"));
-            lat = Double.parseDouble(row.get("lat"));
-        } catch (NumberFormatException e) {
-            return RowResult.rejected("unreadable coordinates");
-        }
-        Optional<String> problem = context.pointProblem(lon, lat);
-        if (problem.isPresent()) {
-            return ParseContext.OUTSIDE_AREA.equals(problem.get())
-                    ? RowResult.skipped(problem.get())
-                    : RowResult.rejected(problem.get());
-        }
+        double lon = point.lon();
+        double lat = point.lat();
         String street = row.get("addr_street");
         String address = street == null ? null
                 : Stream.of(row.get("addr_housenumber"), street).filter(s -> s != null).collect(Collectors.joining(" "));
@@ -245,23 +234,31 @@ public class OsmSource implements SourceAdapter {
                 phone, website, attrs));
     }
 
+    /**
+     * Runs osmium with its output in a file, so waiting for it can time out, and kills it on a timeout or an interrupt
+     * (shutdown): no osmium is ever left running.
+     */
     private void osmium(String... args) throws IOException, InterruptedException {
         var command = new ArrayList<String>();
         command.add(osmium);
         command.addAll(List.of(args));
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        String output;
-        try (var stream = process.getInputStream()) {
-            output = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        }
-        if (!process.waitFor(OSMIUM_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
+        Path transcript = Files.createTempFile("osmium-", ".log");
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(transcript.toFile())
+                .start();
+        try {
+            if (!process.waitFor(OSMIUM_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
+                throw new IOException("osmium " + args[0] + " did not finish within " + OSMIUM_TIMEOUT_MINUTES
+                        + " minutes");
+            }
+            String output = Files.readString(transcript).strip();
+            if (process.exitValue() != 0) {
+                throw new IOException("osmium " + args[0] + " exited with " + process.exitValue() + ": " + output);
+            }
+            log.debug("osmium {}: {}", args[0], output);
+        } finally {
             process.destroyForcibly();
-            throw new IOException("osmium " + args[0] + " did not finish within " + OSMIUM_TIMEOUT_MINUTES + " minutes");
+            Files.deleteIfExists(transcript);
         }
-        if (process.exitValue() != 0) {
-            throw new IOException("osmium " + args[0] + " exited with " + process.exitValue() + ": " + output.strip());
-        }
-        log.debug("osmium {}: {}", args[0], output.strip());
     }
 
     private static int typeOrder(String type) {

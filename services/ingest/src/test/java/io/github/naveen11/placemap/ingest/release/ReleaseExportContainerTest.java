@@ -3,6 +3,7 @@ package io.github.naveen11.placemap.ingest.release;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naveen11.placemap.ingest.TestData;
+import io.github.naveen11.placemap.ingest.TestDatabase;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,17 +15,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * The release export against the real migrations, with places made up to cover each rule: an open place
@@ -34,19 +31,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class ReleaseExportContainerTest {
 
-    private static final Path POSTGIS_IMAGE_DIR = Path.of("../../infra/docker/postgis").toAbsolutePath().normalize();
     private static final Map<String, SourceTerms> TERMS = SourceTerms.load(TestData.REPO.resolve("data/sources.yaml"));
     private static final SourcePriority PRIORITY = SourcePriority.load(TestData.REPO.resolve("data/source-priority.yaml"));
     private static final Path LICENCES = TestData.REPO.resolve("data/licences");
     private static final LocalDate DATE = LocalDate.of(2026, 10, 11);
 
     @Container
-    static final GenericContainer<?> POSTGIS = new GenericContainer<>(
-                    new ImageFromDockerfile("placemap/postgis-test", false).withFileFromPath(".", POSTGIS_IMAGE_DIR))
-            .withEnv("POSTGRES_DB", "placemap")
-            .withEnv("POSTGRES_PASSWORD", "test")
-            .withExposedPorts(5432)
-            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
+    static final PostgreSQLContainer POSTGIS = TestDatabase.postgis();
 
     private static DataSource dataSource;
     private static final Map<String, Long> PLACES = new LinkedHashMap<>();
@@ -56,9 +47,7 @@ class ReleaseExportContainerTest {
 
     @BeforeAll
     static void seed() {
-        String url = "jdbc:postgresql://%s:%d/placemap".formatted(POSTGIS.getHost(), POSTGIS.getMappedPort(5432));
-        dataSource = new DriverManagerDataSource(url, "postgres", "test");
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        dataSource = TestDatabase.migrated(POSTGIS);
         var jdbc = JdbcClient.create(dataSource);
         jdbc.sql("INSERT INTO ingest.run (source, status) VALUES ('test', 'COMPLETE')").update();
 

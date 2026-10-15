@@ -117,24 +117,13 @@ public class OvertureSource implements SourceAdapter {
         if ("permanently_closed".equals(row.get("operating_status"))) {
             return RowResult.skipped("permanently closed");
         }
-        if (row.get("lon") == null || row.get("lat") == null) {
-            return RowResult.rejected("no coordinates");
+        // The envelope query fetches places just across the town lines too: those are skipped, not rejected.
+        ParseContext.ReadPoint point = context.readPoint(row.get("lon"), row.get("lat"));
+        if (point.failure() != null) {
+            return point.failure();
         }
-        double lon;
-        double lat;
-        try {
-            lon = Double.parseDouble(row.get("lon"));
-            lat = Double.parseDouble(row.get("lat"));
-        } catch (NumberFormatException e) {
-            return RowResult.rejected("unreadable coordinates");
-        }
-        Optional<String> problem = context.pointProblem(lon, lat);
-        if (problem.isPresent()) {
-            // The envelope query fetches places just across the town lines too; those are expected, not defects.
-            return ParseContext.OUTSIDE_AREA.equals(problem.get())
-                    ? RowResult.skipped(problem.get())
-                    : RowResult.rejected(problem.get());
-        }
+        double lon = point.lon();
+        double lat = point.lat();
         Optional<String> category = context.categories().overtureCategory(row::get);
         if (category.isEmpty()) {
             return RowResult.skipped("no app category");

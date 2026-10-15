@@ -1,14 +1,11 @@
 package io.github.naveen11.placemap.ingest.source;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import org.apache.commons.codec.digest.DigestUtils;
 
 /**
  * A normalised record ready for {@code place.source_record}. {@code rowHash} covers every stored column, so an
@@ -96,11 +93,6 @@ public record SourceRow(
     }
 
     static String sha256Hex(String text) {
-        try {
-            var digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(text.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("every JDK ships SHA-256", e);
-        }
+        return DigestUtils.sha256Hex(text);
     }
 }

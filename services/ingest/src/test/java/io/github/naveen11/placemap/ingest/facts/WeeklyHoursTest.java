@@ -43,8 +43,10 @@ class WeeklyHoursTest {
     @Test
     void theWeekIsMinutesSinceMondayAndWrapsOverSundayMidnight() {
         assertThat(WeeklyHours.fromOsm("Mo 08:00-09:00; Su 23:00-01:00").orElseThrow().multirange())
-                .isEqualTo("{[0,60),[480,540),[10020,10080)}");
-        assertThat(WeeklyHours.fromOsm("24/7").orElseThrow().multirange()).isEqualTo("{[0,10080)}");
+                .isEqualTo("{[480,540),[10020,10080),[0,60)}");
+        // Postgres reads this as {[0,10080)}: it merges adjacent ranges itself.
+        assertThat(WeeklyHours.fromOsm("24/7").orElseThrow().multirange())
+                .isEqualTo("{[0,1440),[1440,2880),[2880,4320),[4320,5760),[5760,7200),[7200,8640),[8640,10080)}");
         assertThat(WeeklyHours.fromOsm("off").orElseThrow().multirange()).as("closed all week").isEqualTo("{}");
     }
 

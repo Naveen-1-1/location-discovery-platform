@@ -22,6 +22,7 @@ import java.util.List;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /** Wires the importer. The source adapters are {@code @Component}s; everything else is built here. */
 @Configuration(proxyBeanMethods = false)
@@ -54,11 +55,13 @@ class IngestConfig {
 
     /** Shared by every run, so the call limits hold across runs. */
     @Bean
-    Geocoding geocoding(IngestProperties properties, CoverageArea area, DataSource dataSource) {
+    Geocoding geocoding(IngestProperties properties, CoverageArea area, DataSource dataSource,
+            PlatformTransactionManager transactions) {
         IngestProperties.Geocoder settings = properties.geocoder();
         var client = HttpClient.newBuilder().connectTimeout(settings.timeout()).build();
         return new Geocoding(new PhotonGeocoder(settings.url(), area.bounds(), settings.timeout(), client),
-                new JdbcGeocodeCache(dataSource), settings.maxConcurrentCalls(), settings.callsPerSecond());
+                new JdbcGeocodeCache(dataSource, transactions), settings.maxConcurrentCalls(),
+                settings.callsPerSecond());
     }
 
     @Bean

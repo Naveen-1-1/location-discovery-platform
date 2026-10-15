@@ -3,20 +3,16 @@ package io.github.naveen11.placemap.ingest.snapshot;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
 import io.github.naveen11.placemap.ingest.source.SourceAdapter;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.DigestInputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.codec.digest.MessageDigestAlgorithms;
+import org.springframework.util.FileSystemUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -105,7 +101,7 @@ public class SnapshotStore {
         String keep = Long.toString(runId);
         try (Stream<Path> runs = Files.list(sourceDir)) {
             for (Path run : runs.filter(p -> !p.getFileName().toString().equals(keep)).toList()) {
-                deleteTree(run);
+                FileSystemUtils.deleteRecursively(run);
             }
         }
     }
@@ -115,23 +111,6 @@ public class SnapshotStore {
     }
 
     static String sha256(Path file) throws IOException {
-        try (var in = new DigestInputStream(Files.newInputStream(file), MessageDigest.getInstance("SHA-256"))) {
-            in.transferTo(OutputStream.nullOutputStream());
-            return HexFormat.of().formatHex(in.getMessageDigest().digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("every JDK ships SHA-256", e);
-        }
-    }
-
-    private static void deleteTree(Path root) throws IOException {
-        try (Stream<Path> paths = Files.walk(root)) {
-            paths.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.delete(p);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        }
+        return new DigestUtils(MessageDigestAlgorithms.SHA_256).digestAsHex(file);
     }
 }

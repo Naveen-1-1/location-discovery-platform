@@ -104,7 +104,8 @@ public abstract class ArcgisFeatureSource implements SourceAdapter {
     public String remoteVersion(SourceDefinition source, HttpDownloader http) throws IOException, InterruptedException {
         JsonNode metadata = checked(JSON.readTree(http.getText(URI.create(source.access().url() + "?f=json"))));
         JsonNode edited = metadata.path("editingInfo").path("dataLastEditDate");
-        return edited.isMissingNode() || edited.isNull() ? null : "arcgis:" + edited.asString();
+        String date = edited.asString(null);
+        return date == null ? null : "arcgis:" + date;
     }
 
     private List<String> row(JsonNode feature) {
@@ -112,7 +113,7 @@ public abstract class ArcgisFeatureSource implements SourceAdapter {
         var row = new ArrayList<String>(fields().size() + 2);
         for (String field : fields()) {
             JsonNode value = attributes.path(field);
-            row.add(value.isMissingNode() || value.isNull() ? "" : value.asString());
+            row.add(value.asString(""));
         }
         JsonNode geometry = feature.path("geometry");
         row.add(geometry.path("x").isNumber() ? geometry.get("x").asString() : "");

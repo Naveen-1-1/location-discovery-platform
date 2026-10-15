@@ -41,6 +41,16 @@
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-csv</artifactId>
     </dependency>
+    <!-- SHA-256 and MD5 hashes of rows, snapshots and release files. -->
+    <dependency>
+      <groupId>commons-codec</groupId>
+      <artifactId>commons-codec</artifactId>
+    </dependency>
+    <!-- Byte-order marks at the start of CSV snapshots and GTFS files. -->
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+    </dependency>
     <!-- OSM opening_hours, for the "open now" filter (MIT). -->
     <dependency>
       <groupId>ch.poole</groupId>
@@ -61,12 +71,7 @@
       <groupId>org.duckdb</groupId>
       <artifactId>duckdb_jdbc</artifactId>
     </dependency>
-    <!-- The matcher's place index. Native code: used only from platform threads. -->
-    <dependency>
-      <groupId>com.uber</groupId>
-      <artifactId>h3</artifactId>
-    </dependency>
-    <!-- Jaro-Winkler name similarity. -->
+    <!-- Jaro-Winkler name similarity, and the release template's placeholders. -->
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-text</artifactId>
@@ -109,6 +114,16 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-standalone</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

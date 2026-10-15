@@ -13,7 +13,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -24,6 +23,7 @@ import org.duckdb.DuckDBAppender;
 import org.duckdb.DuckDBConnection;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.util.FileSystemUtils;
 
 /**
  * Builds the ODbL data release into {@code <releaseDir>/<date>/}: the places and their source records as
@@ -290,13 +290,6 @@ public final class ReleaseExport {
     }
 
     static void deleteTree(Path path) throws IOException {
-        if (!Files.exists(path)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.walk(path)) {
-            for (Path p : walk.sorted(Comparator.reverseOrder()).toList()) {
-                Files.delete(p);
-            }
-        }
+        FileSystemUtils.deleteRecursively(path);
     }
 }

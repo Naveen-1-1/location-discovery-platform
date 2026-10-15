@@ -14,9 +14,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.io.ParseException;
+import org.locationtech.jts.io.WKTReader;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -39,7 +42,6 @@ public final class ReleaseCheck {
     // Column names that would mean personal data or free text written by people, whatever the source.
     private static final Pattern PERSONAL = Pattern.compile(
             "comment|owner|applicant|manager|first_?name|last_?name|surname|email|official|inspector|phone_");
-    private static final Pattern POINT = Pattern.compile("POINT \\((\\S+) (\\S+)\\)");
     /** Every text column, scanned for display-only source ids. */
     private static final Map<String, List<String>> TEXT_COLUMNS = Map.of(
             "places", List.of("name", "category", "address", "phone", "website", "hours", "hours_source",
@@ -195,15 +197,23 @@ public final class ReleaseCheck {
         }
     }
 
+    /** A geometry from its well-known text, or null if it is not readable. */
+    private static Geometry point(WKTReader wkt, String text) {
+        try {
+            return wkt.read(text);
+        } catch (ParseException e) {
+            return null;
+        }
+    }
+
     /** Every point inside the four towns, checked with the importer's own polygons. */
     private static void points(java.sql.Statement s, CoverageArea.Checker area, List<String> problems)
             throws SQLException {
         var outside = new ArrayList<Long>();
+        var wkt = new WKTReader();
         try (var rows = s.executeQuery("SELECT place_id, CAST(geometry AS VARCHAR) FROM places WHERE geometry IS NOT NULL")) {
             while (rows.next()) {
-                Matcher point = POINT.matcher(rows.getString(2));
-                if (!point.matches() || !area.covers(Double.parseDouble(point.group(1)),
-                        Double.parseDouble(point.group(2)))) {
+                if (!(point(wkt, rows.getString(2)) instanceof Point p) || !area.covers(p.getX(), p.getY())) {
                     outside.add(rows.getLong(1));
                 }
             }

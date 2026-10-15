@@ -6,11 +6,13 @@ import io.github.naveen11.placemap.ingest.source.CambridgeFoodPermits;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.DayOfWeek;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import tools.jackson.databind.JsonNode;
@@ -100,7 +102,8 @@ public final class PlaceFacts {
 
     /** @return the number of places refreshed */
     public static int refresh(Connection c, String source) throws SQLException {
-        var tx = JdbcClient.create(new SingleConnectionDataSource(c, true));
+        var sameConnection = new SingleConnectionDataSource(c, true);
+        var tx = JdbcClient.create(sameConnection);
         tx.sql("""
                 CREATE TEMP TABLE facts_touched ON COMMIT DROP AS
                 SELECT place_id FROM place.place_source_link WHERE source = ?
@@ -126,23 +129,13 @@ public final class PlaceFacts {
                     hoursRecords.computeIfAbsent(rs.getLong("place_id"), k -> new LinkedHashMap<>())
                             .putIfAbsent(rs.getString("source"), JSON.readTree(rs.getString("attrs")));
                 });
-        try (var update = c.prepareStatement("""
+        var updates = new ArrayList<Object[]>();
+        hoursRecords.forEach((place, attrs) -> best(attrs).ifPresent(hours -> updates.add(new Object[] {
+                hours.week().describe(), hours.source(), hours.week().multirange(), place})));
+        new JdbcTemplate(sameConnection).batchUpdate("""
                 UPDATE place.place_facts SET hours = ?, hours_source = ?, open_week = CAST(? AS int4multirange)
                 WHERE place_id = ?
-                """)) {
-            for (var place : hoursRecords.entrySet()) {
-                Optional<Hours> hours = best(place.getValue());
-                if (hours.isEmpty()) {
-                    continue;
-                }
-                update.setString(1, hours.get().week().describe());
-                update.setString(2, hours.get().source());
-                update.setString(3, hours.get().week().multirange());
-                update.setLong(4, place.getKey());
-                update.addBatch();
-            }
-            update.executeBatch();
-        }
+                """, updates);
         return refreshed;
     }
 
@@ -178,11 +171,7 @@ public final class PlaceFacts {
     }
 
     private static String text(JsonNode attrs, String field) {
-        JsonNode value = attrs.path(field);
-        if (value.isMissingNode() || value.isNull()) {
-            return null;
-        }
-        String text = value.asString();
+        String text = attrs.path(field).asString("");
         return text.isBlank() ? null : text;
     }
 }

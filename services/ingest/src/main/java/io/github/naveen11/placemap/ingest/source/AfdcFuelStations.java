@@ -83,7 +83,7 @@ public class AfdcFuelStations implements SourceAdapter {
                 if (value.isArray()) { // ev_connector_types: ["J1772", "J1772COMBO"]
                     row.add(String.join(" ", value.values().stream().map(JsonNode::asString).toList()));
                 } else {
-                    row.add(value.isMissingNode() || value.isNull() ? "" : value.asString());
+                    row.add(value.asString(""));
                 }
             }
             rows.add(row);

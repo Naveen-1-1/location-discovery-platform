@@ -36,7 +36,7 @@ class OsmSourceTest {
     /** The real osmium pipeline on a made-up file: extract to the envelope, filter by category tags, export. */
     @Test
     void osmiumKeepsOnlyCategorisedObjectsInTheEnvelope() throws Exception {
-        assumeTrue(osmiumAvailable(), "osmium is not installed");
+        assumeTrue(TestData.osmiumAvailable(), "osmium is not installed");
 
         Path snapshot = fetch();
 
@@ -51,7 +51,7 @@ class OsmSourceTest {
 
     @Test
     void parsesNodesAndOutlines() throws Exception {
-        assumeTrue(osmiumAvailable(), "osmium is not installed");
+        assumeTrue(TestData.osmiumAvailable(), "osmium is not installed");
         List<CsvRow> rows = TestData.rows(fetch());
         ParseContext context = TestData.parseContext();
 
@@ -77,7 +77,7 @@ class OsmSourceTest {
 
     @Test
     void theSameExtractGivesAByteIdenticalSnapshot() throws Exception {
-        assumeTrue(osmiumAvailable(), "osmium is not installed");
+        assumeTrue(TestData.osmiumAvailable(), "osmium is not installed");
 
         byte[] first = Files.readAllBytes(fetch());
         byte[] second = Files.readAllBytes(fetch());
@@ -112,13 +112,5 @@ class OsmSourceTest {
         Path target = dir.resolve("snapshot.csv");
         adapter.fetch(source, target, http);
         return target;
-    }
-
-    private static boolean osmiumAvailable() {
-        try {
-            return new ProcessBuilder("osmium", "--version").redirectErrorStream(true).start().waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
     }
 }

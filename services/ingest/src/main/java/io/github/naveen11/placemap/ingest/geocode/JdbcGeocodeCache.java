@@ -1,17 +1,20 @@
 package io.github.naveen11.placemap.ingest.geocode;
 
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * {@code ingest.geocode_cache}. Writes commit on their own, outside any batch's transaction: a decision paid for with
- * a Photon call must survive the batch rolling back, so the redone batch finds it.
+ * {@code ingest.geocode_cache}. Writes commit in a transaction of their own, outside any batch's: a decision paid for
+ * with a Photon call must survive the batch rolling back, so the redone batch finds it.
  */
 public final class JdbcGeocodeCache implements GeocodeCache {
 
@@ -20,12 +23,15 @@ public final class JdbcGeocodeCache implements GeocodeCache {
             ON CONFLICT (query) DO NOTHING
             """;
 
-    private final DataSource dataSource;
     private final JdbcClient jdbc;
+    private final JdbcTemplate batches;
+    private final TransactionTemplate ownTransaction;
 
-    public JdbcGeocodeCache(DataSource dataSource) {
-        this.dataSource = dataSource;
+    public JdbcGeocodeCache(DataSource dataSource, PlatformTransactionManager transactions) {
         this.jdbc = JdbcClient.create(dataSource);
+        this.batches = new JdbcTemplate(dataSource);
+        this.ownTransaction = new TransactionTemplate(transactions);
+        ownTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Override
@@ -50,25 +56,12 @@ public final class JdbcGeocodeCache implements GeocodeCache {
         if (decisions.isEmpty()) {
             return;
         }
-        try (Connection c = dataSource.getConnection(); var insert = c.prepareStatement(INSERT)) {
-            c.setAutoCommit(true);
-            for (var entry : decisions.entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
-                Geocode g = entry.getValue();
-                insert.setString(1, entry.getKey());
-                if (g.located()) {
-                    insert.setDouble(2, g.lon());
-                    insert.setDouble(3, g.lat());
-                } else {
-                    insert.setNull(2, Types.DOUBLE);
-                    insert.setNull(3, Types.DOUBLE);
-                }
-                insert.setString(4, g.quality());
-                insert.setString(5, g.detail());
-                insert.addBatch();
-            }
-            insert.executeBatch();
-        } catch (SQLException e) {
-            throw new IllegalStateException("could not store geocodes", e);
-        }
+        // Sorted, so concurrent batches insert in the same order (fewer deadlocks).
+        List<Object[]> rows = decisions.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .map(e -> new Object[] {e.getKey(), e.getValue().lon(), e.getValue().lat(), e.getValue().quality(),
+                        e.getValue().detail()})
+                .toList();
+        ownTransaction.executeWithoutResult(status -> batches.batchUpdate(INSERT, rows,
+                new int[] {Types.VARCHAR, Types.DOUBLE, Types.DOUBLE, Types.VARCHAR, Types.VARCHAR}));
     }
 }

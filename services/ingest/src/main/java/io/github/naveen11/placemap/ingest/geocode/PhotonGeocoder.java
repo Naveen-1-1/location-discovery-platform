@@ -71,8 +71,7 @@ public final class PhotonGeocoder implements Geocoder {
     }
 
     private static String text(JsonNode properties, String field) {
-        JsonNode value = properties.path(field);
-        return value.isMissingNode() || value.isNull() ? null : value.asString();
+        return properties.path(field).asString(null);
     }
 
     private static String join(String number, String street) {

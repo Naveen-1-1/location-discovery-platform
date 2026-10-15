@@ -1,12 +1,12 @@
 package io.github.naveen11.placemap.ingest.catalog;
 
+import io.github.naveen11.placemap.ingest.source.GeoJson;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.List;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.LinearRing;
+import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.prep.PreparedGeometry;
 import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
@@ -30,15 +30,14 @@ public final class CoverageArea {
 
     public static CoverageArea load(Path geojson) {
         JsonNode features = new JsonMapper().readTree(geojson).required("features");
-        var polygons = new ArrayList<Polygon>();
+        var polygons = new ArrayList<Geometry>();
         for (JsonNode feature : features.values()) {
-            JsonNode geometry = feature.required("geometry");
-            JsonNode coordinates = geometry.required("coordinates");
-            switch (geometry.required("type").asString()) {
-                case "Polygon" -> polygons.add(polygon(coordinates));
-                case "MultiPolygon" -> coordinates.values().forEach(p -> polygons.add(polygon(p)));
-                default -> throw new IllegalStateException("unexpected geometry in " + geojson + ": " + geometry.get("type"));
+            Geometry geometry = GeoJson.read(feature.required("geometry"));
+            if (!(geometry instanceof Polygon || geometry instanceof MultiPolygon)) {
+                throw new IllegalStateException("unexpected geometry in " + geojson + ": "
+                        + geometry.getGeometryType());
             }
+            polygons.add(geometry);
         }
         if (polygons.isEmpty()) {
             throw new IllegalStateException("no polygons in " + geojson);
@@ -67,17 +66,5 @@ public final class CoverageArea {
         public boolean covers(double lon, double lat) {
             return area.covers(GEOMETRY.createPoint(new Coordinate(lon, lat)));
         }
-    }
-
-    private static Polygon polygon(JsonNode rings) {
-        List<LinearRing> parsed = rings.values().stream().map(CoverageArea::ring).toList();
-        return GEOMETRY.createPolygon(parsed.getFirst(), parsed.subList(1, parsed.size()).toArray(LinearRing[]::new));
-    }
-
-    private static LinearRing ring(JsonNode positions) {
-        Coordinate[] coords = positions.values().stream()
-                .map(p -> new Coordinate(p.get(0).asDouble(), p.get(1).asDouble()))
-                .toArray(Coordinate[]::new);
-        return GEOMETRY.createLinearRing(coords);
     }
 }

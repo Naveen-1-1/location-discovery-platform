@@ -72,7 +72,7 @@ public class BostonOpenSpace implements SourceAdapter {
             var row = new ArrayList<String>(COLUMNS.size());
             for (String property : PROPERTIES) {
                 JsonNode value = properties.path(property);
-                String text = value.isMissingNode() || value.isNull() ? "" : value.asString();
+                String text = value.asString("");
                 row.add("NULL".equals(text) ? "" : text); // the publisher writes some blanks as the word NULL
             }
             JsonNode geometry = feature.path("geometry");

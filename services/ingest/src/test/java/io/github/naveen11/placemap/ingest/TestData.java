@@ -68,4 +68,13 @@ public final class TestData {
             return parser.getRecords().stream().map(r -> new CsvRow(columns, r)).toList();
         }
     }
+
+    /** Whether the osmium command line tool is installed; the OSM tests need it. */
+    public static boolean osmiumAvailable() {
+        try {
+            return new ProcessBuilder("osmium", "--version").redirectErrorStream(true).start().waitFor() == 0;
+        } catch (IOException | InterruptedException e) {
+            return false;
+        }
+    }
 }

@@ -1,10 +1,8 @@
 package io.github.naveen11.placemap.ingest.source;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.Objects;
+import org.apache.commons.codec.digest.DigestUtils;
 
 /**
  * One line of a record's inspection history: the inspection it belongs to and, if the line reports one, a
@@ -43,11 +41,7 @@ public record InspectionLine(String recordKey, OffsetDateTime inspectedAt, Strin
         public byte[] lineHash() {
             String text = String.join("\u001f", String.valueOf(code), String.valueOf(level), String.valueOf(status),
                     String.valueOf(citedAt), String.valueOf(statusDate), String.valueOf(comment));
-            try {
-                return MessageDigest.getInstance("MD5").digest(text.getBytes(StandardCharsets.UTF_8));
-            } catch (NoSuchAlgorithmException e) {
-                throw new IllegalStateException("every JDK ships MD5", e);
-            }
+            return DigestUtils.md5(text);
         }
     }
 }

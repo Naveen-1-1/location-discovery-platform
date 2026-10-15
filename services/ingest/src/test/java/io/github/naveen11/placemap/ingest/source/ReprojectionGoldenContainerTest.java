@@ -2,15 +2,13 @@ package io.github.naveen11.placemap.ingest.source;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.nio.file.Path;
+import io.github.naveen11.placemap.ingest.TestDatabase;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Phase 2 golden test: EPSG:2249 → WGS84 with proj4j must agree with PostGIS (PROJ) within 0.5 m, on a grid covering
@@ -19,21 +17,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class ReprojectionGoldenContainerTest {
 
-    private static final Path POSTGIS_IMAGE_DIR = Path.of("../../infra/docker/postgis").toAbsolutePath().normalize();
 
     @Container
-    static final GenericContainer<?> POSTGIS = new GenericContainer<>(
-                    new ImageFromDockerfile("placemap/postgis-test", false).withFileFromPath(".", POSTGIS_IMAGE_DIR))
-            .withEnv("POSTGRES_DB", "placemap")
-            .withEnv("POSTGRES_PASSWORD", "test")
-            .withExposedPorts(5432)
-            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
+    static final PostgreSQLContainer POSTGIS = TestDatabase.postgis();
 
     @Test
     void proj4jAgreesWithPostgisWithinHalfAMetreAcrossTheArea() {
-        var jdbc = JdbcClient.create(new DriverManagerDataSource(
-                "jdbc:postgresql://%s:%d/placemap".formatted(POSTGIS.getHost(), POSTGIS.getMappedPort(5432)),
-                "postgres", "test"));
+        var jdbc = JdbcClient.create(new DriverManagerDataSource(POSTGIS.getJdbcUrl(), POSTGIS.getUsername(),
+                POSTGIS.getPassword()));
         jdbc.sql("CREATE EXTENSION IF NOT EXISTS postgis").update();
         var reprojector = new Reprojector();
         double worst = 0;

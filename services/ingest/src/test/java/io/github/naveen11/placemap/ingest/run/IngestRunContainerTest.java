@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naveen11.placemap.ingest.OfflineHttp;
 import io.github.naveen11.placemap.ingest.TestData;
+import io.github.naveen11.placemap.ingest.TestDatabase;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
@@ -24,19 +25,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Whole runs against the real migrations on our PostGIS image. The "download" copies a local file,
@@ -45,19 +42,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class IngestRunContainerTest {
 
-    private static final Path POSTGIS_IMAGE_DIR = Path.of("../../infra/docker/postgis").toAbsolutePath().normalize();
     private static final String SOURCE = BostonActiveFoodLicenses.ID;
     private static final int BATCH_SIZE = 7; // 40 fixture rows → 6 batches, so resume and parallel commits matter
 
     @Container
-    static final GenericContainer<?> POSTGIS = new GenericContainer<>(
-                    new ImageFromDockerfile("placemap/postgis-test", false).withFileFromPath(".", POSTGIS_IMAGE_DIR))
-            .withEnv("POSTGRES_DB", "placemap")
-            .withEnv("POSTGRES_PASSWORD", "test")
-            .withExposedPorts(5432)
-            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
+    static final PostgreSQLContainer POSTGIS = TestDatabase.postgis();
 
-    private static String url;
     private static DataSource dataSource;
     private static JdbcClient jdbc;
 
@@ -69,10 +59,7 @@ class IngestRunContainerTest {
 
     @BeforeAll
     static void migrate() {
-        url = "jdbc:postgresql://%s:%d/placemap?reWriteBatchedInserts=true".formatted(POSTGIS.getHost(),
-                POSTGIS.getMappedPort(5432));
-        dataSource = new DriverManagerDataSource(url, "postgres", "test");
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        dataSource = TestDatabase.migrated(POSTGIS);
         jdbc = JdbcClient.create(dataSource);
     }
 
@@ -254,7 +241,8 @@ class IngestRunContainerTest {
 
     @Test
     void skipsWhileAnotherProcessHoldsTheSourceLock() throws Exception {
-        try (Connection other = DriverManager.getConnection(url, "postgres", "test");
+        try (Connection other = DriverManager.getConnection(TestDatabase.url(POSTGIS), POSTGIS.getUsername(),
+                POSTGIS.getPassword());
                 var lock = other.prepareStatement("SELECT pg_advisory_lock(hashtextextended(?, 0))")) {
             lock.setString(1, "placemap.ingest:" + SOURCE);
             lock.execute();

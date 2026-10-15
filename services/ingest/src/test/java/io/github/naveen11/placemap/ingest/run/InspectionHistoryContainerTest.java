@@ -3,6 +3,7 @@ package io.github.naveen11.placemap.ingest.run;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naveen11.placemap.ingest.OfflineHttp;
+import io.github.naveen11.placemap.ingest.TestDatabase;
 import io.github.naveen11.placemap.ingest.run.RunCoordinator.Outcome;
 import io.github.naveen11.placemap.ingest.source.BostonFoodInspections;
 import io.github.naveen11.placemap.ingest.source.CambridgeSanitaryInspections;
@@ -19,19 +20,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Inspection history through the real pipeline and migrations: 36 real Boston lines (3 licences, 20
@@ -41,18 +38,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class InspectionHistoryContainerTest {
 
-    private static final Path POSTGIS_IMAGE_DIR = Path.of("../../infra/docker/postgis").toAbsolutePath().normalize();
     private static final Path BOSTON = Path.of("src/test/resources/fixtures/boston_food_inspections.csv").toAbsolutePath();
     private static final Path CAMBRIDGE =
             Path.of("src/test/resources/fixtures/cambridge_sanitary_inspections.csv").toAbsolutePath();
 
     @Container
-    static final GenericContainer<?> POSTGIS = new GenericContainer<>(
-                    new ImageFromDockerfile("placemap/postgis-test", false).withFileFromPath(".", POSTGIS_IMAGE_DIR))
-            .withEnv("POSTGRES_DB", "placemap")
-            .withEnv("POSTGRES_PASSWORD", "test")
-            .withExposedPorts(5432)
-            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
+    static final PostgreSQLContainer POSTGIS = TestDatabase.postgis();
 
     private static DataSource dataSource;
     private static JdbcClient jdbc;
@@ -62,10 +53,7 @@ class InspectionHistoryContainerTest {
 
     @BeforeAll
     static void migrate() {
-        String url = "jdbc:postgresql://%s:%d/placemap?reWriteBatchedInserts=true".formatted(POSTGIS.getHost(),
-                POSTGIS.getMappedPort(5432));
-        dataSource = new DriverManagerDataSource(url, "postgres", "test");
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        dataSource = TestDatabase.migrated(POSTGIS);
         jdbc = JdbcClient.create(dataSource);
     }
 

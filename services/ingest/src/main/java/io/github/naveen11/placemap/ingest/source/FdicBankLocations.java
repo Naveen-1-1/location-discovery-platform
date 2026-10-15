@@ -67,7 +67,7 @@ public class FdicBankLocations implements SourceAdapter {
             var row = new ArrayList<String>(COLUMNS.size());
             for (String column : COLUMNS) {
                 JsonNode value = data.path(column);
-                row.add(value.isMissingNode() || value.isNull() ? "" : value.asString());
+                row.add(value.asString(""));
             }
             rows.add(row);
         }

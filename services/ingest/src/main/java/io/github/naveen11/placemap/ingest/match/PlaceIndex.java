@@ -1,9 +1,5 @@
 package io.github.naveen11.placemap.ingest.match;
 
-import com.uber.h3core.H3Core;
-import com.uber.h3core.util.LatLng;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.sql.Array;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -18,6 +14,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.index.hprtree.HPRtree;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.locationtech.jts.operation.distance.DistanceOp;
@@ -32,28 +29,25 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  *   <li>Only places that existed when the run <em>started</em> are included. A resumed run therefore sees exactly
  *       what the first attempt saw, not the places its earlier batches created, so a crash cannot change the
  *       result (crash test C1).
- *   <li>Places are bucketed by H3 cell at resolution 9 (cells ~0.1 km²). Anything within 100 m of a point lies in
- *       its cell or the six around it.
+ *   <li>Places sit in a JTS {@link HPRtree} by their point. A search asks it for everything in a box around the point
+ *       a little larger than the radius, then keeps what is within the radius by great-circle distance.
  *   <li>The run's own source's existing links are included too: a record already linked keeps its place, which is
  *       what keeps {@code place_id}s stable.
  *   <li>A place whose record has an outline (a park) is also near everything within 100 m of that outline, not just
- *       of its point: a large park's point can be a kilometre from the café at its gate. Such places are also
- *       bucketed under every cell their outline reaches.
+ *       of its point: a large park's point can be a kilometre from the café at its gate. Such places sit in a second
+ *       tree by their outline's extent.
  * </ul>
  *
- * Immutable after loading, so match workers share it without locks (JTS's STRtree would take a lock on every
- * query). H3 is native code: load it and query it from platform threads.
+ * Immutable after loading: both trees are built before the index is shared, after which an HPRtree reads without
+ * locks, so match workers share it freely.
  */
 public final class PlaceIndex {
 
-    static final int RESOLUTION = 9;
-
-    /** The largest radius {@link #near} serves for outlined places: their outline is bucketed this far out. */
+    /** The largest radius {@link #near} serves. */
     static final double OUTLINE_REACH_METERS = 100;
 
-    /** A point is at most about one edge (~175 m at resolution 9) from its cell's centre; 200 m covers it. */
-    private static final double CELL_MARGIN_METERS = 200;
-    private static final double METERS_PER_DEGREE_LAT = 111_320;
+    /** Fewer metres than any degree of latitude spans, so a box of {@code r / this} degrees always holds radius r. */
+    private static final double METERS_PER_DEGREE_AT_MOST = 110_000;
     private static final GeometryFactory GEOMETRY = new GeometryFactory();
 
     /** A live place as the matcher sees it. {@code outline} is its record's outline, or null. */
@@ -84,46 +78,32 @@ public final class PlaceIndex {
             GROUP BY p.place_id
             """;
 
-    private final H3Core h3;
-    private final Map<Long, List<IndexedPlace>> byCell;
-    private final Map<Long, List<IndexedPlace>> outlinesByCell;
+    private final HPRtree points = new HPRtree();
+    private final HPRtree outlines = new HPRtree();
     private final Map<String, Long> linkedPlace;
     private final String joinSource;
     private final Map<String, Long> joinedPlace;
     private final int size;
 
-    private PlaceIndex(H3Core h3, List<IndexedPlace> places, Map<String, Long> linkedPlace, String joinSource,
+    private PlaceIndex(List<IndexedPlace> places, Map<String, Long> linkedPlace, String joinSource,
             Map<String, Long> joinedPlace) {
-        this.h3 = h3;
         this.joinSource = joinSource;
         this.joinedPlace = Map.copyOf(joinedPlace);
-        var points = new HashMap<Long, List<IndexedPlace>>();
-        var outlines = new HashMap<Long, List<IndexedPlace>>();
         for (IndexedPlace place : places) {
-            points.computeIfAbsent(h3.latLngToCell(place.lat(), place.lon(), RESOLUTION), k -> new ArrayList<>()).add(place);
+            points.insert(new Envelope(place.lon(), place.lon(), place.lat(), place.lat()), place);
             if (place.outline() != null) {
-                place.outline().getEnvelopeInternal(); // computed lazily by JTS: do it now, before workers share it
-                for (long cell : cover(place.outline().getEnvelopeInternal(), OUTLINE_REACH_METERS)) {
-                    outlines.computeIfAbsent(cell, k -> new ArrayList<>()).add(place);
-                }
+                // JTS computes an envelope lazily: do it now, before match workers share the outline.
+                outlines.insert(place.outline().getEnvelopeInternal(), place);
             }
         }
-        points.replaceAll((cell, list) -> List.copyOf(list));
-        outlines.replaceAll((cell, list) -> List.copyOf(list));
-        this.byCell = Map.copyOf(points);
-        this.outlinesByCell = Map.copyOf(outlines);
+        points.build(); // built once here; queries then read without locks
+        outlines.build();
         this.linkedPlace = Map.copyOf(linkedPlace);
         this.size = places.size();
     }
 
     /** @param joinSource the source this one joins by key ({@code SourceAdapter.joinsSource()}), or null */
     public static PlaceIndex load(DataSource dataSource, String source, long runId, String joinSource) {
-        H3Core h3;
-        try {
-            h3 = H3Core.newInstance();
-        } catch (IOException e) {
-            throw new UncheckedIOException("could not load the H3 native library", e);
-        }
         var jdbc = JdbcClient.create(dataSource);
         var wkt = new WKTReader();
         List<IndexedPlace> places = jdbc.sql(PLACES)
@@ -157,7 +137,7 @@ public final class PlaceIndex {
                         joined.put(rs.getString(1), rs.getLong(2));
                     });
         }
-        return new PlaceIndex(h3, places, linked, joinSource, joined);
+        return new PlaceIndex(places, linked, joinSource, joined);
     }
 
     /** For tests: an index over the given places and links. */
@@ -168,11 +148,7 @@ public final class PlaceIndex {
     /** For tests: an index for a source that joins {@code joinSource}'s places by key. */
     static PlaceIndex of(List<IndexedPlace> places, Map<String, Long> linkedPlace, String joinSource,
             Map<String, Long> joinedPlace) {
-        try {
-            return new PlaceIndex(H3Core.newInstance(), places, linkedPlace, joinSource, joinedPlace);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        return new PlaceIndex(places, linkedPlace, joinSource, joinedPlace);
     }
 
     /** Parses WGS84 WKT, such as an outline written by the importer. */
@@ -205,24 +181,24 @@ public final class PlaceIndex {
      */
     public List<Nearby> near(double lon, double lat, double radiusMeters) {
         if (radiusMeters > OUTLINE_REACH_METERS) {
-            throw new IllegalArgumentException("outlines are indexed for radii up to " + OUTLINE_REACH_METERS + " m");
+            throw new IllegalArgumentException("searches reach at most " + OUTLINE_REACH_METERS + " m");
         }
         var result = new LinkedHashMap<Long, Nearby>();
-        long origin = h3.latLngToCell(lat, lon, RESOLUTION);
-        for (long cell : h3.gridDisk(origin, 1)) {
-            for (IndexedPlace place : byCell.getOrDefault(cell, List.of())) {
-                double meters = meters(lon, lat, place.lon(), place.lat());
-                if (meters <= radiusMeters) {
-                    result.put(place.placeId(), new Nearby(place, meters));
-                }
+        Envelope around = around(new Envelope(lon, lon, lat, lat), radiusMeters);
+        points.query(around, item -> {
+            var place = (IndexedPlace) item;
+            double meters = meters(lon, lat, place.lon(), place.lat());
+            if (meters <= radiusMeters) {
+                result.put(place.placeId(), new Nearby(place, meters));
             }
-        }
-        for (IndexedPlace place : outlinesByCell.getOrDefault(origin, List.of())) {
+        });
+        outlines.query(around, item -> {
+            var place = (IndexedPlace) item;
             double meters = metersToOutline(place.outline(), lon, lat);
             if (meters <= radiusMeters) {
                 result.merge(place.placeId(), new Nearby(place, meters), (a, b) -> a.meters() <= b.meters() ? a : b);
             }
-        }
+        });
         return sorted(result.values());
     }
 
@@ -232,14 +208,13 @@ public final class PlaceIndex {
      */
     public List<Nearby> nearOutline(Geometry outline, double radiusMeters) {
         var result = new ArrayList<Nearby>();
-        for (long cell : cover(outline.getEnvelopeInternal(), radiusMeters)) {
-            for (IndexedPlace place : byCell.getOrDefault(cell, List.of())) {
-                double meters = metersToOutline(outline, place.lon(), place.lat());
-                if (meters <= radiusMeters) {
-                    result.add(new Nearby(place, meters));
-                }
+        points.query(around(outline.getEnvelopeInternal(), radiusMeters), item -> {
+            var place = (IndexedPlace) item;
+            double meters = metersToOutline(outline, place.lon(), place.lat());
+            if (meters <= radiusMeters) {
+                result.add(new Nearby(place, meters));
             }
-        }
+        });
         return sorted(result);
     }
 
@@ -249,16 +224,14 @@ public final class PlaceIndex {
         return list;
     }
 
-    /** The cells whose points can lie within {@code meters} of the envelope. */
-    private List<Long> cover(Envelope envelope, double meters) {
-        double dLat = (meters + CELL_MARGIN_METERS) / METERS_PER_DEGREE_LAT;
-        double dLon = dLat / Math.cos(Math.toRadians((envelope.getMinY() + envelope.getMaxY()) / 2));
-        double south = envelope.getMinY() - dLat;
-        double north = envelope.getMaxY() + dLat;
-        double west = envelope.getMinX() - dLon;
-        double east = envelope.getMaxX() + dLon;
-        return h3.polygonToCells(List.of(new LatLng(south, west), new LatLng(south, east), new LatLng(north, east),
-                new LatLng(north, west)), List.of(), RESOLUTION);
+    /** A box holding everything within {@code meters} of the envelope, and a little more. */
+    private static Envelope around(Envelope envelope, double meters) {
+        double dLat = meters / METERS_PER_DEGREE_AT_MOST;
+        double widestLat = Math.max(Math.abs(envelope.getMinY()), Math.abs(envelope.getMaxY())) + dLat;
+        double dLon = dLat / Math.cos(Math.toRadians(widestLat));
+        var box = new Envelope(envelope);
+        box.expandBy(dLon, dLat);
+        return box;
     }
 
     /** 0 inside the outline, else the great-circle distance to its nearest edge. */

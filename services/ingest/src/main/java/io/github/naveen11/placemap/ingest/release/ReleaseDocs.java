@@ -7,11 +7,8 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -20,6 +17,9 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.codec.digest.MessageDigestAlgorithms;
+import org.apache.commons.text.StringSubstitutor;
 
 /**
  * The files beside the data: {@code LICENSE} (ODbL 1.0), {@code ATTRIBUTION.md} from
@@ -163,11 +163,12 @@ final class ReleaseDocs {
         terms.values().stream().filter(s -> summary.bySource().containsKey(s.id()))
                 .forEach(s -> sources.append("| ").append(s.name()).append(" (`").append(s.id()).append("`) | ")
                         .append(String.format(Locale.ROOT, "%,d", summary.bySource().get(s.id()))).append(" |\n"));
-        return template.replace("{{date}}", date.toString())
-                .replace("{{places}}", String.format(Locale.ROOT, "%,d", summary.places()))
-                .replace("{{records}}", String.format(Locale.ROOT, "%,d", summary.records()))
-                .replace("{{by_category}}", categories.toString().strip())
-                .replace("{{by_source}}", sources.toString().strip());
+        return new StringSubstitutor(Map.of(
+                "date", date.toString(),
+                "places", String.format(Locale.ROOT, "%,d", summary.places()),
+                "records", String.format(Locale.ROOT, "%,d", summary.records()),
+                "by_category", categories.toString().strip(),
+                "by_source", sources.toString().strip()), "{{", "}}").replace(template);
     }
 
     /** {@code sha256sum} format, over every other file, by path. */
@@ -186,17 +187,6 @@ final class ReleaseDocs {
     }
 
     static String sha256(Path file) throws IOException {
-        try {
-            var digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = Files.newInputStream(file)) {
-                byte[] buffer = new byte[64 * 1024];
-                for (int n; (n = in.read(buffer)) > 0; ) {
-                    digest.update(buffer, 0, n);
-                }
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+        return new DigestUtils(MessageDigestAlgorithms.SHA_256).digestAsHex(file);
     }
 }

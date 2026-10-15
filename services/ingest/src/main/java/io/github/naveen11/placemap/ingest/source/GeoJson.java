@@ -12,8 +12,8 @@ import org.locationtech.jts.io.WKTWriter;
 import org.locationtech.jts.simplify.TopologyPreservingSimplifier;
 import tools.jackson.databind.JsonNode;
 
-/** Reads the GeoJSON geometries our sources publish (points and polygons, EPSG:4326) into JTS. */
-final class GeoJson {
+/** Reads the GeoJSON geometries our sources and our area file hold (points and polygons, EPSG:4326) into JTS. */
+public final class GeoJson {
 
     static final GeometryFactory GEOMETRY = new GeometryFactory();
 
@@ -26,7 +26,7 @@ final class GeoJson {
     private GeoJson() {
     }
 
-    static Geometry read(JsonNode geometry) {
+    public static Geometry read(JsonNode geometry) {
         JsonNode coordinates = geometry.required("coordinates");
         return switch (geometry.required("type").asString()) {
             case "Point" -> GEOMETRY.createPoint(position(coordinates));
