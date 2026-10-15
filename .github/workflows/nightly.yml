@@ -1,9 +1,9 @@
 name: nightly
 
-# Phase 7's nightly check on GitHub: the steps of tools/dev.sh nightly, one job each, so they run side by
-# side. The source contract tests run in contracts-nightly.yml. The release check needs the owner's local release
-# (built from Neon), so it runs only in the local command. The load and crash tests L1–L10 and C3–C6 run in
-# load-nightly.yml.
+# Phase 7's nightly check on GitHub: the steps of tools/dev.sh nightly, one job each, so they run side by side.
+# The full ./mvnw verify, container tests included, runs in ci.yml on every push. The source contract tests run in
+# contracts-nightly.yml. The release check needs the owner's local release (built from Neon), so it runs only in the
+# local command. The load and crash tests L1–L10 and C3–C6 run in load-nightly.yml.
 on:
   schedule:
     - cron: '41 5 * * *'   # 05:41 UTC daily
@@ -11,6 +11,10 @@ on:
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   group: nightly
@@ -26,13 +30,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install promtool 3.15.0 (checksum from the release's sha256sums.txt)
+      # The promtool of the Prometheus image the load-test stack pins (one version to update, by Dependabot).
+      - name: Copy promtool out of the load-test stack's Prometheus image
         run: |
-          curl -fsSLo prometheus.tar.gz \
-            https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-amd64.tar.gz
-          echo "2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0  prometheus.tar.gz" | sha256sum -c -
-          tar -xzf prometheus.tar.gz --strip-components=1 prometheus-3.15.0.linux-amd64/promtool
-          sudo mv promtool /usr/local/bin/
+          image=$(PLACEMAP_SUT_CPUS=0 PLACEMAP_LOAD_CPUS=0 docker compose -f infra/compose/load.compose.yaml config \
+                  --images | grep '^prom/prometheus:')
+          docker create --name promtool "$image"
+          sudo docker cp promtool:/bin/promtool /usr/local/bin/promtool
+          docker rm promtool
 
       - run: python3 tools/nightly.py --only promtool --no-history
 
@@ -56,37 +61,6 @@ jobs:
 
       - run: python3 tools/nightly.py --only frontend --no-history
 
-  verify:
-    name: ./mvnw verify, container tests included
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
-
-      - name: Install osmium (the OSM importer's tests run it)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
-
-      # Fails if Docker is missing or any container test was skipped.
-      - run: python3 tools/nightly.py --only verify --no-history
-
-      - name: Upload the logs and test reports
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: verify-reports
-          path: |
-            target/nightly/
-            **/target/surefire-reports/
-          if-no-files-found: ignore
-
   jcstress:
     name: full JCStress suite
     runs-on: ubuntu-24.04
@@ -96,11 +70,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
+      - uses: ./.github/actions/setup
 
       # Reads JCStress's own results line: its exit code does not always report failed tests.
       - run: python3 tools/nightly.py --only jcstress --no-history
@@ -122,14 +92,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: ./.github/actions/setup
         with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
-
-      - name: Install osmium (importing OSM to make its snapshot)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+          osmium: 'true'   # importing OSM to make its snapshot
 
       - name: Week (the input snapshots are made once a week)
         id: week
@@ -145,7 +110,7 @@ jobs:
           key: proof-snapshots-${{ steps.week.outputs.week }}
 
       - name: Build the importer
-        run: ./mvnw -B -ntp -pl services/ingest -am package -DskipTests
+        run: ./mvnw -B -pl services/ingest -am package -DskipTests
 
       - run: python3 tools/nightly.py --only c1,c2 --no-history --fetch-snapshots
 

@@ -36,3 +36,11 @@ updates:
       interval: weekly
     cooldown:
       default-days: 14
+
+  # The load-test stack's images (load.compose.yaml: the name must contain "compose" for Dependabot to find it).
+  - package-ecosystem: docker-compose
+    directory: /infra/compose
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14

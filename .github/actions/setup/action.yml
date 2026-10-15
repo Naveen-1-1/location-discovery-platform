@@ -1,0 +1,18 @@
+name: setup
+description: Java 25 with Maven's cache, and osmium when the importer's OSM code runs. Check the repository out first.
+inputs:
+  osmium:
+    description: "'true' to install osmium-tool (the OSM importer's tests and imports run it)"
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      with:
+        distribution: temurin
+        java-version: '25'
+        cache: maven
+
+    - if: inputs.osmium == 'true'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool

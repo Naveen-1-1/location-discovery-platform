@@ -40,7 +40,7 @@ def run(cmd, **kwargs):
 
 def migrate(jdbc_url, password):
     """Applies every migration with Flyway through the db module, as tools/dev.sh migrate does for Neon."""
-    run([str(ROOT / "mvnw"), "-q", "-B", "-ntp", "-pl", "db", "flyway:migrate", f"-Dflyway.url={jdbc_url}",
+    run([str(ROOT / "mvnw"), "-q", "-B", "-pl", "db", "flyway:migrate", f"-Dflyway.url={jdbc_url}",
          "-Dflyway.user=postgres", f"-Dflyway.password={password}"], cwd=ROOT, env=CHILD_ENV)
 
 

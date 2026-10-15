@@ -62,7 +62,7 @@ stop_previous() {
 case "${1:-help}" in
   migrate)
     load_env
-    ./mvnw -B -ntp -pl db flyway:migrate flyway:info
+    ./mvnw -B -pl db flyway:migrate flyway:info
     ;;
   tiles)
     tools/build-pmtiles.sh

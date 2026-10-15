@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I leaves th
 from harness import CHILD_ENV, JAVA, NO_PROXY, NO_TELEMETRY, Toxiproxy, migrate, migrations, run, say
 
 ROOT = Path(__file__).resolve().parent.parent
-COMPOSE = ["docker", "compose", "-f", str(ROOT / "infra/compose/load.yaml")]
+COMPOSE = ["docker", "compose", "-f", str(ROOT / "infra/compose/load.compose.yaml")]
 WORK = ROOT / "target/load"
 SEED_DIR = ROOT / "data/load"
 DUMP = SEED_DIR / "placemap.dump"
@@ -142,7 +142,7 @@ def seed(args):
         say(f"Leaving out {skipped}: downloading it needs {NEEDS_KEY[skipped]}")
     if not args.no_build:
         say("Building the importer jar...")
-        run(["./mvnw", "-q", "-B", "-ntp", "-pl", "services/ingest", "-am", "package", "-DskipTests"], cwd=ROOT)
+        run(["./mvnw", "-q", "-B", "-pl", "services/ingest", "-am", "package", "-DskipTests"], cwd=ROOT)
 
     say("Starting a fresh database and Photon's stand-in...")
     compose("down")  # a running stack would serve from the database about to be replaced
@@ -252,7 +252,7 @@ def up(args):
         sys.exit("No seeded database yet. Make it once: tools/dev.sh load seed")
     if not args.no_build:
         say("Building the api and live-hub jars...")
-        run(["./mvnw", "-q", "-B", "-ntp", "-pl", "services/api,services/live-hub,load/sse-idle-client", "-am", "package",
+        run(["./mvnw", "-q", "-B", "-pl", "services/api,services/live-hub,load/sse-idle-client", "-am", "package",
              "-DskipTests"], cwd=ROOT)
     sut, load = cpu_split()
     say(f"CPUs: services on {sut}, load generators and Prometheus on {load}")
@@ -856,16 +856,24 @@ def run_scenarios(args):
     except OSError:
         sys.exit("The stack is not up. Start it: tools/dev.sh load up")
     r = Run(args.quick)
-    say(f"Run {r.dir.name} on {r.machine['where']}: {r.machine['docker_cpus']} CPUs and "
-        f"{r.machine['docker_memory_gb']} GB for Docker; services on {r.machine['service_cpus']}, load on "
-        f"{r.machine['load_cpus']}; {r.origins} origins" + (" (quick: setup check only)" if args.quick else ""))
+    header = (f"Run {r.dir.name} on {r.machine['where']}: {r.machine['docker_cpus']} CPUs and "
+              f"{r.machine['docker_memory_gb']} GB for Docker; services on {r.machine['service_cpus']}, load on "
+              f"{r.machine['load_cpus']}; {r.origins} origins" + (" (quick: setup check only)" if args.quick else ""))
+    say(header)
     for i, name in enumerate(names):
         if i:
             time.sleep(15)  # let queues, caches' loads and metrics settle between scenarios
         SCENARIOS[name](r)
     failed = [n for n, v in r.results.items() if not v["passed"]]
-    say(f"LOAD {'FAILED' if failed else 'PASSED'}: {len(names) - len(failed)} of {len(names)} scenarios"
-        + (f" (failed: {', '.join(failed)})" if failed else "") + f"; results in {r.dir.relative_to(ROOT)}")
+    verdict = (f"LOAD {'FAILED' if failed else 'PASSED'}: {len(names) - len(failed)} of {len(names)} scenarios"
+               + (f" (failed: {', '.join(failed)})" if failed else ""))
+    say(f"{verdict}; results in {r.dir.relative_to(ROOT)}")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):  # the run's page on GitHub
+        lines = [f"{n} {'PASSED' if v['passed'] else 'FAILED'}: {v['line']}" for n, v in r.results.items()]
+        l8 = r.dir / "L8.md"
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as page:
+            page.write("\n".join(["### Load and crash tests", "```", header, *lines, verdict, "```", ""])
+                       + (l8.read_text(encoding="utf-8") if l8.exists() else ""))
     sys.exit(1 if failed else 0)
 
 

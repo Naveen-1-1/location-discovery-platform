@@ -296,7 +296,7 @@ def prepare(mode, sources, build, fetch_missing=False):
     shutil.rmtree(WORK / mode, ignore_errors=True)
     if build:
         say("Building the importer jar...")
-        run(["./mvnw", "-q", "-B", "-ntp", "-pl", "services/ingest", "-am", "package", "-DskipTests"], cwd=ROOT)
+        run(["./mvnw", "-q", "-B", "-pl", "services/ingest", "-am", "package", "-DskipTests"], cwd=ROOT)
     DB.start()
     if fetch_missing:
         fetch(mode, sources)

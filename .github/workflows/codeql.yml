@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})
@@ -33,11 +37,7 @@ jobs:
           persist-credentials: false
 
       - if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
+        uses: ./.github/actions/setup
 
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
@@ -45,7 +45,7 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
 
       - if: matrix.build-mode == 'manual'
-        run: ./mvnw -B -ntp -DskipTests package
+        run: ./mvnw -B -DskipTests package
 
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:

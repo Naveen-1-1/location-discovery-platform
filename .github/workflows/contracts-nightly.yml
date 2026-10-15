@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: contracts-nightly
   cancel-in-progress: false
@@ -24,16 +28,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
+      - uses: ./.github/actions/setup
 
       - name: Contract tests
         env:
           # Optional: without it the EV charger source is skipped, as on a laptop without the key.
           NLR_API_KEY: ${{ secrets.NLR_API_KEY }}
         run: >-
-          ./mvnw -B -ntp -pl services/ingest -am test
+          ./mvnw -B -pl services/ingest -am test
           -Dtest=SourceContractTest -Dsurefire.failIfNoSpecifiedTests=false -Dplacemap.contract=true

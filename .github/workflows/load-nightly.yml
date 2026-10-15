@@ -19,6 +19,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: load-nightly
   cancel-in-progress: false
@@ -33,14 +37,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: ./.github/actions/setup
         with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
-
-      - name: Install osmium (the seed imports OSM)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+          osmium: 'true'   # the seed imports OSM
 
       - name: Week (tiles and the database are made once a week)
         id: week
@@ -78,19 +77,7 @@ jobs:
           QUICK: ${{ inputs.quick && '--quick' || '' }}
         run: |
           # shellcheck disable=SC2086
-          python3 tools/load-tests.py run $SCENARIOS $QUICK | tee load-run.log
-          exit "${PIPESTATUS[0]}"
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo '### Load and crash tests'
-            echo '```'
-            grep -E '^(Run |[LC][0-9]+ (PASSED|FAILED)|LOAD )' load-run.log || echo 'no results'
-            echo '```'
-            cat load/results/*/L8.md 2>/dev/null || true
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 tools/load-tests.py run $SCENARIOS $QUICK   # also writes the run's summary page
 
       - name: Upload the results
         if: always()

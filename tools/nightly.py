@@ -100,14 +100,14 @@ def verify(log, _):
         return False, "Docker is not running, so the container tests would be skipped"
     started = time.time()
     # Turns off Testcontainers' "disabledWithoutDocker" condition, so a container test fails rather than skips.
-    ok = log.run(["./mvnw", "-B", "-ntp", "verify",
+    ok = log.run(["./mvnw", "-B", "verify",
                   "-Djunit.jupiter.conditions.deactivate=org.testcontainers.junit.jupiter.TestcontainersExtension"]) == 0
     tests, skipped, failed = test_reports(started)
     return ok and failed == 0, f"{tests} tests, {skipped} skipped (opt-in live tests)"
 
 
 def release(log, _):
-    if not JAR.exists() and log.run(["./mvnw", "-q", "-B", "-ntp", "-pl", "services/ingest", "-am", "package",
+    if not JAR.exists() and log.run(["./mvnw", "-q", "-B", "-pl", "services/ingest", "-am", "package",
                                      "-DskipTests"]) != 0:
         return False, "could not build the importer"
     ok = log.run(JAVA + ["-jar", str(JAR), "--placemap.ingest.tool.name=release-check", *OFFLINE]) == 0
@@ -120,14 +120,14 @@ def release(log, _):
 
 def contracts(log, _):
     started = time.time()
-    ok = log.run(["./mvnw", "-B", "-ntp", "-pl", "services/ingest", "-am", "test", "-Dtest=SourceContractTest",
+    ok = log.run(["./mvnw", "-B", "-pl", "services/ingest", "-am", "test", "-Dtest=SourceContractTest",
                   "-Dsurefire.failIfNoSpecifiedTests=false", "-Dplacemap.contract=true"]) == 0
     tests, skipped, failed = test_reports(started)
     return ok and failed == 0 and tests > 0, f"{tests - skipped} sources checked, {skipped} skipped"
 
 
 def jcstress(log, _):
-    ok = log.run(["./mvnw", "-B", "-ntp", "-pl", "libs/concurrent-jcstress", "-am", "verify", "-Pjcstress",
+    ok = log.run(["./mvnw", "-B", "-pl", "libs/concurrent-jcstress", "-am", "verify", "-Pjcstress",
                   "-Djcstress.mode=default", "-DskipTests"]) == 0
     # JCStress reports failures in its output, not always in its exit code.
     results = re.findall(r"Results: (\d+) planned; (\d+) passed, (\d+) failed, (\d+) soft errs, (\d+) hard errs",

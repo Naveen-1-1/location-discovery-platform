@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash   # with pipefail: a failing command fails its step even when piped
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -22,21 +26,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: ./.github/actions/setup
         with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
+          osmium: 'true'   # the OSM importer's tests run it
 
-      - name: Install osmium (the OSM importer's tests run it)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
-
-      - name: Build and test
-        run: ./mvnw -B -ntp verify
+      # Testcontainers' "disabledWithoutDocker" is turned off, so a container test fails rather than skips.
+      - name: Build and test, container tests included
+        run: >-
+          ./mvnw -B verify
+          -Djunit.jupiter.conditions.deactivate=org.testcontainers.junit.jupiter.TestcontainersExtension
 
       - name: JCStress (sanity mode; the full suite runs in nightly.yml)
         run: |
-          ./mvnw -B -ntp -pl libs/concurrent-jcstress -am verify -Pjcstress -Djcstress.mode=sanity -DskipTests \
+          ./mvnw -B -pl libs/concurrent-jcstress -am verify -Pjcstress -Djcstress.mode=sanity -DskipTests \
             | tee jcstress.log
           # JCStress exits 0 even when tests fail; its last results line says how many did.
           python3 - jcstress.log <<'PY'
