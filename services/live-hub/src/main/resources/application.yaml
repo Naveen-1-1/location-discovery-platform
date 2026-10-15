@@ -4,6 +4,9 @@ spring:
   threads:
     virtual:
       enabled: true        # Tomcat request handling on virtual threads
+  mvc:
+    problemdetails:
+      enabled: true          # errors as application/problem+json, as in the api
 
 server:
   port: 8081

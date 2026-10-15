@@ -17,8 +17,10 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
+import org.springframework.core.task.AsyncTaskExecutor;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -60,7 +62,7 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
     private final LongSupplier nanoClock;
     private final LiveMetrics metrics;
     private final SnapshotPublisher<LiveSnapshot, LiveKey, Frame> publisher;
-    private final Thread thread;
+    private volatile Future<?> running;
 
     // Owned by the writer thread.
     private final Map<Topic, TreeMap<String, byte[]>> items = new EnumMap<>(Topic.class);
@@ -87,7 +89,6 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         }
         this.current = new LiveSnapshot(0, millisClock.getAsLong(), Collections.unmodifiableMap(views));
         this.publisher = new SnapshotPublisher<>(current, LiveSnapshot::version);
-        this.thread = Thread.ofPlatform().name("live-snapshot-writer").unstarted(this::run);
         metrics.gauge("placemap.live.queue.size", "Feed updates waiting for the snapshot writer", queue,
                 BlockingQueue::size);
         metrics.gauge("placemap.live.snapshot.version", "Version of the current snapshot", publisher,
@@ -104,8 +105,9 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         return publisher;
     }
 
-    public void start() {
-        thread.start();
+    /** Starts the writer's loop on {@code thread}: a single platform thread, which owns all live state from now on. */
+    public void start(AsyncTaskExecutor thread) {
+        running = thread.submit(this::run);
     }
 
     /**
@@ -123,13 +125,12 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         return false;
     }
 
+    /** Interrupts the loop; its executor waits for it to end when Spring shuts it down. */
     @Override
     public void close() {
-        thread.interrupt();
-        try {
-            thread.join(Duration.ofSeconds(5));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        Future<?> loop = running;
+        if (loop != null) {
+            loop.cancel(true);
         }
     }
 

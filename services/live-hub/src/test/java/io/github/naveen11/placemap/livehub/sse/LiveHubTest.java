@@ -21,6 +21,8 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /** Admission limits, fan-out through the publisher, and shutdown. */
 @Timeout(20)
@@ -29,14 +31,22 @@ class LiveHubTest {
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final SnapshotPublisher<LiveSnapshot, LiveKey, Frame> publisher =
             new SnapshotPublisher<>(snapshot(1, ""), LiveSnapshot::version);
+    private final ThreadPoolTaskScheduler watchdog = new ThreadPoolTaskScheduler();
     // A watchdog tick of an hour: tests call checkAll() themselves.
-    private final LiveHub hub = new LiveHub(publisher, new LiveHub.Settings(ConnectionMode.VIRTUAL, 4, 8, 3, 2,
+    private final LiveHub hub = new LiveHub(publisher, new LiveHub.Settings(ConnectionMode.VIRTUAL, 8, 3, 2,
             Duration.ofSeconds(10), Duration.ofSeconds(15), Duration.ofHours(1), Duration.ofSeconds(2),
-            Duration.ofSeconds(7)), System::nanoTime, new LiveMetrics(registry));
+            Duration.ofSeconds(7)), System::nanoTime, new LiveMetrics(registry),
+            new VirtualThreadTaskExecutor("live-conn-"), started(watchdog));
+
+    private static ThreadPoolTaskScheduler started(ThreadPoolTaskScheduler scheduler) {
+        scheduler.initialize();
+        return scheduler;
+    }
 
     @AfterEach
     void stop() {
         hub.close();
+        watchdog.shutdown();
     }
 
     @Test

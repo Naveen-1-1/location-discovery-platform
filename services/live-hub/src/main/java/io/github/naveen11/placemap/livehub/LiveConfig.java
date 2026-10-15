@@ -11,7 +11,6 @@ import io.github.naveen11.placemap.livehub.feeds.MbtaStatic;
 import io.github.naveen11.placemap.livehub.feeds.MbtaStream;
 import io.github.naveen11.placemap.livehub.feeds.MbtaV3;
 import io.github.naveen11.placemap.livehub.sse.LiveHub;
-import io.github.naveen11.placemap.livehub.sse.LiveServlet;
 import io.github.naveen11.placemap.livehub.state.Frame;
 import io.github.naveen11.placemap.livehub.state.LiveKey;
 import io.github.naveen11.placemap.livehub.state.LiveSnapshot;
@@ -24,25 +23,78 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.task.SimpleAsyncTaskExecutorBuilder;
+import org.springframework.boot.task.ThreadPoolTaskExecutorBuilder;
+import org.springframework.boot.task.ThreadPoolTaskSchedulerBuilder;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.client.RestClient;
 
-/** Wires live-hub (plan, showcase 2): feeds → snapshot writer → hub → SSE servlet, started and stopped in order. */
+/**
+ * Wires live-hub (plan, showcase 2): feeds → snapshot writer → hub → SSE endpoint, started and stopped in order.
+ * Every thread comes from an executor or scheduler bean below, so Spring starts and stops them all.
+ */
 @Configuration(proxyBeanMethods = false)
 public class LiveConfig {
 
     private static final Logger log = LoggerFactory.getLogger(LiveConfig.class);
     private static final String USER_AGENT = "place-discovery-map-live-hub (+https://github.com/Naveen-1-1/place-discovery-map)";
-    /** For the long-lived MBTA streams: a connect timeout only, since a stream is open for as long as it lasts. */
-    private static final HttpClient STREAMS = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    private static final Duration DRAIN_ON_SHUTDOWN = Duration.ofSeconds(5);
+
+    /**
+     * Where connections run: in {@code virtual} mode a virtual thread each, for the connection's whole life; in
+     * {@code pool} mode a fixed pool that the connections' short drain jobs take turns on (L8 compares the two). The
+     * pool's queue is unbounded on purpose: a connection queues at most one drain job, so connections bound it.
+     */
+    @Bean(defaultCandidate = false)
+    TaskExecutor liveConnections(LiveProperties p, SimpleAsyncTaskExecutorBuilder virtual,
+            ThreadPoolTaskExecutorBuilder pool) {
+        return switch (p.connectionExecutor()) {
+            case VIRTUAL -> virtual.virtualThreads(true).threadNamePrefix("live-conn-")
+                    .taskTerminationTimeout(DRAIN_ON_SHUTDOWN).build();
+            // Still accepts drain jobs while the context closes, so shutdown can end every open stream.
+            case POOL -> pool.corePoolSize(p.poolSize()).maxPoolSize(p.poolSize()).queueCapacity(Integer.MAX_VALUE)
+                    .threadNamePrefix("live-pool-").acceptTasksAfterContextClose(true).awaitTermination(true)
+                    .awaitTerminationPeriod(DRAIN_ON_SHUTDOWN).build();
+        };
+    }
+
+    /** The watchdog: one thread that checks every session once a tick. */
+    @Bean(defaultCandidate = false)
+    ThreadPoolTaskScheduler liveWatchdog(ThreadPoolTaskSchedulerBuilder builder) {
+        return builder.poolSize(1).threadNamePrefix("live-watchdog-").build();
+    }
+
+    /** The polled feeds: a thread each (at most 7 with MBTA's), so one slow feed never delays another. */
+    @Bean(defaultCandidate = false)
+    ThreadPoolTaskScheduler livePolls(ThreadPoolTaskSchedulerBuilder builder) {
+        return builder.poolSize(8).threadNamePrefix("live-poll-").build();
+    }
+
+    /** The snapshot writer's one platform thread, which owns all live state. */
+    @Bean(defaultCandidate = false)
+    SimpleAsyncTaskExecutor liveWriter(SimpleAsyncTaskExecutorBuilder builder) {
+        return builder.virtualThreads(false).threadNamePrefix("live-snapshot-writer-").concurrencyLimit(1)
+                .taskTerminationTimeout(DRAIN_ON_SHUTDOWN).build();
+    }
+
+    /** The MBTA V3 streams' readers: a virtual thread each, for as long as its stream lives. */
+    @Bean(defaultCandidate = false)
+    SimpleAsyncTaskExecutor mbtaStreams(SimpleAsyncTaskExecutorBuilder builder) {
+        return builder.virtualThreads(true).threadNamePrefix("mbta-stream-").build();
+    }
 
     @Bean
     LiveMetrics liveMetrics(MeterRegistry registry) {
@@ -61,24 +113,18 @@ public class LiveConfig {
     }
 
     @Bean
-    LiveHub liveHub(SnapshotWriter writer, LiveProperties p, LiveMetrics metrics) {
-        var settings = new LiveHub.Settings(p.connectionExecutor(), p.poolSize(), p.mailboxCapacity(),
-                p.maxConnections(), p.maxConnectionsPerClient(), p.evictAfter(), p.heartbeat(), p.watchdogTick(),
-                p.retryMin(), p.retryMax());
-        return new LiveHub(writer.publisher(), settings, System::nanoTime, metrics);
+    LiveHub liveHub(SnapshotWriter writer, LiveProperties p, LiveMetrics metrics,
+            @Qualifier("liveConnections") TaskExecutor connections,
+            @Qualifier("liveWatchdog") ThreadPoolTaskScheduler watchdog) {
+        var settings = new LiveHub.Settings(p.connectionExecutor(), p.mailboxCapacity(), p.maxConnections(),
+                p.maxConnectionsPerClient(), p.evictAfter(), p.heartbeat(), p.watchdogTick(), p.retryMin(),
+                p.retryMax());
+        return new LiveHub(writer.publisher(), settings, System::nanoTime, metrics, connections, watchdog);
     }
 
     @Bean
-    ServletRegistrationBean<LiveServlet> liveServlet(LiveHub hub) {
-        var registration = new ServletRegistrationBean<>(new LiveServlet(hub), "/live");
-        registration.setAsyncSupported(true);
-        registration.setLoadOnStartup(1);
-        return registration;
-    }
-
-    @Bean
-    FeedScheduler feedScheduler() {
-        return new FeedScheduler();
+    FeedScheduler feedScheduler(@Qualifier("livePolls") ThreadPoolTaskScheduler polls) {
+        return new FeedScheduler(polls);
     }
 
     @Bean
@@ -97,13 +143,17 @@ public class LiveConfig {
      */
     @Bean
     SmartLifecycle liveLifecycle(SnapshotWriter writer, FeedScheduler scheduler, LiveHub hub, LiveProperties p,
-            RestClient.Builder http, LiveMetrics metrics, Demand departuresDemand, PollNow departuresPollNow) {
+            RestClient.Builder http, LiveMetrics metrics, Demand departuresDemand, PollNow departuresPollNow,
+            @Qualifier("liveWriter") AsyncTaskExecutor writerThread,
+            @Qualifier("livePolls") ThreadPoolTaskScheduler polls, @Qualifier("mbtaStreams") Executor streamReaders) {
         return new SmartLifecycle() {
             private volatile boolean running;
 
             @Override
             public void start() {
-                writer.start();
+                // A thread for each feed from the start, so live-hub's thread count is flat however feeds behave.
+                polls.getScheduledThreadPoolExecutor().prestartAllCoreThreads();
+                writer.start(writerThread);
                 LiveProperties.Bluebikes bluebikes = p.bluebikes();
                 if (bluebikes.enabled()) {
                     RestClient client = http.clone()
@@ -156,17 +206,17 @@ public class LiveConfig {
 
             private MbtaStream stream(LiveProperties.Mbta mbta, String path, Topic topic, MbtaStream.Handler handler,
                     Duration idle) {
-                var stream = new MbtaStream(STREAMS, URI.create(mbta.v3Url() + path), mbta.apiKey(), topic, handler,
-                        writer, metrics, mbta.streamTick(), idle, System::currentTimeMillis);
-                stream.start();
-                scheduler.start(stream); // its tick: "still connected", or a reconnect if it went silent
+                var stream = new MbtaStream(URI.create(mbta.v3Url() + path), mbta.apiKey(), topic, handler, writer,
+                        metrics, mbta.streamTick(), idle, System::currentTimeMillis);
+                stream.start(streamReaders);
+                scheduler.start(stream); // its tick: "still connected"
                 streams.add(stream);
                 return stream;
             }
 
             @Override
             public void stop() {
-                scheduler.close();
+                polls.shutdown();
                 streams.forEach(MbtaStream::close);
                 hub.close();
                 writer.close();

@@ -1,134 +1,97 @@
 package io.github.naveen11.placemap.livehub.feeds;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.task.TaskRejectedException;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.Trigger;
+import org.springframework.scheduling.TriggerContext;
 
 /**
- * Runs the polled feeds (plan, showcase 2). One platform thread only fires triggers; each poll runs on its own virtual
- * thread, so a slow feed never delays another feed's trigger. A per-feed flag stops polls from overlapping: if the
- * previous poll of a feed is still running when its next trigger fires, that trigger is skipped. A feed that hangs
- * therefore holds one thread at most, however long it hangs.
+ * Runs the polled feeds on Spring's {@link TaskScheduler}, a pool with a thread for each feed, so a slow feed never
+ * delays another. Each feed runs as a {@link Trigger}d task: the scheduler starts the next poll only after the last
+ * one returned, so polls of one feed never overlap, and a feed that hangs holds one thread however long it hangs.
  *
- * <p>Triggers keep a steady cadence: the next one is scheduled when the current one fires, not when its poll ends.
- * When a poll reports a different interval (the feed's ttl changed), the waiting trigger is moved to match. All
- * scheduling happens on the trigger thread, so none of it needs a lock.
+ * <p>Polls keep a steady cadence: the next one is due an interval after the last one was due, not after it ended. A
+ * poll can name a different interval (the feed's ttl changed), and the trigger uses it from the next poll on.
  */
-public final class FeedScheduler implements AutoCloseable {
+public final class FeedScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FeedScheduler.class);
 
-    /** One feed's scheduling state. Everything but {@code polling} is touched only on the trigger thread. */
-    private static final class Scheduled {
-        final PolledFeed feed;
-        final AtomicBoolean polling = new AtomicBoolean();
-        Duration interval;
-        long firedAtNanos;
-        ScheduledFuture<?> next;
-        long skipped;
+    private final TaskScheduler scheduler;
 
-        Scheduled(PolledFeed feed) {
-            this.feed = feed;
-            this.interval = feed.initialInterval();
-        }
+    public FeedScheduler(TaskScheduler scheduler) {
+        this.scheduler = scheduler;
     }
 
-    private final ScheduledExecutorService triggers = Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().name("live-feed-trigger").daemon().factory());
-    private final ExecutorService polls = Executors.newThreadPerTaskExecutor(
-            Thread.ofVirtual().name("live-poll-", 0).factory());
-
     /**
-     * Polls {@code feed} now, then on its own cadence until {@link #close()}.
+     * Polls {@code feed} now, then on its own cadence until the scheduler shuts down.
      *
      * @return asks for one extra poll now, unless one is running; the cadence stays as it is
      */
     public Runnable start(PolledFeed feed) {
-        var scheduled = new Scheduled(Objects.requireNonNull(feed, "feed"));
-        triggers.execute(() -> fire(scheduled));
+        var polling = new Polling(Objects.requireNonNull(feed, "feed"));
+        scheduler.schedule(polling, polling);
         return () -> {
-            if (scheduled.polling.compareAndSet(false, true)) {
-                try {
-                    polls.execute(() -> poll(scheduled));
-                } catch (RejectedExecutionException e) {
-                    scheduled.polling.set(false); // shutting down
-                }
+            try {
+                scheduler.schedule(polling::pollIfIdle, Instant.now());
+            } catch (TaskRejectedException e) {
+                // shutting down
             }
         };
     }
 
-    private void fire(Scheduled s) {
-        s.firedAtNanos = System.nanoTime();
-        if (s.polling.compareAndSet(false, true)) {
-            try {
-                polls.execute(() -> poll(s));
-            } catch (RejectedExecutionException e) {
-                s.polling.set(false);
-                return; // shutting down
-            }
-        } else {
-            s.skipped++;
-            log.warn("{}: previous poll still running, skipping this one ({} skipped so far)", s.feed.name(), s.skipped);
-        }
-        schedule(s, s.interval.toNanos());
-    }
+    /** One feed: its task, and the trigger that reads the interval its last poll asked for. */
+    private static final class Polling implements Runnable, Trigger {
 
-    private void poll(Scheduled s) {
-        Duration next = null;
-        try {
-            next = s.feed.poll();
-        } catch (InterruptedException e) {
-            // close(): stop quietly.
-        } catch (RuntimeException e) {
-            log.error("{}: poll failed unexpectedly", s.feed.name(), e); // feeds report their own failures
-        } finally {
-            s.polling.set(false);
+        private final PolledFeed feed;
+        private final ReentrantLock running = new ReentrantLock(); // an extra poll never overlaps a scheduled one
+        private volatile Duration interval;
+
+        Polling(PolledFeed feed) {
+            this.feed = feed;
+            this.interval = feed.initialInterval();
         }
-        if (next != null) {
-            Duration interval = next;
+
+        @Override
+        public void run() {
+            running.lock();
             try {
-                triggers.execute(() -> retime(s, interval));
-            } catch (RejectedExecutionException e) {
-                // shutting down
+                poll();
+            } finally {
+                running.unlock();
             }
         }
-    }
 
-    /** Moves the waiting trigger to {@code interval} after the last one, if the feed asked for a new interval. */
-    private void retime(Scheduled s, Duration interval) {
-        if (interval.equals(s.interval)) {
-            return;
+        void pollIfIdle() {
+            if (running.tryLock()) {
+                try {
+                    poll();
+                } finally {
+                    running.unlock();
+                }
+            }
         }
-        s.interval = interval;
-        if (s.next != null && s.next.cancel(false)) { // false: it already fired, and used the new interval
-            schedule(s, Math.max(0, s.firedAtNanos + interval.toNanos() - System.nanoTime()));
-        }
-    }
 
-    private void schedule(Scheduled s, long delayNanos) {
-        try {
-            s.next = triggers.schedule(() -> fire(s), delayNanos, TimeUnit.NANOSECONDS);
-        } catch (RejectedExecutionException e) {
-            // shutting down
+        private void poll() {
+            try {
+                interval = feed.poll();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // shutting down
+            } catch (RuntimeException e) {
+                log.error("{}: poll failed unexpectedly", feed.name(), e); // feeds report their own failures
+            }
         }
-    }
 
-    @Override
-    public void close() {
-        triggers.shutdownNow();
-        polls.shutdownNow();
-        try {
-            polls.awaitTermination(5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        @Override
+        public Instant nextExecution(TriggerContext context) {
+            Instant last = context.lastScheduledExecution();
+            return last == null ? context.getClock().instant() : last.plus(interval);
         }
     }
 }

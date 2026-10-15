@@ -6,30 +6,37 @@ import io.github.naveen11.placemap.livehub.LiveMetrics;
 import io.github.naveen11.placemap.livehub.state.FeedUpdate;
 import io.github.naveen11.placemap.livehub.state.Topic;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.launchdarkly.eventsource.FaultEvent;
+import com.launchdarkly.eventsource.MessageEvent;
+import com.launchdarkly.eventsource.StreamIOException;
+import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** Reading MBTA's server-sent events, as they arrive on the wire, without a network. */
+/** MBTA's server-sent events, as the SSE client hands them over, turned into updates without a network. */
 class MbtaStreamTest {
 
+    private static final URI VEHICLES = URI.create("https://api-v3.mbta.com/vehicles");
+
     private final List<FeedUpdate> submitted = new ArrayList<>();
-    private final MbtaStream stream = new MbtaStream(HttpClient.newHttpClient(), URI.create("https://api-v3.mbta.com/vehicles"),
-            "unused", Topic.VEHICLES, MbtaV3.vehicles(), submitted::add, new LiveMetrics(new SimpleMeterRegistry()),
-            Duration.ofSeconds(15), Duration.ofMinutes(1), () -> 42L);
+    private final MbtaStream stream = new MbtaStream(VEHICLES, "unused", Topic.VEHICLES, MbtaV3.vehicles(),
+            submitted::add, new LiveMetrics(new SimpleMeterRegistry()), Duration.ofSeconds(15), Duration.ofMinutes(1),
+            () -> 42L);
+
+    private void receive(String event, String data) throws InterruptedException {
+        stream.handle(new MessageEvent(event, data, null, VEHICLES));
+    }
 
     @Test
     void aResetMakesTheStreamHealthyAndLaterEventsBecomeUpdates() throws InterruptedException {
         assertThat(stream.healthy()).isFalse();
-        stream.consume(List.of(
-                "event: reset", "data: [" + MbtaV3Test.BUS.replace("\n", "") + "]", "",
-                ": a comment", "",
-                "event: update", "data: " + MbtaV3Test.BUS.replace("\n", ""), "",
-                "event: remove", "data: {\"id\":\"y2040\",\"type\":\"vehicle\"}", "",
-                "event: unknown", "data: {}", "").iterator());
+        receive("reset", "[" + MbtaV3Test.BUS + "]");
+        receive("update", MbtaV3Test.BUS);
+        receive("remove", "{\"id\":\"y2040\",\"type\":\"vehicle\"}");
+        receive("unknown", "{}");
 
         assertThat(stream.healthy()).isTrue();
         assertThat(submitted).hasSize(3);
@@ -43,14 +50,23 @@ class MbtaStreamTest {
         assertThat(stream.poll()).isEqualTo(Duration.ofSeconds(15));
         assertThat(submitted).as("not connected yet: no answer").isEmpty();
 
-        stream.consume(List.of("event: reset", "data: []", "").iterator());
+        receive("reset", "[]");
         stream.poll();
         assertThat(submitted.getLast()).isInstanceOf(FeedUpdate.Touch.class);
     }
 
     @Test
-    void dataSplitOverSeveralLinesIsJoined() throws InterruptedException {
-        stream.consume(List.of("event: reset", "data: [", "data: ]", "").iterator());
-        assertThat(submitted).singleElement().isInstanceOf(FeedUpdate.Replace.class);
+    void aBrokenStreamIsUnhealthyUntilTheNextReset() throws InterruptedException {
+        receive("reset", "[]");
+        stream.handle(new FaultEvent(new StreamIOException(new IOException("connection reset"))));
+        assertThat(stream.healthy()).isFalse();
+        stream.poll();
+        assertThat(submitted).as("no tick while disconnected").singleElement().isInstanceOf(FeedUpdate.Replace.class);
+    }
+
+    @Test
+    void anUnreadableEventIsSkipped() throws InterruptedException {
+        receive("update", "{not json");
+        assertThat(submitted).isEmpty();
     }
 }

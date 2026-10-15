@@ -1,7 +1,5 @@
 package io.github.naveen11.placemap.livehub.sse;
 
-import static org.assertj.core.api.Assertions.fail;
-
 import io.github.naveen11.placemap.livehub.state.Frame;
 import io.github.naveen11.placemap.livehub.state.LiveKey;
 import io.github.naveen11.placemap.livehub.state.LiveSnapshot;
@@ -10,10 +8,12 @@ import io.github.naveen11.placemap.livehub.state.TopicView;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import org.awaitility.Awaitility;
 
 /** Hand-made snapshots and frames, and a sink that records what a client would receive. */
 final class Fixtures {
@@ -37,14 +37,9 @@ final class Fixtures {
         return LiveKey.item(Topic.BIKES, id);
     }
 
-    static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                fail("timed out waiting until " + what);
-            }
-            Thread.sleep(2);
-        }
+    static void await(String what, BooleanSupplier condition) {
+        Awaitility.await(what).atMost(Duration.ofSeconds(5)).pollInterval(Duration.ofMillis(2))
+                .until(condition::getAsBoolean);
     }
 
     /** Records writes. While {@link #gate} is set, each write waits for it: a client that stopped reading. */

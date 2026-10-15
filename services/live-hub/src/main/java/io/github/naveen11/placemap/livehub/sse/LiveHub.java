@@ -10,22 +10,20 @@ import java.io.Serial;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.TaskScheduler;
 
 /**
- * All open SSE sessions: admits new ones within the connection limits, starts each one's drain
- * on {@code connectionExecutor}, and runs the 1 s watchdog that evicts stuck clients and queues heartbeats.
+ * All open SSE sessions: admits new ones within the connection limits, starts each one's drain on the connection
+ * executor, and runs the 1 s watchdog that evicts stuck clients and queues heartbeats. Both the executor and the
+ * watchdog's scheduler are Spring's, which starts and stops their threads.
  */
 public final class LiveHub implements AutoCloseable {
 
@@ -52,9 +50,8 @@ public final class LiveHub implements AutoCloseable {
     }
 
     /** The limits and timings from {@code placemap.live}. */
-    public record Settings(ConnectionMode mode, int poolSize, int mailboxCapacity, int maxConnections,
-            int maxConnectionsPerClient, Duration evictAfter, Duration heartbeat, Duration watchdogTick,
-            Duration retryMin, Duration retryMax) {
+    public record Settings(ConnectionMode mode, int mailboxCapacity, int maxConnections, int maxConnectionsPerClient,
+            Duration evictAfter, Duration heartbeat, Duration watchdogTick, Duration retryMin, Duration retryMax) {
     }
 
     private static final Logger log = LoggerFactory.getLogger(LiveHub.class);
@@ -63,29 +60,26 @@ public final class LiveHub implements AutoCloseable {
     private final Settings settings;
     private final LongSupplier nanoClock;
     private final LiveMetrics metrics;
-    private final ExecutorService connections;
-    private final ScheduledExecutorService watchdog;
+    private final Executor connections;
+    private final ScheduledFuture<?> watchdog;
     private final Set<ClientSession> sessions = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, AtomicInteger> perClient = new ConcurrentHashMap<>();
     private final AtomicInteger open = new AtomicInteger();
     private volatile boolean closing;
 
+    /**
+     * @param connections in {@link ConnectionMode#VIRTUAL} a thread per task (each runs a connection's whole life); in
+     *                    {@link ConnectionMode#POOL} a fixed pool that the connections' short drain jobs share
+     * @param watchdog    runs {@link #checkAll()} every {@code watchdogTick}
+     */
     public LiveHub(SnapshotPublisher<LiveSnapshot, LiveKey, Frame> publisher, Settings settings, LongSupplier nanoClock,
-            LiveMetrics metrics) {
+            LiveMetrics metrics, Executor connections, TaskScheduler watchdog) {
         this.publisher = publisher;
         this.settings = settings;
         this.nanoClock = nanoClock;
         this.metrics = metrics;
-        this.connections = switch (settings.mode()) {
-            case VIRTUAL -> Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("live-conn-", 0).factory());
-            // Unbounded queue on purpose: SerialDrain queues at most one job per session, so sessions bound it.
-            case POOL -> new ThreadPoolExecutor(settings.poolSize(), settings.poolSize(), 0, TimeUnit.MILLISECONDS,
-                    new LinkedBlockingQueue<>(), Thread.ofPlatform().name("live-pool-", 0).factory());
-        };
-        this.watchdog = Executors.newSingleThreadScheduledExecutor(
-                Thread.ofPlatform().name("live-watchdog").daemon().factory());
-        long tick = settings.watchdogTick().toMillis();
-        watchdog.scheduleWithFixedDelay(this::checkAll, tick, tick, TimeUnit.MILLISECONDS);
+        this.connections = connections;
+        this.watchdog = watchdog.scheduleWithFixedDelay(this::checkAll, settings.watchdogTick());
         metrics.gauge("placemap.live.sessions", "Open SSE connections", open, AtomicInteger::get);
         log.info("live hub: {} connections, at most {} ({} per client)", settings.mode(), settings.maxConnections(),
                 settings.maxConnectionsPerClient());
@@ -143,21 +137,13 @@ public final class LiveHub implements AutoCloseable {
         }
     }
 
+    /** Refuses new streams and closes every open one; the executor then lets their drains end the responses. */
     @Override
     public void close() {
         closing = true;
-        watchdog.shutdownNow();
+        watchdog.cancel(false);
         for (ClientSession session : sessions) {
             session.close(ClientSession.End.SHUTDOWN);
-        }
-        connections.shutdown();
-        try {
-            if (!connections.awaitTermination(5, TimeUnit.SECONDS)) {
-                connections.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            connections.shutdownNow();
-            Thread.currentThread().interrupt();
         }
     }
 

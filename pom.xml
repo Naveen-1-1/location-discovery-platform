@@ -51,6 +51,7 @@
 
     <!-- Libraries the Boot BOM does not manage -->
     <commons-csv.version>1.14.1</commons-csv.version>
+    <commons-io.version>2.22.0</commons-io.version>
     <jts.version>1.20.0</jts.version>
     <archunit.version>1.5.1</archunit.version>
     <duckdb.version>1.5.5.1</duckdb.version>
@@ -61,6 +62,7 @@
     <resilience4j.version>2.4.0</resilience4j.version>
     <bucket4j.version>8.20.0</bucket4j.version>
     <springdoc.version>3.1.1</springdoc.version>
+    <okhttp-eventsource.version>5.0.0</okhttp-eventsource.version>
     <!-- 3.13.2 is the newest stable release; the 4.0 line is still in beta. -->
     <wiremock.version>3.13.2</wiremock.version>
 
@@ -111,6 +113,16 @@
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-csv</artifactId>
         <version>${commons-csv.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>commons-io</groupId>
+        <artifactId>commons-io</artifactId>
+        <version>${commons-io.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.launchdarkly</groupId>
+        <artifactId>okhttp-eventsource</artifactId>
+        <version>${okhttp-eventsource.version}</version>
       </dependency>
       <dependency>
         <groupId>org.locationtech.jts</groupId>

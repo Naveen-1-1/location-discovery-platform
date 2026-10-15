@@ -2,10 +2,10 @@ package io.github.naveen11.placemap.livehub.sse;
 
 import java.io.IOException;
 
-/** Where a session's events go: the servlet response in production, a recorder in tests. One writer at a time. */
+/** Where a session's events go: its SSE emitter in production, a recorder in tests. One writer at a time. */
 public interface EventSink {
 
-    /** May block while the client is slow to read. */
+    /** Writes now, or holds the bytes until {@link #flush()}; either may block while the client is slow to read. */
     void write(byte[] bytes) throws IOException;
 
     void flush() throws IOException;

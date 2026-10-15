@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.livehub.batch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -13,6 +14,8 @@ import io.github.naveen11.placemap.livehub.state.LiveKey;
 import io.github.naveen11.placemap.livehub.state.LiveSnapshot;
 import io.github.naveen11.placemap.livehub.state.Topic;
 import io.github.naveen11.placemap.livehub.state.TopicView;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
@@ -23,10 +26,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.util.unit.DataSize;
+import org.springframework.web.server.ResponseStatusException;
 
 class BatchControllerTest {
 
     private final MockMvc mvc;
+    private final BatchController controller;
 
     BatchControllerTest() {
         var items = new TreeMap<String, byte[]>();
@@ -37,7 +42,8 @@ class BatchControllerTest {
         var properties = new LiveProperties(Duration.ofMillis(250), 10, Duration.ofSeconds(1), 3, null, 1, 8, 10, 2,
                 Duration.ofSeconds(10), Duration.ofSeconds(15), Duration.ofSeconds(1), Duration.ofSeconds(2),
                 Duration.ofSeconds(7), 4, DataSize.ofKilobytes(64), null, null);
-        mvc = MockMvcBuilders.standaloneSetup(new BatchController(publisher, properties))
+        controller = new BatchController(publisher, properties);
+        mvc = MockMvcBuilders.standaloneSetup(controller)
                 .addFilters(new BodyLimitFilter(properties.maxBody().toBytes()))
                 .build();
     }
@@ -93,5 +99,41 @@ class BatchControllerTest {
         mvc.perform(post("/internal/live/batch").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"keys\":[\"bikes:a\",\"bikes:b\",\"bikes:c\",\"bikes:d\",\"bikes:e\"]}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void aBodyOfUnknownLengthIsReadNoFurtherThanTheCap() {
+        // A valid start, then a megabyte of whitespace: only the document-size limit can stop it.
+        String json = "{\"keys\":[]" + " ".repeat(1024 * 1024) + "}";
+        var body = new CountingStream(json.getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> controller.batch(body)).isInstanceOfSatisfying(ResponseStatusException.class,
+                e -> assertThat(e.getStatusCode().value()).isEqualTo(400));
+        assertThat(body.read).as("the cap plus one parser buffer at most").isLessThanOrEqualTo(64 * 1024 + 16 * 1024);
+    }
+
+    /** Counts the bytes handed out, however they are asked for. */
+    private static final class CountingStream extends InputStream {
+
+        private final ByteArrayInputStream bytes;
+        int read;
+
+        CountingStream(byte[] bytes) {
+            this.bytes = new ByteArrayInputStream(bytes);
+        }
+
+        @Override
+        public int read() {
+            int b = bytes.read();
+            read += b >= 0 ? 1 : 0;
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) {
+            int n = bytes.read(buffer, offset, length);
+            read += Math.max(n, 0);
+            return n;
+        }
     }
 }

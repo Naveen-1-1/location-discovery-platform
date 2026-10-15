@@ -1,6 +1,5 @@
 package io.github.naveen11.placemap.livehub.feeds;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -13,6 +12,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.commons.io.input.BOMInputStream;
+import org.apache.commons.io.input.CloseShieldInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -139,26 +140,11 @@ public final class MbtaStatic implements PolledFeed {
         void accept(CSVRecord record);
     }
 
-    /** Parses one zip entry without closing the zip stream. */
+    /** Parses one zip entry, skipping the byte-order mark GTFS files often start with, without closing the zip. */
     private static void each(ZipInputStream in, Row row) throws IOException {
-        var reader = new BufferedReader(new InputStreamReader(new NonClosing(in), StandardCharsets.UTF_8));
-        reader.mark(1);
-        if (reader.read() != '﻿') { // GTFS files often start with a byte-order mark
-            reader.reset();
-        }
-        for (CSVRecord record : GTFS.parse(reader)) {
+        InputStream entry = BOMInputStream.builder().setInputStream(CloseShieldInputStream.wrap(in)).get();
+        for (CSVRecord record : GTFS.parse(new InputStreamReader(entry, StandardCharsets.UTF_8))) {
             row.accept(record);
-        }
-    }
-
-    /** Leaves the zip open when a CSV reader over one of its entries is done. */
-    private static final class NonClosing extends java.io.FilterInputStream {
-        NonClosing(InputStream in) {
-            super(in);
-        }
-
-        @Override
-        public void close() {
         }
     }
 }
