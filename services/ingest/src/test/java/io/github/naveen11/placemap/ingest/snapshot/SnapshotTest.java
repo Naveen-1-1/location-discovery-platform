@@ -3,10 +3,8 @@ package io.github.naveen11.placemap.ingest.snapshot;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.naveen11.placemap.concurrent.BoundedChannel;
 import io.github.naveen11.placemap.ingest.OfflineHttp;
 import io.github.naveen11.placemap.ingest.TestData;
-import io.github.naveen11.placemap.ingest.pipeline.StageListener;
 import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
 import java.io.IOException;
@@ -18,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.batch.infrastructure.item.ExecutionContext;
 
 /** Scanning and batch cutting: the same snapshot must always give the same batches. */
 class SnapshotTest {
@@ -74,9 +73,9 @@ class SnapshotTest {
     void cutsTheSameBatchesEveryTimeAndSkipsCommittedOnes() throws Exception {
         SnapshotScan scan = SnapshotScan.of(TestData.BOSTON_LICENCES, adapter);
 
-        List<RawBatch> first = readAll(scan, Set.of());
-        List<RawBatch> second = readAll(scan, Set.of());
-        List<RawBatch> resumed = readAll(scan, Set.of(0, 2));
+        List<RawBatch> first = readAll(scan, Set.of(), 0, 7);
+        List<RawBatch> second = readAll(scan, Set.of(), 0, 7);
+        List<RawBatch> resumed = readAll(scan, Set.of(0, 2), 0, 7);
 
         assertThat(first).extracting(RawBatch::seq).containsExactly(0, 1, 2, 3, 4, 5, 6);
         assertThat(first).extracting(RawBatch::firstRow).containsExactly(0, 6, 12, 18, 24, 30, 36);
@@ -87,27 +86,38 @@ class SnapshotTest {
     }
 
     @Test
-    void stopsBetweenBatchesWhenAsked() throws Exception {
+    void aPartitionReadsOnlyItsRangeOfBatches() throws Exception {
         SnapshotScan scan = SnapshotScan.of(TestData.BOSTON_LICENCES, adapter);
-        var out = new BoundedChannel<RawBatch>(100);
-        int[] calls = {0};
 
-        new BatchReader(TestData.BOSTON_LICENCES, adapter.columns(), 6, scan, Set.of())
-                .readInto(out, () -> ++calls[0] > 3, StageListener.NONE);
+        List<RawBatch> all = readAll(scan, Set.of(), 0, 7);
+        List<RawBatch> middle = readAll(scan, Set.of(3), 2, 5);
 
-        assertThat(out.size()).isEqualTo(3);
+        assertThat(middle).extracting(RawBatch::seq).containsExactly(2, 4);
+        assertThat(values(middle.getFirst())).isEqualTo(values(all.get(2)));
+        assertThat(middle.getLast().firstRow()).isEqualTo(24);
     }
 
-    private List<RawBatch> readAll(SnapshotScan scan, Set<Integer> done) throws Exception {
-        var out = new BoundedChannel<RawBatch>(100);
-        new BatchReader(TestData.BOSTON_LICENCES, adapter.columns(), 6, scan, done)
-                .readInto(out, () -> false, StageListener.NONE);
-        out.close();
-        var batches = new ArrayList<RawBatch>();
-        for (RawBatch b; (b = out.take()) != null; ) {
-            batches.add(b);
+    @Test
+    void theLastPartitionNoticesAFileThatChangedSinceTheScan() throws Exception {
+        SnapshotScan scan = SnapshotScan.of(TestData.BOSTON_LICENCES, adapter);
+        var grown = new SnapshotScan(scan.rows() - 1, scan.duplicates(), scan.historyOnly());
+
+        assertThatThrownBy(() -> readAll(grown, Set.of(), 4, 7))
+                .isInstanceOf(SnapshotException.class).hasMessageContaining("changed while being read");
+    }
+
+    private List<RawBatch> readAll(SnapshotScan scan, Set<Integer> done, int first, int end) {
+        var reader = new BatchReader(TestData.BOSTON_LICENCES, adapter.columns(), 6, scan, done, first, end);
+        reader.open(new ExecutionContext());
+        try {
+            var batches = new ArrayList<RawBatch>();
+            for (RawBatch b; (b = reader.read()) != null; ) {
+                batches.add(b);
+            }
+            return batches;
+        } finally {
+            reader.close();
         }
-        return batches;
     }
 
     private static List<List<String>> values(List<RawBatch> batches) {

@@ -9,27 +9,30 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
+import org.springframework.scheduling.TaskScheduler;
 
 /**
- * The importer's own timetable, written with plain {@code java.util.concurrent} instead of
- * {@code @Scheduled}.
+ * The importer's timetable.
  *
  * <ul>
- *   <li>One platform thread ticks every minute and only decides what is due: a source with an unfinished run (resume),
- *       one whose last success is older than its cadence, or one whose last failure is older than the retry delay.
- *   <li>Each run gets its own virtual thread; a semaphore caps how many run at once (each holds several database
- *       connections).
- *   <li>Shutdown (SIGTERM): stop reading, let in-flight batches commit, and after the grace period cancel whatever
- *       is left; the batch in flight rolls back and is redone on resume.
+ *   <li>A tick every minute ({@code ticks}, one platform thread) only decides what is due: a source with an unfinished
+ *       run (resume), one whose last success is older than its cadence, or one whose last failure is older than the
+ *       retry delay.
+ *   <li>Each run gets a thread of {@code runs} (virtual), which refuses more runs than {@code max-concurrent-runs}
+ *       (each holds several database connections); a source refused now is due again on the next tick.
+ *   <li>Shutdown (SIGTERM): stop each import after the batches it is committing, wait up to the grace period, then
+ *       interrupt what is left; a batch in flight rolls back and is redone on resume.
  * </ul>
  */
 public class IngestScheduler implements SmartLifecycle {
@@ -41,34 +44,33 @@ public class IngestScheduler implements SmartLifecycle {
     private final SourceAdapters adapters;
     private final RunCoordinator coordinator;
     private final RunStore runs;
-    private final ScheduledExecutorService ticker =
-            Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("ingest-scheduler").factory());
-    private final ExecutorService runThreads =
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("ingest-run-", 1).factory());
-    private final Semaphore slots;
-    private final Map<String, RunControl> active = new ConcurrentHashMap<>();
+    private final TaskScheduler ticks;
+    private final AsyncTaskExecutor runThreads;
+    private final Map<String, Future<?>> active = new ConcurrentHashMap<>();
     private final Set<String> reportedNotReady = ConcurrentHashMap.newKeySet();
+    private volatile ScheduledFuture<?> ticking;
     private volatile boolean running;
 
     public IngestScheduler(IngestProperties properties, SourceCatalog catalog, SourceAdapters adapters,
-            RunCoordinator coordinator, RunStore runs) {
+            RunCoordinator coordinator, RunStore runs, TaskScheduler ticks, AsyncTaskExecutor runThreads) {
         this.properties = properties;
         this.catalog = catalog;
         this.adapters = adapters;
         this.coordinator = coordinator;
         this.runs = runs;
-        this.slots = new Semaphore(properties.maxConcurrentRuns());
+        this.ticks = ticks;
+        this.runThreads = runThreads;
     }
 
     @Override
     public void start() {
         running = true;
         if (properties.onceMode() || properties.toolMode()) {
-            return; // the main thread drives the single run or the tool (IngestApplication)
+            return; // the main thread drives the single run or the tool (IngestRunner)
         }
         log.info("ingest scheduler: checking {} every {}", adapters.all().stream().map(SourceAdapter::sourceId).toList(),
                 properties.tick());
-        ticker.scheduleWithFixedDelay(this::tick, 0, properties.tick().toMillis(), TimeUnit.MILLISECONDS);
+        ticking = ticks.scheduleWithFixedDelay(this::tick, properties.tick());
     }
 
     void tick() {
@@ -86,23 +88,18 @@ public class IngestScheduler implements SmartLifecycle {
         if (!running || active.containsKey(sourceId) || !isDue(sourceId)) {
             return;
         }
-        if (!slots.tryAcquire()) {
-            log.debug("ingest scheduler: {} is due but {} runs are already active", sourceId, slots.availablePermits());
-            return;
+        try {
+            // The map holds the key while the run is submitted, so the run's own removal can never come first.
+            active.computeIfAbsent(sourceId, id -> runThreads.submit(() -> {
+                try {
+                    coordinator.run(id, properties.force());
+                } finally {
+                    active.remove(id);
+                }
+            }));
+        } catch (TaskRejectedException e) {
+            log.debug("ingest scheduler: {} is due but {} runs are already active", sourceId, active.size());
         }
-        var control = new RunControl();
-        if (active.putIfAbsent(sourceId, control) != null) {
-            slots.release();
-            return;
-        }
-        runThreads.execute(() -> {
-            try {
-                coordinator.run(sourceId, control, properties.force());
-            } finally {
-                active.remove(sourceId);
-                slots.release();
-            }
-        });
     }
 
     boolean isDue(String sourceId) {
@@ -132,34 +129,40 @@ public class IngestScheduler implements SmartLifecycle {
 
     /** Once mode: run or resume one source on the calling thread. */
     public RunCoordinator.Outcome runOnce(String sourceId) {
-        var control = new RunControl();
-        active.put(sourceId, control);
+        var done = new CompletableFuture<Void>(); // lets shutdown wait for it
+        active.put(sourceId, done);
         try {
-            return coordinator.run(sourceId, control, properties.force());
+            return coordinator.run(sourceId, properties.force());
         } finally {
             active.remove(sourceId);
+            done.complete(null);
         }
     }
 
     @Override
     public void stop() {
         running = false;
-        ticker.shutdownNow();
-        active.values().forEach(RunControl::requestStop);
+        ScheduledFuture<?> current = ticking;
+        if (current != null) {
+            current.cancel(false);
+        }
+        coordinator.stopAll();
         long deadline = System.nanoTime() + properties.shutdownGrace().toNanos();
-        try {
-            while (!active.isEmpty() && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
-            if (!active.isEmpty()) {
-                log.warn("ingest scheduler: {} still running after {}; cancelling", active.keySet(),
+        for (var run : Map.copyOf(active).entrySet()) {
+            try {
+                run.getValue().get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            } catch (TimeoutException e) {
+                // Interrupts a scheduled run's thread; the import's partitions are interrupted when their executor
+                // closes.
+                log.warn("ingest scheduler: {} still running after {}; cancelling", run.getKey(),
                         properties.shutdownGrace());
-                active.values().forEach(RunControl::cancel);
+                run.getValue().cancel(true);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                // the run's own failure; it is logged where it happened
             }
-            runThreads.shutdown();
-            runThreads.awaitTermination(5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 

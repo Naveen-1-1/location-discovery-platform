@@ -123,7 +123,7 @@ class SourceContractTest {
                 .filter(r -> AddressRule.query(r) != null).limit(SAMPLE).toList();
         var photon = new PhotonGeocoder(URI.create("https://photon.komoot.io/api/"), TestData.area().bounds(),
                 Duration.ofSeconds(10), LiveHttp.client());
-        var geocoding = new Geocoding(photon, new InMemoryGeocodeCache(), 4, 1);
+        var geocoding = new Geocoding(photon, new InMemoryGeocodeCache(), 1);
         var area = TestData.area().checker();
         Map<String, Integer> reasons = new TreeMap<>();
         int placed = 0;

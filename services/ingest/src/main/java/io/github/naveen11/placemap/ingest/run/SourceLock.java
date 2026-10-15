@@ -54,6 +54,15 @@ final class SourceLock implements AutoCloseable {
         return connection;
     }
 
+    /** Whether the lock's connection still answers. A lost connection takes the lock with it. */
+    boolean isHeld() {
+        try {
+            return connection.isValid(5);
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
     @Override
     public void close() {
         try (connection; var statement = connection.prepareStatement("SELECT pg_advisory_unlock(hashtextextended(?, 0))")) {

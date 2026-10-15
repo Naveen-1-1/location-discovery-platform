@@ -14,6 +14,8 @@ import java.nio.file.Path;
 import java.util.List;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
 /** The real registry files from the repository, plus the fixture snapshot (40 real rows, 2026-10-10). */
 public final class TestData {
@@ -44,6 +46,11 @@ public final class TestData {
 
     public static AreaPostcodes postcodes() {
         return POSTCODES;
+    }
+
+    /** Platform threads for native code, as the application's {@code nativeCalls} executor. */
+    public static AsyncTaskExecutor nativeCalls() {
+        return new SimpleAsyncTaskExecutor("test-native-");
     }
 
     public static ParseContext parseContext() {

@@ -70,7 +70,7 @@ public final class Matcher {
 
         PlaceIndex.Nearby best = null;
         double bestScore = -1;
-        for (PlaceIndex.Nearby candidate : nearby) { // nearest first, so ties go to the nearer, then lower id
+        for (PlaceIndex.Nearby candidate : nearby) { // nearest first, so ties go to the nearer, then the lower anchor
             if (!priority.compatible(record.category(), candidate.place().category())) {
                 continue; // a hospital is not its own medical library, however alike the names
             }

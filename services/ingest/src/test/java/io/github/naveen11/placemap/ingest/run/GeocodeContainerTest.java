@@ -68,7 +68,7 @@ class GeocodeContainerTest {
                     : List.of();
         };
         var cache = new JdbcGeocodeCache(dataSource, new DataSourceTransactionManager(dataSource));
-        var geocoding = new Geocoding(photon, cache, 4, 100);
+        var geocoding = new Geocoding(photon, cache, 100);
         var http = new OfflineHttp() {
             @Override
             public void download(URI uri, Path target) throws IOException {
@@ -93,6 +93,6 @@ class GeocodeContainerTest {
 
     private Outcome run(Geocoding geocoding, OfflineHttp http, boolean force) {
         return TestIngest.coordinator(dataSource, TestIngest.properties(tmp.resolve("raw"), 2, 0.2), http, geocoding,
-                new BostonActiveFoodLicenses()).run(SOURCE, new RunControl(), force);
+                new BostonActiveFoodLicenses()).run(SOURCE, force);
     }
 }

@@ -82,7 +82,7 @@ class RemoteVersionTest {
 
     @Test
     void overtureReleasesArePinnedInTheUrl() throws Exception {
-        String version = new OvertureSource(TestData.area())
+        String version = new OvertureSource(TestData.area(), TestData.nativeCalls())
                 .remoteVersion(TestData.catalog().get(OvertureSource.ID), new Metadata(null, null));
 
         assertThat(version).isEqualTo("overture:s3://overturemaps-us-west-2/release/2026-09-23.1/theme=places/type=place/");

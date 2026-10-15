@@ -13,20 +13,20 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 /**
- * The showcase code does its own threading with java.util.concurrent, so Spring's {@code @Async} and
- * {@code @Scheduled} (which would hide it) are banned in the importer and the concurrency library.
+ * Every thread in the importer comes from a named Spring executor bean, so Spring's {@code @Async} and
+ * {@code @Scheduled} (which would hide them behind annotations) stay banned.
  */
 class ArchitectureTest {
 
     private static final JavaClasses SHOWCASE = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-            .importPackages("io.github.naveen11.placemap.ingest", "io.github.naveen11.placemap.concurrent");
+            .importPackages("io.github.naveen11.placemap.ingest");
 
     @Test
     void noSpringAsyncOrScheduledMethods() {
         noMethods().should().beAnnotatedWith(Async.class)
                 .orShould().beAnnotatedWith(Scheduled.class)
-                .because("threads in showcase code are explicit")
+                .because("threads come from named executor beans")
                 .check(SHOWCASE);
     }
 
@@ -35,7 +35,7 @@ class ArchitectureTest {
         noClasses().should().beAnnotatedWith(Async.class)
                 .orShould().beAnnotatedWith(EnableAsync.class)
                 .orShould().beAnnotatedWith(EnableScheduling.class)
-                .because("threads in showcase code are explicit")
+                .because("threads come from named executor beans")
                 .check(SHOWCASE);
     }
 }

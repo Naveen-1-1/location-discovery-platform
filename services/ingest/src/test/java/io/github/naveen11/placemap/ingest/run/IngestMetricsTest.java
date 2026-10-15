@@ -5,8 +5,6 @@ import static java.util.stream.Collectors.mapping;
 import static java.util.stream.Collectors.toSet;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.naveen11.placemap.concurrent.BoundedChannel;
-import io.github.naveen11.placemap.concurrent.ContiguousWatermark;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
@@ -27,21 +25,17 @@ class IngestMetricsTest {
         var metrics = new IngestMetrics(registry);
         metrics.runFinished("osm", RunCoordinator.Outcome.COMPLETE);
         metrics.limitTripped("osm", "rejects");
-        try (IngestMetrics.RunMetrics run = metrics.forRun("osm")) {
-            run.watchQueue("parse", new BoundedChannel<>(2));
-            run.watchProgress(new ContiguousWatermark(), 3);
-            run.stage("read").blocked(1);
-            run.stage("read").processed(1);
-            run.retried();
-            run.recommitted();
-            run.committed(new MatchedBatch(new ParsedBatch(0, 0, List.of(), List.of(), 0, List.of(), "x"), List.of()));
+        IngestMetrics.RunMetrics run = metrics.forRun("osm");
+        run.retried();
+        run.recommitted();
+        run.geocoded(1, 1, 0, 1);
+        run.committed(new MatchedBatch(new ParsedBatch(0, 0, List.of(), List.of(), 0, List.of(), "x"), List.of()));
 
-            Map<String, Set<String>> meterNamesByExportedName = registry.getMeters().stream()
-                    .collect(groupingBy(m -> exportedName(m.getId()), mapping(m -> m.getId().getName(), toSet())));
+        Map<String, Set<String>> meterNamesByExportedName = registry.getMeters().stream()
+                .collect(groupingBy(m -> exportedName(m.getId()), mapping(m -> m.getId().getName(), toSet())));
 
-            assertThat(meterNamesByExportedName).hasSizeGreaterThan(10)
-                    .allSatisfy((exported, names) -> assertThat(names).as(exported).hasSize(1));
-        }
+        assertThat(meterNamesByExportedName).hasSizeGreaterThan(7)
+                .allSatisfy((exported, names) -> assertThat(names).as(exported).hasSize(1));
     }
 
     private static String exportedName(Meter.Id id) {

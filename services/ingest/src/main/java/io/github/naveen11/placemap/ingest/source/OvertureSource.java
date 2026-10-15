@@ -2,7 +2,6 @@ package io.github.naveen11.placemap.ingest.source;
 
 import io.github.naveen11.placemap.ingest.catalog.CoverageArea;
 import io.github.naveen11.placemap.ingest.catalog.SourceDefinition;
-import io.github.naveen11.placemap.ingest.pipeline.PlatformThreads;
 import io.github.naveen11.placemap.ingest.snapshot.HttpDownloader;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -12,6 +11,10 @@ import java.sql.DriverManager;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -51,9 +54,12 @@ public class OvertureSource implements SourceAdapter {
     private static final double ENVELOPE_MARGIN_DEGREES = 0.005; // ~500 m
 
     private final CoverageArea area;
+    private final AsyncTaskExecutor nativeCalls;
 
-    public OvertureSource(CoverageArea area) {
+    /** @param nativeCalls platform threads: DuckDB is native code, which would pin a virtual thread's carrier */
+    public OvertureSource(CoverageArea area, @Qualifier("nativeCalls") AsyncTaskExecutor nativeCalls) {
         this.area = area;
+        this.nativeCalls = nativeCalls;
     }
 
     @Override
@@ -79,7 +85,7 @@ public class OvertureSource implements SourceAdapter {
                 b[0] - ENVELOPE_MARGIN_DEGREES, b[2] + ENVELOPE_MARGIN_DEGREES,
                 b[1] - ENVELOPE_MARGIN_DEGREES, b[3] + ENVELOPE_MARGIN_DEGREES,
                 quote(part.toString()));
-        PlatformThreads.run("ingest-duckdb-" + ID, () -> {
+        Future<?> extract = nativeCalls.submit(() -> {
             try (var connection = DriverManager.getConnection("jdbc:duckdb:");
                     var statement = connection.createStatement()) {
                 if (files.startsWith("s3://")) {
@@ -89,7 +95,16 @@ public class OvertureSource implements SourceAdapter {
                 }
                 statement.execute(sql);
             }
+            return null;
         });
+        try {
+            extract.get();
+        } catch (InterruptedException e) {
+            extract.cancel(true); // best effort: native code may not notice
+            throw e;
+        } catch (ExecutionException e) {
+            throw new IOException("DuckDB could not extract " + ID + ": " + e.getCause().getMessage(), e.getCause());
+        }
         Files.move(part, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 

@@ -1,8 +1,6 @@
 package io.github.naveen11.placemap.ingest.run;
 
 import io.github.naveen11.placemap.ingest.source.InspectionLine;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -12,9 +10,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 
 /**
- * Writes a batch's inspection history inside the batch's transaction. Every statement is safe to
+ * Writes a batch's inspection history inside the batch's transaction (the caller's, which {@code jdbc} joins). Every statement is safe to
  * repeat and gives the same result whatever order batches commit in, because a record's lines can fall into two
  * batches that commit in parallel:
  *
@@ -62,7 +62,7 @@ final class InspectionWriter {
     private InspectionWriter() {
     }
 
-    static void write(Connection c, String source, long runId, List<InspectionLine> lines) throws SQLException {
+    static void write(JdbcTemplate jdbc, String source, long runId, List<InspectionLine> lines) {
         if (lines.isEmpty()) {
             return;
         }
@@ -77,61 +77,53 @@ final class InspectionWriter {
                         (a, b) -> a.compareTo(b) >= 0 ? a : b);
             }
         }
-        try (var upsert = c.prepareStatement(UPSERT_CODE)) {
-            for (var code : codes.entrySet()) {
-                upsert.setString(1, source);
-                upsert.setString(2, code.getKey());
-                upsert.setString(3, code.getValue().isEmpty() ? null : code.getValue());
-                upsert.addBatch();
-            }
-            upsert.executeBatch();
+        if (!codes.isEmpty()) {
+            jdbc.batchUpdate(UPSERT_CODE, codes.entrySet(), codes.size(), (ps, code) -> {
+                ps.setString(1, source);
+                ps.setString(2, code.getKey());
+                ps.setString(3, code.getValue().isEmpty() ? null : code.getValue());
+            });
         }
-        try (var insert = c.prepareStatement(INSERT_INSPECTION)) {
-            for (var inspection : inspections.entrySet()) {
-                insert.setString(1, source);
-                insert.setString(2, inspection.getKey().recordKey());
-                insert.setObject(3, inspection.getValue());
-                insert.setString(4, inspection.getKey().result());
-                insert.setLong(5, runId);
-                insert.addBatch();
-            }
-            insert.executeBatch();
-        }
-        Map<InspectionKey, Long> ids = findIds(c, source, inspections.keySet());
+        jdbc.batchUpdate(INSERT_INSPECTION, inspections.entrySet(), inspections.size(), (ps, inspection) -> {
+            ps.setString(1, source);
+            ps.setString(2, inspection.getKey().recordKey());
+            ps.setObject(3, inspection.getValue());
+            ps.setString(4, inspection.getKey().result());
+            ps.setLong(5, runId);
+        });
+        Map<InspectionKey, Long> ids = findIds(jdbc, source, inspections.keySet());
 
         var violations = new ArrayList<InspectionLine>();
         for (InspectionLine line : lines) {
             if (line.violation() != null) {
+                if (!ids.containsKey(InspectionKey.of(line))) {
+                    throw new IllegalStateException("inspection row missing right after insert: "
+                            + InspectionKey.of(line));
+                }
                 violations.add(line);
             }
         }
-        try (var insert = c.prepareStatement(INSERT_VIOLATION)) {
-            for (InspectionLine line : violations) {
-                InspectionLine.Violation v = line.violation();
-                Long id = ids.get(InspectionKey.of(line));
-                if (id == null) {
-                    throw new SQLException("inspection row missing right after insert: " + InspectionKey.of(line));
-                }
-                insert.setLong(1, id);
-                insert.setBytes(2, v.lineHash());
-                insert.setString(3, v.code());
-                if (v.level() == null) {
-                    insert.setNull(4, Types.SMALLINT);
-                } else {
-                    insert.setShort(4, v.level().shortValue());
-                }
-                insert.setString(5, v.status());
-                insert.setObject(6, v.citedAt());
-                insert.setObject(7, v.statusDate());
-                insert.setString(8, v.comment());
-                insert.addBatch();
-            }
-            insert.executeBatch();
+        if (violations.isEmpty()) {
+            return;
         }
+        jdbc.batchUpdate(INSERT_VIOLATION, violations, violations.size(), (ps, line) -> {
+            InspectionLine.Violation v = line.violation();
+            ps.setLong(1, ids.get(InspectionKey.of(line)));
+            ps.setBytes(2, v.lineHash());
+            ps.setString(3, v.code());
+            if (v.level() == null) {
+                ps.setNull(4, Types.SMALLINT);
+            } else {
+                ps.setShort(4, v.level().shortValue());
+            }
+            ps.setString(5, v.status());
+            ps.setObject(6, v.citedAt());
+            ps.setObject(7, v.statusDate());
+            ps.setString(8, v.comment());
+        });
     }
 
-    private static Map<InspectionKey, Long> findIds(Connection c, String source, Iterable<InspectionKey> keys)
-            throws SQLException {
+    private static Map<InspectionKey, Long> findIds(JdbcTemplate jdbc, String source, Iterable<InspectionKey> keys) {
         var recordKeys = new ArrayList<String>();
         var times = new ArrayList<String>();
         var results = new ArrayList<String>();
@@ -141,19 +133,12 @@ final class InspectionWriter {
             results.add(key.result());
         }
         var ids = new HashMap<InspectionKey, Long>();
-        try (var find = c.prepareStatement(FIND_INSPECTIONS)) {
-            find.setArray(1, c.createArrayOf("text", recordKeys.toArray()));
-            find.setArray(2, c.createArrayOf("text", times.toArray()));
-            find.setArray(3, c.createArrayOf("text", results.toArray()));
-            find.setString(4, source);
-            try (var rs = find.executeQuery()) {
-                while (rs.next()) {
-                    var key = new InspectionKey(rs.getString(2), rs.getObject(3, OffsetDateTime.class).toInstant(),
-                            rs.getString(4));
-                    ids.put(key, rs.getLong(1));
-                }
-            }
-        }
+        jdbc.query(FIND_INSPECTIONS, rs -> {
+            var key = new InspectionKey(rs.getString(2), rs.getObject(3, OffsetDateTime.class).toInstant(),
+                    rs.getString(4));
+            ids.put(key, rs.getLong(1));
+        }, new SqlArrayValue("text", recordKeys.toArray()), new SqlArrayValue("text", times.toArray()),
+                new SqlArrayValue("text", results.toArray()), source);
         return ids;
     }
 }

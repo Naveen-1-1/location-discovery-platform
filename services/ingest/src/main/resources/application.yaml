@@ -12,12 +12,22 @@ spring:
     username: ${PGUSER}
     password: ${PGPASSWORD}
     hikari:                    # plain milliseconds
-      # Per run: 4 upsert connections + 1 lock connection; 2 runs at once, plus 2 for bookkeeping.
+      # Per run: one connection for each of the 4 partitions while it writes, plus the lock's; 2 runs at once, plus
+      # 2 for bookkeeping.
       maximum-pool-size: 12
       minimum-idle: 0            # let Neon scale to zero between runs
       idle-timeout: 60000
       max-lifetime: 300000       # in-use connections (like the lock's) are never retired mid-run
       connection-timeout: 10000
+  batch:
+    job:
+      enabled: false             # the scheduler starts each import; nothing runs at start-up
+    jdbc:
+      table-prefix: batch.BATCH_ # Spring Batch's own tables, in their own schema
+      initialize-schema: never   # a migration creates them
+      # The source lock already keeps one run per source, so creating a job needs no serializable transaction (which
+      # can fail when two sources start at once).
+      isolation-level-for-create: read_committed
 
 management:
   opentelemetry:
@@ -32,25 +42,4 @@ management:
         histogram-flavor: base2_exponential_bucket_histogram
   # OTLP endpoints and auth come from OTEL_EXPORTER_OTLP_* in .env, as for the api.
 
-placemap:
-  ingest:
-    sources-file: data/sources.yaml
-    categories-file: data/categories.yaml
-    source-priority-file: data/source-priority.yaml
-    area-file: data/area/area.geojson
-    area-config-file: data/area.yaml   # the towns' ZIP codes
-    raw-dir: data/raw          # git-ignored
-    batch-size: 1000
-    upsert-workers: 4
-    max-concurrent-runs: 2
-    tick: 1m
-    shutdown-grace: 20s
-    retry-failed-after: 1h
-    max-attempts: 3
-    max-reject-share: 0.02
-    max-retire-share: 0.2
-    geocoder:                  # Photon; the public instance in development
-      url: https://photon.komoot.io/api/
-      max-concurrent-calls: 4  # across all runs (the plan's Semaphore(4))
-      calls-per-second: 1      # fair use of the public instance; raise for our own
-      timeout: 10s
+# placemap.ingest.* defaults are in IngestProperties.

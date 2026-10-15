@@ -1,7 +1,7 @@
 {
   "uid": "placemap-ingest",
   "title": "placemap \u00b7 Ingest",
-  "description": "Import runs, throughput, backpressure and memory of the importer. Source: infra/observability/grafana/dashboards/ingest.json",
+  "description": "Import runs, throughput, batch timings and memory of the importer. Source: infra/observability/grafana/dashboards/ingest.json",
   "tags": [
     "placemap",
     "ingest"
@@ -280,8 +280,8 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Run progress",
-      "description": "Share of the run's batches committed in order (the contiguous watermark).",
+      "title": "Batches committed per second",
+      "description": "Each batch of rows commits in its own transaction; the partitions of a run commit in parallel.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -294,9 +294,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
+          "unit": "ops",
+          "min": 0
         },
         "overrides": []
       },
@@ -316,7 +315,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (source) (placemap_ingest_run_batches_done{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}) / max by (source) (placemap_ingest_run_batches{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"})",
+          "expr": "sum by (source) (rate(placemap_ingest_batches_total{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}[$__rate_interval]))",
           "legendFormat": "{{source}}"
         }
       ]
@@ -366,8 +365,8 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Queue fill (share of capacity)",
-      "description": "Batches waiting in each stage's input queue. A slow database fills the upsert queue first, then the queues before it: that is backpressure reaching the reader.",
+      "title": "Time per batch: read, process, write",
+      "description": "Spring Batch's own timings, all sources together (its metrics carry the step, not the source).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -380,9 +379,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
+          "unit": "s",
+          "min": 0
         },
         "overrides": []
       },
@@ -402,16 +400,33 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (queue) (placemap_ingest_queue_size{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}) / sum by (queue) (placemap_ingest_queue_capacity{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"})",
-          "legendFormat": "{{queue}}"
+          "expr": "sum(rate(spring_batch_item_read_seconds_sum{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval])) / sum(rate(spring_batch_item_read_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval]))",
+          "legendFormat": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(spring_batch_item_process_seconds_sum{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval])) / sum(rate(spring_batch_item_process_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval]))",
+          "legendFormat": "parse, geocode, match"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(spring_batch_chunk_write_seconds_sum{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval])) / sum(rate(spring_batch_chunk_write_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval]))",
+          "legendFormat": "write and commit"
         }
       ]
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Workers waiting on a full queue",
-      "description": "Seconds spent blocked per second, summed over a stage's workers: 1 means one worker waiting all the time. When 'read' waits, reading the snapshot has slowed to the database's pace and memory stays flat.",
+      "title": "Batches written per second by partition",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -424,7 +439,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -444,16 +459,15 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (stage) (rate(placemap_ingest_stage_blocked_seconds_sum{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}[$__rate_interval]))",
-          "legendFormat": "{{stage}}"
+          "expr": "sum by (spring_batch_chunk_write_step_name) (rate(spring_batch_chunk_write_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval]))",
+          "legendFormat": "{{spring_batch_chunk_write_step_name}}"
         }
       ]
     },
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Batches per second by stage",
-      "description": "Batches each stage finished per second (read = cut from the saved snapshot, upsert = committed).",
+      "title": "Import jobs finished by status",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -486,16 +500,16 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (stage) (rate(placemap_ingest_stage_process_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}[$__rate_interval]))",
-          "legendFormat": "{{stage}}"
+          "expr": "sum by (spring_batch_job_status) (increase(spring_batch_job_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\"}[$__rate_interval]))",
+          "legendFormat": "{{spring_batch_job_status}}"
         }
       ]
     },
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Time per batch by stage",
-      "description": "Average time one worker spends on one batch, not counting time blocked on a full queue.",
+      "title": "Failed batch writes per second",
+      "description": "A write that still fails after its retries ends the attempt; the run resumes on a later tick.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -508,7 +522,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -528,8 +542,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (stage) (rate(placemap_ingest_stage_process_seconds_sum{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}[$__rate_interval])) / sum by (stage) (rate(placemap_ingest_stage_process_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\", source=~\"$source\"}[$__rate_interval]))",
-          "legendFormat": "{{stage}}"
+          "expr": "sum(rate(spring_batch_chunk_write_seconds_count{job=\"placemap/ingest\", deployment_environment=\"$env\", spring_batch_chunk_write_status=\"FAILURE\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "failed writes"
         }
       ]
     },

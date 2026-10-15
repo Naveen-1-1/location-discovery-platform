@@ -10,8 +10,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * {@code placemap.ingest.*}. Paths are relative to the working directory, which is the repository root when started
  * through tools/dev.sh.
  *
- * @param parseWorkers 0 means half the CPU cores, as the plan sizes the parse stage
- * @param matchWorkers 0 means half the CPU cores, as the plan sizes the match stage
+ * @param partitions how many ranges of a run's batches are imported at once, each on its own thread with its own
+ *     connection while it writes
  * @param once run (or resume) this one source, then exit; empty means service mode with the scheduler
  * @param force import even if the download is identical to the last successful one
  * @param pinnedSnapshot once mode only: import this local snapshot file instead of downloading (crash tests and
@@ -27,9 +27,7 @@ public record IngestProperties(
         @DefaultValue("data/area.yaml") Path areaConfigFile,
         @DefaultValue("data/raw") Path rawDir,
         @DefaultValue("1000") int batchSize,
-        @DefaultValue("0") int parseWorkers,
-        @DefaultValue("0") int matchWorkers,
-        @DefaultValue("4") int upsertWorkers,
+        @DefaultValue("4") int partitions,
         @DefaultValue("2") int maxConcurrentRuns,
         @DefaultValue("1m") Duration tick,
         @DefaultValue("20s") Duration shutdownGrace,
@@ -68,7 +66,7 @@ public record IngestProperties(
     /**
      * {@code placemap.ingest.geocoder.*}: Photon, public during development.
      *
-     * @param maxConcurrentCalls calls in flight across all runs (the plan's Semaphore(4))
+     * @param maxConcurrentCalls calls in flight across all runs
      * @param callsPerSecond public Photon asks for fair use; our own instance can take more
      */
     public record Geocoder(
@@ -83,18 +81,6 @@ public record IngestProperties(
             throw new IllegalArgumentException("placemap.ingest.pinned-snapshot needs once mode: the scheduler would "
                     + "import the same file for every source");
         }
-    }
-
-    public int parseWorkerCount() {
-        return parseWorkers > 0 ? parseWorkers : halfTheCores();
-    }
-
-    public int matchWorkerCount() {
-        return matchWorkers > 0 ? matchWorkers : halfTheCores();
-    }
-
-    private static int halfTheCores() {
-        return Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
     }
 
     public boolean onceMode() {

@@ -19,7 +19,7 @@ the project from the start.
 - **Off-the-shelf parts:** PostGIS (database), Valhalla (routing), Photon (address search), MapLibre with a
   Protomaps file (map), and the OpenTelemetry → Prometheus / Loki / Tempo → Grafana stack.
 - **`ingest`:** imports Overture, OpenStreetMap and the official datasets, and matches official records to places.
-  Built from scratch as a pipeline of worker pools linked by bounded queues, and it resumes after `kill -9`.
+  Each import is a Spring Batch job whose batches run in parallel partitions, and it resumes after `kill -9`.
 - **`live-hub`:** polls Bluebikes and MBTA feeds and streams updates to browsers over Server-Sent Events. Each
   client has a small mailbox, and clients that fall too far behind are evicted.
 - **`api`:** nearby search sorted by travel time. It runs its lookups in parallel with deadlines, merges identical

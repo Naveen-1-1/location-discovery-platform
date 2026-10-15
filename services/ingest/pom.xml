@@ -13,21 +13,17 @@
 
   <artifactId>ingest</artifactId>
   <name>placemap :: services :: ingest</name>
-  <description>Long-running importer with its own scheduler.
+  <description>Long-running importer: a scheduler that runs each import as a Spring Batch job.
     Run locally: tools/dev.sh ingest   (or tools/dev.sh ingest-once SOURCE)</description>
 
   <dependencies>
-    <dependency>
-      <groupId>io.github.naveen-1-1.placemap</groupId>
-      <artifactId>concurrent</artifactId>
-    </dependency>
     <dependency>
       <groupId>io.github.naveen-1-1.placemap</groupId>
       <artifactId>observability</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jdbc</artifactId>
+      <artifactId>spring-boot-starter-batch-jdbc</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -72,6 +68,10 @@
       <artifactId>duckdb_jdbc</artifactId>
     </dependency>
     <!-- Jaro-Winkler name similarity, and the release template's placeholders. -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-text</artifactId>

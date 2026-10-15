@@ -62,7 +62,8 @@ class InspectionHistoryContainerTest {
         jdbc.sql("""
                 TRUNCATE place.inspection_violation, place.inspection, place.violation_code, place.inspection_summary,
                          ingest.reject, ingest.batch_done, place.match_review, place.place_source_link,
-                         place.source_record, place.place, ingest.run RESTART IDENTITY CASCADE
+                         place.source_record, place.place, ingest.run,
+                         batch.batch_job_instance RESTART IDENTITY CASCADE
                 """).update();
     }
 
@@ -99,7 +100,7 @@ class InspectionHistoryContainerTest {
         List<String> cleanSummary = summary();
         emptyTables();
 
-        assertThat(run(BostonFoodInspections.ID, failingOnCommit(3), false)).isEqualTo(Outcome.ERROR);
+        assertThat(run(BostonFoodInspections.ID, CommitFaults.failingOnCommit(dataSource, 3), false)).isEqualTo(Outcome.ERROR);
         assertThat(run(BostonFoodInspections.ID, dataSource, false)).isEqualTo(Outcome.COMPLETE);
 
         assertThat(counts(BostonFoodInspections.ID)).isEqualTo(clean);
@@ -126,9 +127,9 @@ class InspectionHistoryContainerTest {
                         StandardCopyOption.REPLACE_EXISTING);
             }
         };
-        RunCoordinator coordinator = TestIngest.coordinator(ds, TestIngest.properties(tmp.resolve("raw"), 5, 0.2), http,
+        TestIngest.Importer coordinator = TestIngest.coordinator(ds, TestIngest.properties(tmp.resolve("raw"), 5, 0.2), http,
                 new BostonFoodInspections(), new CambridgeSanitaryInspections());
-        return coordinator.run(source, new RunControl(), force);
+        return coordinator.run(source, force);
     }
 
     private Map<String, Integer> counts(String source) {
@@ -154,28 +155,5 @@ class InspectionHistoryContainerTest {
                         FROM place.inspection_summary ORDER BY source_key
                         """)
                 .query(String.class).list();
-    }
-
-    /** A data source whose n-th commit (counted across all connections) rolls back and throws instead. */
-    private static DataSource failingOnCommit(int n) {
-        var commits = new AtomicInteger();
-        return new DelegatingDataSource(dataSource) {
-            @Override
-            public Connection getConnection() throws SQLException {
-                Connection real = super.getConnection();
-                return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                        new Class<?>[] {Connection.class}, (proxy, method, args) -> {
-                            if (method.getName().equals("commit") && commits.incrementAndGet() == n) {
-                                real.rollback();
-                                throw new SQLException("injected commit failure", "XX000");
-                            }
-                            try {
-                                return method.invoke(real, args);
-                            } catch (InvocationTargetException e) {
-                                throw e.getCause();
-                            }
-                        });
-            }
-        };
     }
 }

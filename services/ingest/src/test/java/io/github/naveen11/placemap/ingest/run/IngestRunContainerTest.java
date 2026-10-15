@@ -65,8 +65,10 @@ class IngestRunContainerTest {
 
     @BeforeEach
     void emptyTables() {
-        jdbc.sql("TRUNCATE ingest.reject, ingest.batch_done, place.source_record, ingest.run RESTART IDENTITY CASCADE")
-                .update();
+        jdbc.sql("""
+                TRUNCATE ingest.reject, ingest.batch_done, place.source_record, ingest.run, batch.batch_job_instance
+                RESTART IDENTITY CASCADE
+                """).update();
     }
 
     @Test
@@ -114,16 +116,16 @@ class IngestRunContainerTest {
                 Files.copy(published.get(), target, StandardCopyOption.REPLACE_EXISTING);
             }
         };
-        RunCoordinator coordinator = TestIngest.coordinator(dataSource, tmp.resolve("raw"), BATCH_SIZE, http,
+        TestIngest.Importer coordinator = TestIngest.coordinator(dataSource, tmp.resolve("raw"), BATCH_SIZE, http,
                 new BostonActiveFoodLicenses());
 
-        assertThat(coordinator.run(SOURCE, new RunControl(), false)).isEqualTo(Outcome.COMPLETE);
-        assertThat(coordinator.run(SOURCE, new RunControl(), false)).isEqualTo(Outcome.UNCHANGED);
+        assertThat(coordinator.run(SOURCE, false)).isEqualTo(Outcome.COMPLETE);
+        assertThat(coordinator.run(SOURCE, false)).isEqualTo(Outcome.UNCHANGED);
         assertThat(downloads).as("second run read only the metadata").hasValue(1);
         assertThat((String) latestRun().get("source_version")).startsWith("ckan:2026-10-10T14:46:26.705686|");
 
         modified.set("2026-10-11T09:00:00"); // republished with the same content: downloaded, compared, unchanged
-        assertThat(coordinator.run(SOURCE, new RunControl(), false)).isEqualTo(Outcome.UNCHANGED);
+        assertThat(coordinator.run(SOURCE, false)).isEqualTo(Outcome.UNCHANGED);
         assertThat(downloads).hasValue(2);
     }
 
@@ -133,7 +135,7 @@ class IngestRunContainerTest {
         run();
         String first = checksum();
 
-        assertThat(coordinator(dataSource).run(SOURCE, new RunControl(), true)).isEqualTo(Outcome.COMPLETE);
+        assertThat(coordinator(dataSource).run(SOURCE, true)).isEqualTo(Outcome.COMPLETE);
 
         assertThat(checksum()).isEqualTo(first);
         assertThat(latestRun()).containsEntry("result_checksum", first);
@@ -152,7 +154,7 @@ class IngestRunContainerTest {
         String golden = checksum();
         emptyTables();
 
-        Outcome failed = coordinator(failingOnCommit(3)).run(SOURCE, new RunControl(), false);
+        Outcome failed = coordinator(CommitFaults.failingOnCommit(dataSource, 3)).run(SOURCE, false);
 
         assertThat(failed).isEqualTo(Outcome.ERROR);
         assertThat(latestRun()).containsEntry("status", "RUNNING").containsEntry("attempts", 1);
@@ -177,13 +179,52 @@ class IngestRunContainerTest {
         String golden = checksum();
         emptyTables();
 
-        Outcome outcome = coordinator(losingCommitAcknowledgement(3)).run(SOURCE, new RunControl(), false);
+        Outcome outcome = coordinator(CommitFaults.losingCommitAcknowledgement(dataSource, 3)).run(SOURCE, false);
 
         assertThat(outcome).isEqualTo(Outcome.COMPLETE);
         assertThat(latestRun()).containsEntry("status", "COMPLETE").containsEntry("attempts", 1);
         assertThat(checksum()).isEqualTo(golden);
         assertThat(jdbc.sql("SELECT count(*) FROM ingest.batch_done").query(Integer.class).single()).isEqualTo(6);
         assertThat(count("SELECT count(*) FROM place.source_record WHERE source = ?")).isEqualTo(40);
+    }
+
+    /**
+     * Connections that keep dropping outlast the writer's retries, so the job fails; it is relaunched within the same
+     * attempt (the restart redoes only the batches not committed) and completes with the clean checksum.
+     */
+    @Test
+    void aJobFailedByDroppedConnectionsIsRelaunchedWithinTheAttempt() {
+        run();
+        String golden = checksum();
+        emptyTables();
+
+        Outcome outcome = coordinator(CommitFaults.droppingConnectionOnCommits(dataSource, 3, 20)).run(SOURCE, false);
+
+        assertThat(outcome).isEqualTo(Outcome.COMPLETE);
+        assertThat(latestRun()).containsEntry("status", "COMPLETE").containsEntry("attempts", 1);
+        assertThat(jdbc.sql("SELECT count(*) FROM batch.batch_job_execution").query(Integer.class).single())
+                .as("launches").isGreaterThan(1);
+        assertThat(checksum()).isEqualTo(golden);
+    }
+
+    /**
+     * An attempt can end with a step still marked running in an execution marked failed (its own last update was the
+     * one a dropped connection lost), or with a status left UNKNOWN. The next attempt recovers them instead of being
+     * refused a restart for ever.
+     */
+    @Test
+    void stepsLeftRunningOrUnknownAreRecoveredAndTheRunResumes() {
+        run();
+        String golden = checksum();
+        emptyTables();
+        assertThat(coordinator(CommitFaults.failingOnCommit(dataSource, 3)).run(SOURCE, false)).isEqualTo(Outcome.ERROR);
+        jdbc.sql("UPDATE batch.batch_step_execution SET status = 'STARTED' WHERE step_name LIKE 'batches:%'").update();
+        jdbc.sql("UPDATE batch.batch_step_execution SET status = 'UNKNOWN' WHERE step_name = 'import'").update();
+
+        assertThat(run()).isEqualTo(Outcome.COMPLETE);
+
+        assertThat(latestRun()).containsEntry("status", "COMPLETE").containsEntry("attempts", 2);
+        assertThat(checksum()).isEqualTo(golden);
     }
 
     @Test
@@ -266,7 +307,7 @@ class IngestRunContainerTest {
 
     @Test
     void aResumedRunWhoseSnapshotIsGoneFailsAndTheNextRunStartsFresh() throws Exception {
-        coordinator(failingOnCommit(2)).run(SOURCE, new RunControl(), false);
+        coordinator(CommitFaults.failingOnCommit(dataSource, 2)).run(SOURCE, false);
         assertThat(latestRun()).containsEntry("status", "RUNNING");
         try (var files = Files.walk(tmp.resolve("raw"))) {
             for (Path p : files.filter(Files::isRegularFile).toList()) {
@@ -284,10 +325,10 @@ class IngestRunContainerTest {
     // ---------------------------------------------------------------------------------------------- helpers
 
     private Outcome run() {
-        return coordinator(dataSource).run(SOURCE, new RunControl(), false);
+        return coordinator(dataSource).run(SOURCE, false);
     }
 
-    private RunCoordinator coordinator(DataSource ds) {
+    private TestIngest.Importer coordinator(DataSource ds) {
         var http = new OfflineHttp() {
             @Override
             public void download(URI uri, Path target) throws IOException {
@@ -301,49 +342,6 @@ class IngestRunContainerTest {
         Path file = Files.createTempFile(tmp, "published", ".csv");
         Files.write(file, lines);
         published.set(file);
-    }
-
-    /** A data source whose n-th commit (counted across all connections) rolls back and throws instead. */
-    private static DataSource failingOnCommit(int n) {
-        return onCommit(n, real -> {
-            real.rollback();
-            throw new SQLException("injected commit failure", "XX000");
-        });
-    }
-
-    /** A data source whose n-th commit goes through, then throws as if the connection dropped before the reply. */
-    private static DataSource losingCommitAcknowledgement(int n) {
-        return onCommit(n, real -> {
-            real.commit();
-            throw new SQLException("injected: connection lost after COMMIT was sent", "08006");
-        });
-    }
-
-    private interface CommitFault {
-        void apply(Connection real) throws SQLException;
-    }
-
-    /** A data source that replaces the n-th commit, counted across all its connections, with a fault. */
-    private static DataSource onCommit(int n, CommitFault fault) {
-        var commits = new AtomicInteger();
-        return new DelegatingDataSource(dataSource) {
-            @Override
-            public Connection getConnection() throws SQLException {
-                Connection real = super.getConnection();
-                return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                        new Class<?>[] {Connection.class}, (proxy, method, args) -> {
-                            if (method.getName().equals("commit") && commits.incrementAndGet() == n) {
-                                fault.apply(real);
-                                return null;
-                            }
-                            try {
-                                return method.invoke(real, args);
-                            } catch (InvocationTargetException e) {
-                                throw e.getCause();
-                            }
-                        });
-            }
-        };
     }
 
     private int count(String sql) {

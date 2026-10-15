@@ -3,7 +3,6 @@ package io.github.naveen11.placemap.ingest.run;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.facts.PlaceFacts;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +10,8 @@ import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.support.JdbcTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Reads and writes {@code ingest.run} and runs the completion transaction. */
 public class RunStore {
@@ -31,6 +32,13 @@ public class RunStore {
 
     public RunStore(DataSource dataSource) {
         this.jdbc = JdbcClient.create(dataSource);
+    }
+
+    public RunRecord find(long runId) {
+        return jdbc.sql("SELECT " + RUN_COLUMNS + " FROM ingest.run WHERE run_id = ?")
+                .param(runId)
+                .query(RunRecord.class)
+                .single();
     }
 
     public Optional<RunRecord> findOpen(String source) {
@@ -146,13 +154,14 @@ public class RunStore {
      *
      * @param c the connection holding the source's lock ({@link SourceLock#connection()}). If it drops, Postgres
      *     releases the lock and rolls this transaction back together, so a run only completes while its process still
-     *     holds the lock. The connection stays open, in auto-commit mode, afterwards.
+     *     holds the lock. The connection stays open, in auto-commit mode, afterwards (the transaction manager restores
+     *     it).
      */
     public Completion complete(Connection c, long runId, String source, double maxRejectShare, double maxRetireShare,
-            List<SourcePriority.Role> roles) throws SQLException {
-        c.setAutoCommit(false);
-        try {
-            var tx = JdbcClient.create(new SingleConnectionDataSource(c, true));
+            List<SourcePriority.Role> roles) {
+        var lockConnection = new SingleConnectionDataSource(c, true);
+        var tx = JdbcClient.create(lockConnection);
+        return new TransactionTemplate(new JdbcTransactionManager(lockConnection)).execute(status -> {
             // Skipped rows (out of scope by design, e.g. Overture places in Newton) are not part of the share.
             var totals = tx.sql("""
                             SELECT coalesce(sum(rows - skipped), 0) AS rows, coalesce(sum(rejected), 0) AS rejected
@@ -167,7 +176,6 @@ public class RunStore {
                 String error = "%d of %d rows rejected, above the %.0f%% limit; see ingest.reject"
                         .formatted(rejected, rows, maxRejectShare * 100);
                 failInTransaction(tx, runId, rejected, error);
-                c.commit();
                 return new Completion(false, rejected, 0, null, "rejects", error);
             }
 
@@ -194,7 +202,6 @@ public class RunStore {
                 String error = "would retire %d of %d live records, above the %.0f%% limit; check the source"
                         .formatted(missing, live, maxRetireShare * 100);
                 failInTransaction(tx, runId, rejected, error);
-                c.commit();
                 return new Completion(false, rejected, 0, null, "retirements", error);
             }
             int retired = tx.sql("""
@@ -218,7 +225,7 @@ public class RunStore {
                     """).params(source, runId).update();
             refreshPlaces(tx, source, roles);
             refreshInspectionSummary(tx, source);
-            PlaceFacts.refresh(c, source);
+            PlaceFacts.refresh(lockConnection, source);
             // Reviews this run did not repeat are stale: the record is linked now, or no longer borderline.
             tx.sql("DELETE FROM place.match_review WHERE source = ? AND run_id <> ?").params(source, runId).update();
             String checksum = checksum(tx, source);
@@ -230,14 +237,8 @@ public class RunStore {
                             """)
                     .params(rejected, checksum, runId)
                     .update();
-            c.commit();
             return new Completion(true, rejected, retired, checksum, null, null);
-        } catch (SQLException | RuntimeException e) {
-            c.rollback();
-            throw e;
-        } finally {
-            restoreAutoCommit(c);
-        }
+        });
     }
 
     /**
@@ -383,14 +384,6 @@ public class RunStore {
                                   JOIN place.source_record r ON r.source = l.source AND r.source_key = l.source_key
                                   WHERE l.place_id = p.place_id AND r.retired_at IS NULL)
                 """).update();
-    }
-
-    private static void restoreAutoCommit(Connection c) {
-        try {
-            c.setAutoCommit(true);
-        } catch (SQLException ignored) {
-            // the connection is gone, and the lock with it; the caller already has the error
-        }
     }
 
     private static void failInTransaction(JdbcClient tx, long runId, int rejected, String error) {

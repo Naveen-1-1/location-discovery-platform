@@ -50,9 +50,19 @@ public final class PlaceIndex {
     private static final double METERS_PER_DEGREE_AT_MOST = 110_000;
     private static final GeometryFactory GEOMETRY = new GeometryFactory();
 
-    /** A live place as the matcher sees it. {@code outline} is its record's outline, or null. */
+    /**
+     * A live place as the matcher sees it. {@code outline} is its record's outline, or null. {@code anchor} names it
+     * independently of its id, which depends on the order batches committed in: the smallest "source:key" among the
+     * records linked to it (as the import's checksum names places).
+     */
     public record IndexedPlace(long placeId, String category, double lon, double lat, String normalizedName,
-            Similarity.Address address, Set<String> sources, Geometry outline) {
+            Similarity.Address address, Set<String> sources, Geometry outline, String anchor) {
+
+        /** A place named by its id, as in the tests and the matching sample, where ids do not vary. */
+        public IndexedPlace(long placeId, String category, double lon, double lat, String normalizedName,
+                Similarity.Address address, Set<String> sources, Geometry outline) {
+            this(placeId, category, lon, lat, normalizedName, address, sources, outline, "%019d".formatted(placeId));
+        }
 
         public IndexedPlace(long placeId, String category, double lon, double lat, String normalizedName,
                 Similarity.Address address, Set<String> sources) {
@@ -69,7 +79,8 @@ public final class PlaceIndex {
                    p.address,
                    coalesce(array_agg(DISTINCT l.source) FILTER (WHERE r.retired_at IS NULL), '{}') AS sources,
                    (array_agg(ST_AsText(r.outline::geometry) ORDER BY l.source, l.source_key)
-                        FILTER (WHERE r.outline IS NOT NULL AND r.retired_at IS NULL))[1] AS outline
+                        FILTER (WHERE r.outline IS NOT NULL AND r.retired_at IS NULL))[1] AS outline,
+                   min((l.source || ':' || l.source_key) COLLATE "C") AS anchor
             FROM place.place p
             JOIN place.place_source_link l ON l.place_id = p.place_id
             LEFT JOIN place.source_record r ON r.source = l.source AND r.source_key = l.source_key
@@ -114,7 +125,8 @@ public final class PlaceIndex {
                     return new IndexedPlace(rs.getLong("place_id"), rs.getString("category"), rs.getDouble("lon"),
                             rs.getDouble("lat"), Similarity.normalizeName(rs.getString("name")),
                             Similarity.normalizeAddress(rs.getString("address")),
-                            Set.of((String[]) sources.getArray()), outline == null ? null : read(wkt, outline));
+                            Set.of((String[]) sources.getArray()), outline == null ? null : read(wkt, outline),
+                            rs.getString("anchor"));
                 })
                 .list();
         var linked = new HashMap<String, Long>();
@@ -176,8 +188,9 @@ public final class PlaceIndex {
     }
 
     /**
-     * Live places within {@code radiusMeters} (at most 100 m) of a point, nearest first; ties by place id, so the order
-     * is deterministic. An outlined place counts from its outline: 0 m for a point inside it.
+     * Live places within {@code radiusMeters} (at most 100 m) of a point, nearest first; ties by the places' anchors,
+     * so the order does not depend on the order earlier batches committed in. An outlined place counts from its
+     * outline: 0 m for a point inside it.
      */
     public List<Nearby> near(double lon, double lat, double radiusMeters) {
         if (radiusMeters > OUTLINE_REACH_METERS) {
@@ -220,7 +233,7 @@ public final class PlaceIndex {
 
     private static List<Nearby> sorted(Collection<Nearby> nearby) {
         var list = new ArrayList<>(nearby);
-        list.sort(Comparator.comparingDouble(Nearby::meters).thenComparingLong(n -> n.place().placeId()));
+        list.sort(Comparator.comparingDouble(Nearby::meters).thenComparing(n -> n.place().anchor()));
         return list;
     }
 

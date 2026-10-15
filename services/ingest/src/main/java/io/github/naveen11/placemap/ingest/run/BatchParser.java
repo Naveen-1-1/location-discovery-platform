@@ -1,6 +1,5 @@
 package io.github.naveen11.placemap.ingest.run;
 
-import io.github.naveen11.placemap.ingest.pipeline.Stage;
 import io.github.naveen11.placemap.ingest.snapshot.RawBatch;
 import io.github.naveen11.placemap.ingest.snapshot.RowRole;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
@@ -11,28 +10,27 @@ import io.github.naveen11.placemap.ingest.source.SourceAdapter;
 import io.github.naveen11.placemap.ingest.source.SourceRow;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
+import org.apache.commons.codec.binary.Hex;
+import org.apache.commons.codec.digest.DigestUtils;
 
-/** Parse stage: turns raw rows into records and rejections. One instance per worker thread. */
-final class ParseWorker implements Stage.Worker<RawBatch, ParsedBatch> {
+/** Turns a batch's raw rows into records and rejections. Not thread-safe: one per partition (its parse context). */
+final class BatchParser {
 
     private final SourceAdapter adapter;
     private final ParseContext context;
 
-    ParseWorker(SourceAdapter adapter, ParseContext context) {
+    BatchParser(SourceAdapter adapter, ParseContext context) {
         this.adapter = adapter;
         this.context = context;
     }
 
-    @Override
-    public ParsedBatch process(RawBatch batch) {
+    ParsedBatch parse(RawBatch batch) {
         var records = new ArrayList<SourceRow>(batch.rows().size());
         var rejects = new ArrayList<ParsedBatch.Reject>();
         var inspections = new ArrayList<InspectionLine>();
         int skipped = 0;
-        MessageDigest digest = sha256();
+        MessageDigest digest = DigestUtils.getSha256Digest();
         for (int i = 0; i < batch.rows().size(); i++) {
             CsvRow row = batch.rows().get(i);
             for (String value : row.values()) {
@@ -73,14 +71,6 @@ final class ParseWorker implements Stage.Worker<RawBatch, ParsedBatch> {
             }
         }
         return new ParsedBatch(batch.seq(), batch.rows().size(), records, rejects, skipped, inspections,
-                HexFormat.of().formatHex(digest.digest()));
-    }
-
-    private static MessageDigest sha256() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("every JDK ships SHA-256", e);
-        }
+                Hex.encodeHexString(digest.digest()));
     }
 }

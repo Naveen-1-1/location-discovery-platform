@@ -3,8 +3,6 @@ package io.github.naveen11.placemap.ingest.facts;
 import io.github.naveen11.placemap.ingest.catalog.SourcePriority;
 import io.github.naveen11.placemap.ingest.source.BostonLicensingBoard;
 import io.github.naveen11.placemap.ingest.source.CambridgeFoodPermits;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -12,9 +10,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -100,9 +98,11 @@ public final class PlaceFacts {
     private PlaceFacts() {
     }
 
-    /** @return the number of places refreshed */
-    public static int refresh(Connection c, String source) throws SQLException {
-        var sameConnection = new SingleConnectionDataSource(c, true);
+    /**
+     * @param sameConnection the completion transaction's connection, so the refresh commits or rolls back with it
+     * @return the number of places refreshed
+     */
+    public static int refresh(DataSource sameConnection, String source) {
         var tx = JdbcClient.create(sameConnection);
         tx.sql("""
                 CREATE TEMP TABLE facts_touched ON COMMIT DROP AS

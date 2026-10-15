@@ -25,7 +25,7 @@ class OvertureSourceTest {
     @TempDir
     Path dir;
 
-    private final OvertureSource adapter = new OvertureSource(TestData.area());
+    private final OvertureSource adapter = new OvertureSource(TestData.area(), TestData.nativeCalls());
     private Path parquet;
 
     @BeforeEach

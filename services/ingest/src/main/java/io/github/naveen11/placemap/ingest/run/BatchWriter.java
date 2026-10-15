@@ -1,45 +1,60 @@
 package io.github.naveen11.placemap.ingest.run;
 
-import io.github.naveen11.placemap.concurrent.ContiguousWatermark;
 import io.github.naveen11.placemap.ingest.match.MatchDecision;
-import io.github.naveen11.placemap.ingest.pipeline.Stage;
 import io.github.naveen11.placemap.ingest.source.SourceRow;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.SQLRecoverableException;
-import java.sql.SQLTransientException;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.stream.IntStream;
-import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.batch.infrastructure.item.Chunk;
+import org.springframework.batch.infrastructure.item.ItemWriter;
+import org.springframework.core.retry.RetryListener;
+import org.springframework.core.retry.RetryPolicy;
+import org.springframework.core.retry.RetryState;
+import org.springframework.core.retry.RetryTemplate;
+import org.springframework.core.retry.Retryable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ParameterizedPreparedStatementSetter;
+import org.springframework.jdbc.support.SqlArrayValue;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Upsert stage: commits one batch per transaction. Each worker thread holds its own connection.
+ * Commits each batch in a transaction of its own, the import's only writes to the place tables before completion.
  *
  * <ol>
  *   <li>Upsert the records, sorted by key so concurrent batches lock rows in the same order. Unchanged rows (same
  *       hash) are not rewritten.
  *   <li>Apply the matching decisions: new links, new places, review entries.
  *   <li>Add any inspection history the batch carries.
- *   <li>Insert the rejects and the {@code batch_done} checkpoint.
- *   <li>Commit, then mark the batch in the watermark.
+ *   <li>Insert the rejects and the {@code batch_done} checkpoint, which is what tells a resumed run the batch is done.
  * </ol>
  *
  * <p>Deadlocks, serialization failures and lost connections are retried with jittered backoff, at most 5 attempts.
- * Every statement is safe to repeat, so a retry after a commit whose acknowledgement was lost changes nothing: the
- * upsert is idempotent, links and checkpoints ignore rows that exist, and a place is only created if the record
- * has no link yet. Such a repeat is visible: its checkpoint already exists. It is logged and counted, which is how crash
- * test C2 shows that it really cut connections between a commit and its acknowledgement.
+ * The retry wraps the whole transaction, commit included: after such an error Postgres has already aborted the
+ * transaction (or its connection is gone), so only a new one can succeed. That is also why this writer, not Spring
+ * Batch's step, owns the transaction: the step's own retry would run inside the aborted one.
+ *
+ * <p>Every statement is safe to repeat, so a retry after a commit whose acknowledgement was lost changes nothing: the
+ * upsert is idempotent, links and checkpoints ignore rows that exist, and a place is only created if the record has no
+ * link yet. Such a repeat is visible: its checkpoint already exists. It is logged and counted, which is how crash test
+ * C2 shows that it really cut connections between a commit and its acknowledgement.
  */
-final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
+class BatchWriter implements ItemWriter<MatchedBatch> {
 
     private static final Logger log = LoggerFactory.getLogger(BatchWriter.class);
 
-    static final int MAX_ATTEMPTS = 5;
+    /** Deadlocks and lost connections ({@link DatabaseErrors}); 4 retries, 200 ms doubling to at most 5 s. */
+    static final RetryPolicy RETRY = RetryPolicy.builder()
+            .predicate(DatabaseErrors::isTransient)
+            .maxRetries(4)
+            .delay(Duration.ofMillis(200))
+            .jitter(Duration.ofMillis(100))
+            .multiplier(2)
+            .maxDelay(Duration.ofSeconds(5))
+            .build();
 
     private static final String UPSERT_RECORD = """
             INSERT INTO place.source_record AS r
@@ -83,213 +98,145 @@ final class BatchWriter implements Stage.Worker<MatchedBatch, Void> {
             ON CONFLICT (run_id, seq) DO NOTHING
             """;
 
-    private final DataSource dataSource;
+    private record Decided(SourceRow row, MatchDecision decision) {
+    }
+
+    private final JdbcTemplate jdbc;
+    private final TransactionTemplate transactions;
+    private final RetryTemplate retry = new RetryTemplate(RETRY);
     private final long runId;
     private final String source;
-    private final ContiguousWatermark watermark;
     private final IngestMetrics.RunMetrics metrics;
     private final JsonMapper json = new JsonMapper();
-    private Connection connection;
 
-    BatchWriter(DataSource dataSource, long runId, String source, ContiguousWatermark watermark,
+    BatchWriter(JdbcTemplate jdbc, TransactionTemplate transactions, long runId, String source,
             IngestMetrics.RunMetrics metrics) {
-        this.dataSource = dataSource;
+        this.jdbc = jdbc;
+        this.transactions = transactions;
         this.runId = runId;
         this.source = source;
-        this.watermark = watermark;
         this.metrics = metrics;
     }
 
     @Override
-    public Void process(MatchedBatch matched) throws SQLException, InterruptedException {
-        int seq = matched.batch().seq();
-        for (int attempt = 1; ; attempt++) {
-            try {
-                if (!write(matched)) {
-                    metrics.recommitted();
-                    log.info("ingest {}: batch {} of run {} was already committed by an earlier attempt whose "
-                            + "acknowledgement was lost; repeating it changed nothing", source, seq, runId);
+    public void write(Chunk<? extends MatchedBatch> chunk) {
+        for (MatchedBatch matched : chunk) {
+            int seq = matched.batch().seq();
+            retry.setRetryListener(new RetryListener() {
+                @Override
+                public void beforeRetry(RetryPolicy policy, Retryable<?> retryable, RetryState state) {
+                    metrics.retried();
+                    log.warn("ingest {}: batch {} of run {} failed on attempt {} of 5 ({}); retrying in a new "
+                            + "transaction", source, seq, runId, state.getRetryCount(),
+                            state.getLastException().toString());
                 }
-                break;
-            } catch (SQLException e) {
-                if (!isRetryable(e) || attempt == MAX_ATTEMPTS) {
-                    throw e;
-                }
-                metrics.retried();
-                discardConnection(); // after a lost connection the old one is useless; after a deadlock it is cheap
-                long backoff = backoffMillis(attempt);
-                log.warn("ingest {}: batch {} of run {} failed on attempt {} of {} ({}); retrying in {} ms", source, seq,
-                        runId, attempt, MAX_ATTEMPTS, e.toString(), backoff);
-                Thread.sleep(backoff);
+            });
+            boolean first = retry.invoke(() -> transactions.execute(status -> write(matched)));
+            if (!first) {
+                metrics.recommitted();
+                log.info("ingest {}: batch {} of run {} was already committed by an earlier attempt whose "
+                        + "acknowledgement was lost; repeating it changed nothing", source, seq, runId);
             }
+            metrics.committed(matched);
         }
-        watermark.markDone(seq);
-        metrics.committed(matched);
-        return null;
     }
 
-    /** Writes and commits the batch; false if its checkpoint already existed (an earlier attempt committed it). */
-    private boolean write(MatchedBatch matched) throws SQLException {
+    /** Writes the batch in the current transaction; false if its checkpoint already existed (an earlier commit). */
+    private boolean write(MatchedBatch matched) {
         ParsedBatch batch = matched.batch();
-        List<SourceRow> records = batch.records();
-        List<Integer> byKey = IntStream.range(0, records.size()).boxed()
-                .sorted(Comparator.comparing(i -> records.get(i).key()))
-                .toList();
-        Connection c = connection();
-        boolean inserted;
-        try {
-            try (var upsert = c.prepareStatement(UPSERT_RECORD)) {
-                for (int i : byKey) {
-                    SourceRow row = records.get(i);
-                    int p = 1;
-                    upsert.setString(p++, source);
-                    upsert.setString(p++, row.key());
-                    upsert.setString(p++, row.name());
-                    upsert.setString(p++, row.category());
-                    upsert.setString(p++, row.ewkt());
-                    upsert.setString(p++, row.address());
-                    upsert.setString(p++, row.postcode());
-                    upsert.setString(p++, row.phone());
-                    upsert.setString(p++, row.website());
-                    upsert.setString(p++, json.writeValueAsString(row.attrs()));
-                    upsert.setString(p++, row.rowHash());
-                    upsert.setLong(p++, runId);
-                    upsert.setLong(p++, runId);
-                    upsert.setString(p, row.outlineEwkt());
-                    upsert.addBatch();
-                }
-                upsert.executeBatch();
-            }
-            applyDecisions(c, matched, byKey);
-            InspectionWriter.write(c, source, runId, batch.inspections());
-            try (var reject = c.prepareStatement(INSERT_REJECT)) {
-                for (ParsedBatch.Reject r : batch.rejects()) {
-                    reject.setLong(1, runId);
-                    reject.setInt(2, batch.seq());
-                    reject.setInt(3, r.rowNo());
-                    reject.setString(4, r.reason());
-                    reject.setString(5, json.writeValueAsString(r.record()));
-                    reject.addBatch();
-                }
-                reject.executeBatch();
-            }
-            try (var done = c.prepareStatement(INSERT_BATCH_DONE)) {
-                done.setLong(1, runId);
-                done.setInt(2, batch.seq());
-                done.setInt(3, batch.rows());
-                done.setInt(4, batch.rejects().size());
-                done.setInt(5, batch.skipped());
-                done.setString(6, batch.checksum());
-                done.setArray(7, c.createArrayOf("text", byKey.stream().map(i -> records.get(i).key()).toArray()));
-                inserted = done.executeUpdate() == 1;
-            }
-            c.commit();
-            return inserted;
-        } catch (SQLException | RuntimeException e) {
-            rollbackQuietly(c);
-            throw e;
+        var byKey = new ArrayList<Decided>(batch.records().size());
+        for (int i = 0; i < batch.records().size(); i++) {
+            byKey.add(new Decided(batch.records().get(i), matched.decisions().get(i)));
         }
+        byKey.sort(Comparator.comparing(d -> d.row().key()));
+
+        batchUpdate(UPSERT_RECORD, byKey, (ps, d) -> {
+            SourceRow row = d.row();
+            int p = 1;
+            ps.setString(p++, source);
+            ps.setString(p++, row.key());
+            ps.setString(p++, row.name());
+            ps.setString(p++, row.category());
+            ps.setString(p++, row.ewkt());
+            ps.setString(p++, row.address());
+            ps.setString(p++, row.postcode());
+            ps.setString(p++, row.phone());
+            ps.setString(p++, row.website());
+            ps.setString(p++, json.writeValueAsString(row.attrs()));
+            ps.setString(p++, row.rowHash());
+            ps.setLong(p++, runId);
+            ps.setLong(p++, runId);
+            ps.setString(p, row.outlineEwkt());
+        });
+        applyDecisions(byKey);
+        InspectionWriter.write(jdbc, source, runId, batch.inspections());
+        batchUpdate(INSERT_REJECT, batch.rejects(), (ps, r) -> {
+            ps.setLong(1, runId);
+            ps.setInt(2, batch.seq());
+            ps.setInt(3, r.rowNo());
+            ps.setString(4, r.reason());
+            ps.setString(5, json.writeValueAsString(r.record()));
+        });
+        String[] keys = byKey.stream().map(d -> d.row().key()).toArray(String[]::new);
+        return jdbc.update(INSERT_BATCH_DONE, runId, batch.seq(), batch.rows(), batch.rejects().size(), batch.skipped(),
+                batch.checksum(), new SqlArrayValue("text", (Object[]) keys)) == 1;
     }
 
-    private void applyDecisions(Connection c, MatchedBatch matched, List<Integer> byKey) throws SQLException {
-        List<SourceRow> records = matched.batch().records();
-        try (var link = c.prepareStatement(INSERT_LINK);
-                var create = c.prepareStatement(CREATE_PLACE);
-                var review = c.prepareStatement(UPSERT_REVIEW)) {
-            for (int i : byKey) {
-                SourceRow row = records.get(i);
-                switch (matched.decisions().get(i)) {
-                    case MatchDecision.Link l -> {
-                        link.setString(1, source);
-                        link.setString(2, row.key());
-                        link.setLong(3, l.placeId());
-                        link.setString(4, l.method());
-                        link.setDouble(5, l.score());
-                        link.setLong(6, runId);
-                        link.addBatch();
-                    }
-                    case MatchDecision.Create ignored -> {
-                        int p = 1;
-                        create.setString(p++, row.name());
-                        create.setString(p++, row.category());
-                        create.setString(p++, row.ewkt());
-                        create.setString(p++, row.address());
-                        create.setString(p++, row.phone());
-                        create.setString(p++, row.website());
-                        create.setString(p++, source);
-                        create.setString(p++, row.key());
-                        create.setString(p++, source);
-                        create.setString(p++, row.key());
-                        create.setLong(p, runId);
-                        create.addBatch();
-                    }
-                    case MatchDecision.Review r -> {
-                        review.setString(1, source);
-                        review.setString(2, row.key());
-                        review.setLong(3, r.placeId());
-                        review.setDouble(4, r.score());
-                        review.setLong(5, runId);
-                        review.addBatch();
-                    }
-                    case MatchDecision.Keep ignored -> {
-                        // linked in an earlier run
-                    }
-                    case MatchDecision.Unlinked ignored -> {
-                        // stays a record without a place
-                    }
+    private void applyDecisions(List<Decided> byKey) {
+        var links = new ArrayList<Decided>();
+        var creates = new ArrayList<Decided>();
+        var reviews = new ArrayList<Decided>();
+        for (Decided d : byKey) {
+            switch (d.decision()) {
+                case MatchDecision.Link ignored -> links.add(d);
+                case MatchDecision.Create ignored -> creates.add(d);
+                case MatchDecision.Review ignored -> reviews.add(d);
+                case MatchDecision.Keep ignored -> {
+                    // linked in an earlier run
+                }
+                case MatchDecision.Unlinked ignored -> {
+                    // stays a record without a place
                 }
             }
-            link.executeBatch(); // an empty batch is a no-op
-            create.executeBatch();
-            review.executeBatch();
         }
+        batchUpdate(INSERT_LINK, links, (ps, d) -> {
+            var link = (MatchDecision.Link) d.decision();
+            ps.setString(1, source);
+            ps.setString(2, d.row().key());
+            ps.setLong(3, link.placeId());
+            ps.setString(4, link.method());
+            ps.setDouble(5, link.score());
+            ps.setLong(6, runId);
+        });
+        batchUpdate(CREATE_PLACE, creates, (ps, d) -> {
+            SourceRow row = d.row();
+            int p = 1;
+            ps.setString(p++, row.name());
+            ps.setString(p++, row.category());
+            ps.setString(p++, row.ewkt());
+            ps.setString(p++, row.address());
+            ps.setString(p++, row.phone());
+            ps.setString(p++, row.website());
+            ps.setString(p++, source);
+            ps.setString(p++, row.key());
+            ps.setString(p++, source);
+            ps.setString(p++, row.key());
+            ps.setLong(p, runId);
+        });
+        batchUpdate(UPSERT_REVIEW, reviews, (ps, d) -> {
+            var review = (MatchDecision.Review) d.decision();
+            ps.setString(1, source);
+            ps.setString(2, d.row().key());
+            ps.setLong(3, review.placeId());
+            ps.setDouble(4, review.score());
+            ps.setLong(5, runId);
+        });
     }
 
-    private Connection connection() throws SQLException {
-        if (connection == null) {
-            connection = dataSource.getConnection();
-            connection.setAutoCommit(false);
+    /** One JDBC batch of all the rows (none: no statement). */
+    private <T> void batchUpdate(String sql, List<T> rows, ParameterizedPreparedStatementSetter<T> values) {
+        if (!rows.isEmpty()) {
+            jdbc.batchUpdate(sql, rows, rows.size(), values);
         }
-        return connection;
-    }
-
-    private void discardConnection() {
-        if (connection != null) {
-            try {
-                connection.close();
-            } catch (SQLException ignored) {
-                // already broken; the pool replaces it
-            }
-            connection = null;
-        }
-    }
-
-    private static void rollbackQuietly(Connection c) {
-        try {
-            c.rollback();
-        } catch (SQLException ignored) {
-            // the connection is probably gone; the server rolls back on its own
-        }
-    }
-
-    static boolean isRetryable(SQLException e) {
-        String state = e.getSQLState();
-        return e instanceof SQLTransientException
-                || e instanceof SQLRecoverableException
-                || "40001".equals(state)                    // serialization failure
-                || "40P01".equals(state)                    // deadlock detected
-                || (state != null && state.startsWith("08")) // connection exception
-                || "57P01".equals(state) || "57P02".equals(state) || "57P03".equals(state); // server restarting
-    }
-
-    /** 200 ms, 400 ms, 800 ms, … capped at 5 s, each scaled by a random factor in [0.5, 1.5). */
-    static long backoffMillis(int attempt) {
-        long base = Math.min(5_000, 200L << (attempt - 1));
-        return (long) (base * (0.5 + ThreadLocalRandom.current().nextDouble()));
-    }
-
-    @Override
-    public void close() {
-        discardConnection();
     }
 }

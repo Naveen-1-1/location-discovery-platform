@@ -13,13 +13,11 @@ import io.github.naveen11.placemap.ingest.source.BostonActiveFoodLicenses;
 import io.github.naveen11.placemap.ingest.source.CsvRow;
 import io.github.naveen11.placemap.ingest.source.ParseContext;
 import io.github.naveen11.placemap.ingest.source.RowResult;
-import java.sql.SQLException;
-import java.sql.SQLTransientConnectionException;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class ParseWorkerTest {
+class BatchParserTest {
 
     private final BostonActiveFoodLicenses adapter = new BostonActiveFoodLicenses();
 
@@ -37,7 +35,7 @@ class ParseWorkerTest {
         };
         var batch = new RawBatch(7, 70, rows, new RowRole[] {RECORD, RECORD, RECORD, DUPLICATE, RECORD});
 
-        ParsedBatch parsed = new ParseWorker(throwing, TestData.parseContext()).process(batch);
+        ParsedBatch parsed = new BatchParser(throwing, TestData.parseContext()).parse(batch);
 
         assertThat(parsed.seq()).isEqualTo(7);
         assertThat(parsed.rows()).isEqualTo(5);
@@ -51,11 +49,11 @@ class ParseWorkerTest {
     @Test
     void checksumDependsOnlyOnTheRawRows() throws Exception {
         List<CsvRow> rows = TestData.rows(TestData.BOSTON_LICENCES).subList(0, 6);
-        var worker = new ParseWorker(adapter, TestData.parseContext());
+        var parser = new BatchParser(adapter, TestData.parseContext());
 
-        String a = worker.process(new RawBatch(0, 0, rows, records(6))).checksum();
-        String b = new ParseWorker(adapter, TestData.parseContext()).process(new RawBatch(0, 0, rows, records(6))).checksum();
-        String other = worker.process(new RawBatch(0, 0, rows.subList(0, 5), records(5))).checksum();
+        String a = parser.parse(new RawBatch(0, 0, rows, records(6))).checksum();
+        String b = new BatchParser(adapter, TestData.parseContext()).parse(new RawBatch(0, 0, rows, records(6))).checksum();
+        String other = parser.parse(new RawBatch(0, 0, rows.subList(0, 5), records(5))).checksum();
 
         assertThat(a).hasSize(64).isEqualTo(b).isNotEqualTo(other);
     }
@@ -70,31 +68,11 @@ class ParseWorkerTest {
     void historyOnlyRowsAddNoRecord() throws Exception {
         List<CsvRow> rows = TestData.rows(TestData.BOSTON_LICENCES).subList(0, 3);
 
-        ParsedBatch parsed = new ParseWorker(adapter, TestData.parseContext())
-                .process(new RawBatch(0, 0, rows, new RowRole[] {HISTORY_ONLY, RECORD, HISTORY_ONLY}));
+        ParsedBatch parsed = new BatchParser(adapter, TestData.parseContext())
+                .parse(new RawBatch(0, 0, rows, new RowRole[] {HISTORY_ONLY, RECORD, HISTORY_ONLY}));
 
         assertThat(parsed.records()).singleElement().satisfies(r -> assertThat(r.name()).isEqualTo("149 Eat Street"));
         assertThat(parsed.rejects()).isEmpty();
         assertThat(parsed.skipped()).isZero();
-    }
-
-    @Test
-    void retriesOnlyErrorsThatAnotherAttemptCanFix() {
-        assertThat(BatchWriter.isRetryable(new SQLException("deadlock", "40P01"))).isTrue();
-        assertThat(BatchWriter.isRetryable(new SQLException("serialization", "40001"))).isTrue();
-        assertThat(BatchWriter.isRetryable(new SQLException("connection reset", "08006"))).isTrue();
-        assertThat(BatchWriter.isRetryable(new SQLException("terminating connection", "57P01"))).isTrue();
-        assertThat(BatchWriter.isRetryable(new SQLTransientConnectionException("pool timeout"))).isTrue();
-        assertThat(BatchWriter.isRetryable(new SQLException("syntax error", "42601"))).isFalse();
-        assertThat(BatchWriter.isRetryable(new SQLException("foreign key", "23503"))).isFalse();
-    }
-
-    @Test
-    void backoffGrowsWithJitterAndIsCapped() {
-        for (int i = 0; i < 100; i++) {
-            assertThat(BatchWriter.backoffMillis(1)).isBetween(100L, 300L);
-            assertThat(BatchWriter.backoffMillis(3)).isBetween(400L, 1_200L);
-            assertThat(BatchWriter.backoffMillis(10)).isBetween(2_500L, 7_500L);
-        }
     }
 }

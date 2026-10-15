@@ -97,7 +97,8 @@ class PlaceMatchingContainerTest {
         assumeTrue(TestData.osmiumAvailable(), "osmium is not installed");
         jdbc.sql("""
                 TRUNCATE ingest.reject, ingest.batch_done, place.match_review, place.place_source_link,
-                         place.source_record, place.place, ingest.run RESTART IDENTITY CASCADE
+                         place.source_record, place.place, ingest.run,
+                         batch.batch_job_instance RESTART IDENTITY CASCADE
                 """).update();
         osmFile = tmp.resolve("extract.osm");
         overtureFile = tmp.resolve("places.parquet");
@@ -222,9 +223,9 @@ class PlaceMatchingContainerTest {
 
         reset();
         assertThat(run(OSM, false, 0.2)).isEqualTo(Outcome.COMPLETE);
-        var crashing = TestIngest.coordinator(failingOnCommit(2), TestIngest.properties(tmp.resolve("raw"), 2, 0.2),
+        var crashing = TestIngest.coordinator(CommitFaults.failingOnCommit(dataSource, 2), TestIngest.properties(tmp.resolve("raw"), 2, 0.2),
                 http(), adapters());
-        assertThat(crashing.run(OVERTURE, new RunControl(), false)).isEqualTo(Outcome.ERROR);
+        assertThat(crashing.run(OVERTURE, false)).isEqualTo(Outcome.ERROR);
         assertThat(run(OVERTURE, false, 0.2)).isEqualTo(Outcome.COMPLETE);
 
         assertThat(new RunStore(dataSource).checksum(OVERTURE)).isEqualTo(golden);
@@ -321,11 +322,11 @@ class PlaceMatchingContainerTest {
     private Outcome run(String source, boolean force, double maxRetireShare) {
         // Batches of 2 rows, so every run has several batches committing in parallel.
         return TestIngest.coordinator(dataSource, TestIngest.properties(tmp.resolve("raw"), 2, maxRetireShare), http(),
-                adapters()).run(source, new RunControl(), force);
+                adapters()).run(source, force);
     }
 
     private SourceAdapter[] adapters() {
-        var overture = new OvertureSource(TestData.area()) {
+        var overture = new OvertureSource(TestData.area(), TestData.nativeCalls()) {
             @Override
             public void fetch(SourceDefinition source, Path target, HttpDownloader http)
                     throws IOException, InterruptedException {
@@ -425,28 +426,5 @@ class PlaceMatchingContainerTest {
             double northMetres) {
         return String.join(",", business, dba, address, "Boston/", "MA", "02108", "Active", "FS", "Eating & Drinking",
                 "2020-01-01 00:00:00+00", property, Double.toString(at[1] + northMetres * METRE), Double.toString(at[0]));
-    }
-
-    /** A data source whose n-th commit (counted across all connections) rolls back and throws instead. */
-    private static DataSource failingOnCommit(int n) {
-        var commits = new AtomicInteger();
-        return new DelegatingDataSource(dataSource) {
-            @Override
-            public Connection getConnection() throws SQLException {
-                Connection real = super.getConnection();
-                return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                        new Class<?>[] {Connection.class}, (proxy, method, args) -> {
-                            if (method.getName().equals("commit") && commits.incrementAndGet() == n) {
-                                real.rollback();
-                                throw new SQLException("injected commit failure", "XX000");
-                            }
-                            try {
-                                return method.invoke(real, args);
-                            } catch (InvocationTargetException e) {
-                                throw e.getCause();
-                            }
-                        });
-            }
-        };
     }
 }

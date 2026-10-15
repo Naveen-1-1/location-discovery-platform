@@ -77,6 +77,21 @@ class MatcherTest {
     }
 
     @Test
+    void anExactTieGoesToThePlaceWithTheLowerAnchorWhateverTheIds() {
+        // Ids follow the order batches committed in, which varies between imports; anchors do not.
+        var later = new PlaceIndex.IndexedPlace(1, "food", LON, LAT, Similarity.normalizeName("Corner Cafe"),
+                Similarity.normalizeAddress("12 Main St"), Set.of(OSM), null, OSM + ":way/9");
+        var earlier = new PlaceIndex.IndexedPlace(2, "food", LON, LAT, Similarity.normalizeName("Corner Cafe"),
+                Similarity.normalizeAddress("12 Main St"), Set.of(OSM), null, OSM + ":node/1");
+
+        for (var places : List.of(List.of(later, earlier), List.of(earlier, later))) {
+            var matcher = new Matcher(PlaceIndex.of(places, Map.of()), PRIORITY, OVERTURE);
+            assertThat(matcher.decide(record("o1", "Corner Cafe", "food", 0, "12 Main St", 0.95)))
+                    .isInstanceOfSatisfying(MatchDecision.Link.class, link -> assertThat(link.placeId()).isEqualTo(2));
+        }
+    }
+
+    @Test
     void placesBeyondOneHundredMetresAreNotCandidates() {
         Matcher matcher = matcher(OSM, Map.of(), place(1, "Corner Cafe", "food", 120, "12 Main St", OVERTURE));
 
