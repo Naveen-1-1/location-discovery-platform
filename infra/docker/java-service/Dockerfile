@@ -6,10 +6,10 @@ ARG JAR
 COPY ${JAR} /app/service.jar
 # Not root; the image has no other use for a user account.
 USER 10001:10001
-# As tools/dev.sh: H3 and DuckDB load native code and protobuf uses sun.misc.Unsafe, both expected.
+# As tools/dev.sh: protobuf uses sun.misc.Unsafe, which is expected (the jar's manifest allows its native code).
 # Under 1.8 GB the JVM picks the Serial collector, which stops the service for every collection; G1 is its choice on
 # any larger machine, so the tests measure the collector a real deployment runs. The heap gets 70% of the container's
 # memory limit; the rest is for the JIT, metaspace, platform thread stacks and network buffers. A service whose heap
 # runs out exits, as a supervisor would want, instead of limping on with failing threads.
-ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", \
+ENTRYPOINT ["java", "--sun-misc-unsafe-memory-access=allow", \
             "-XX:+UseG1GC", "-XX:MaxRAMPercentage=70", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/service.jar"]

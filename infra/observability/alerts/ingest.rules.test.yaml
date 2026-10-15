@@ -11,6 +11,9 @@ tests:
       # A long-running importer: the counter is exported as 0 for 20 minutes, then a run fails.
       - series: 'placemap_ingest_runs_total{job="placemap/ingest", outcome="failed", source="overture", instance="svc"}'
         values: '0x19 1x40'
+      # A benchmark's run that failed on purpose: never an alert.
+      - series: 'placemap_ingest_runs_total{job="placemap/ingest", outcome="failed", source="osm_bench", instance="bench", deployment_environment="benchmark"}'
+        values: '_x10 1'
     alert_rule_test:
       - eval_time: 9m
         alertname: IngestRunFailed

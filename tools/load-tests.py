@@ -37,6 +37,9 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I leaves this folder off the path
+from harness import CHILD_ENV, JAVA, NO_PROXY, NO_TELEMETRY, Toxiproxy, migrate, migrations, run, say
+
 ROOT = Path(__file__).resolve().parent.parent
 COMPOSE = ["docker", "compose", "-f", str(ROOT / "infra/compose/load.yaml")]
 WORK = ROOT / "target/load"
@@ -45,7 +48,6 @@ DUMP = SEED_DIR / "placemap.dump"
 SEED_FILE = SEED_DIR / "seed.json"
 STATIONS = SEED_DIR / "stations.txt"
 TILES = ROOT / "data/valhalla/valhalla_tiles.tar"
-MIGRATIONS = ROOT / "db/src/main/resources/db/migration"
 INGEST_JAR = ROOT / "services/ingest/target/ingest.jar"
 
 DB_URL = "jdbc:postgresql://127.0.0.1:55440/placemap?ApplicationName=ingest&reWriteBatchedInserts=true"
@@ -67,25 +69,6 @@ SOURCES = [
 NEEDS_KEY = {"afdc_alt_fuel_stations": "NLR_API_KEY"}  # only to download; a saved snapshot imports without it
 
 # As tools/dev.sh, plus the plan's 1 GB memory budget for the importer.
-JAVA = ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Xmx1g"]
-NO_TELEMETRY = ["--management.otlp.metrics.export.enabled=false", "--management.tracing.export.otlp.enabled=false",
-                "--management.logging.export.otlp.enabled=false"]
-# The importer never sees settings that could point it at Neon or at Grafana Cloud.
-CHILD_ENV = {k: v for k, v in os.environ.items() if not k.startswith(("PG", "OTEL_", "SPRING_", "PLACEMAP_"))}
-NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-
-def say(message):
-    print(message, flush=True)
-
-
-def run(cmd, **kwargs):
-    result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
-    if result.returncode:
-        sys.exit(f"failed ({result.returncode}): {' '.join(map(str, cmd))}\n{result.stdout[-4000:]}{result.stderr[-4000:]}")
-    return result.stdout
-
-
 def cpu_split():
     """(services, load generators) as cpuset strings: about a quarter of Docker's CPUs for the generators."""
     if os.environ.get("PLACEMAP_SUT_CPUS") and os.environ.get("PLACEMAP_LOAD_CPUS"):
@@ -127,14 +110,6 @@ def preflight(need_java=False):
         sys.exit("java is not on the PATH")
 
 
-def wait_for_database():
-    deadline = time.monotonic() + 120
-    while psql("SELECT 1", db="postgres", check=False) is None:
-        if time.monotonic() > deadline:
-            sys.exit("PostGIS did not start within 2 minutes; see: docker compose -f infra/compose/load.yaml logs postgis")
-        time.sleep(1)
-
-
 def seed_id_in_database():
     rows = psql("SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = 'placemap'",
                 db="postgres", check=False)
@@ -169,19 +144,15 @@ def seed(args):
         say("Building the importer jar...")
         run(["./mvnw", "-q", "-B", "-ntp", "-pl", "services/ingest", "-am", "package", "-DskipTests"], cwd=ROOT)
 
-    say("Starting a fresh database and the Photon stand-in...")
-    compose("rm", "-sf", "postgis")
+    say("Starting a fresh database and Photon's stand-in...")
+    compose("down")  # a running stack would serve from the database about to be replaced
     subprocess.run(["docker", "volume", "rm", "-f", "placemap-load_db"], capture_output=True)
     SEED_DIR.mkdir(parents=True, exist_ok=True)
     STATIONS.unlink(missing_ok=True)
-    compose("up", "-d", "--build", "postgis", "standins")
-    wait_for_database()
-    migrations = sorted(MIGRATIONS.glob("V*__*.sql"), key=lambda p: int(p.name[1:].split("__")[0]))
-    for file in migrations:
-        # One transaction per file, as Flyway applies them.
-        compose("exec", "-T", "postgis", "psql", "-U", "postgres", "-d", "placemap", "-X", "-q", "-v",
-                "ON_ERROR_STOP=1", "-1", "-f", "-", input=file.read_text(encoding="utf-8"))
-    say(f"Migrated ({len(migrations)} migrations, last {migrations[-1].name}); importing {len(sources)} sources:")
+    compose("up", "-d", "--build", "--wait", "postgis", "photon")
+    migrate(DB_URL, PASSWORD)
+    files = migrations()
+    say(f"Migrated ({len(files)} migrations, last {files[-1].name}); importing {len(sources)} sources:")
 
     work = WORK / "seed"
     shutil.rmtree(work, ignore_errors=True)
@@ -222,7 +193,7 @@ def seed(args):
     records = {s: int(n) for s, n in psql("""SELECT source, count(*) FROM place.source_record
                                               WHERE retired_at IS NULL GROUP BY source ORDER BY source""")}
     digest = hashlib.sha256()
-    for file in migrations:
+    for file in files:
         digest.update(file.name.encode() + b"\0" + file.read_bytes())
     for source in sources:
         digest.update(f"{source}:{inputs[source]}".encode())
@@ -231,7 +202,7 @@ def seed(args):
         "id": seed_id,
         "made": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": "fetch" if args.fetch else "saved snapshots",
-        "migrations": [f.name for f in migrations],
+        "migrations": [f.name for f in files],
         "inputs": inputs,
         "places": places,
         "records": records,
@@ -273,21 +244,6 @@ def get_json(url, timeout=10):
         return json.loads(r.read())
 
 
-def wait_healthy(services, limit=180):
-    deadline = time.monotonic() + limit
-    while True:
-        out = compose("ps", "--format", "json", *services).strip()
-        # One object per line in current Compose, one array in older versions.
-        rows = json.loads(out) if out.startswith("[") else [json.loads(l) for l in out.splitlines() if l.strip()]
-        health = {r["Service"]: (r.get("Health") or r.get("State")) for r in rows}
-        if all(health.get(s) in ("healthy", "running") for s in services) and \
-                all(health.get(s) == "healthy" for s in services if s not in ("toxiproxy", "prometheus")):
-            return
-        if time.monotonic() > deadline:
-            sys.exit(f"Not healthy within {limit} s: {health}; see: docker compose -f infra/compose/load.yaml logs")
-        time.sleep(2)
-
-
 def up(args):
     preflight(need_java=not args.no_build)
     if not TILES.exists():
@@ -302,13 +258,11 @@ def up(args):
     say(f"CPUs: services on {sut}, load generators and Prometheus on {load}")
     compose("build", "-q", "postgis", "api", "live-hub")
     compose("--profile", "tools", "build", "-q", "sse-client", "slowhttptest")
-    compose("up", "-d", "postgis")
-    wait_for_database()
+    compose("up", "-d", "--wait", "postgis")
     seed_info = restore_if_needed()
     # Fresh JVMs and no faults left over from an earlier run; the database keeps running.
-    compose("up", "-d", "--force-recreate", "--no-deps", "standins", "toxiproxy", "prometheus", "valhalla",
-            "live-hub", "api")
-    wait_healthy(["postgis", "valhalla", "standins", "toxiproxy", "prometheus", "live-hub", "api"])
+    compose("up", "-d", "--wait", "--wait-timeout", "180", "--force-recreate", "--no-deps", "standins", "photon",
+            "toxiproxy", "prometheus", "valhalla", "live-hub", "api")
     nearby = get_json(f"{API}/api/places/nearby?lat=42.35500&lon=-71.06560&mode=walk")
     if nearby.get("travelTimeSource") != "valhalla" or not nearby.get("places"):
         sys.exit(f"The api answered without Valhalla's travel times: travelTimeSource={nearby.get('travelTimeSource')}, "
@@ -681,8 +635,7 @@ def scenario_l7(r):
 def restart_live_hub(r, threads):
     r.save_logs(f"live-hub-before-{threads}", services=("live-hub",))
     r.env["PLACEMAP_LIVE_THREADS"] = threads
-    compose("up", "-d", "--force-recreate", "--no-deps", "live-hub", env=r.env)
-    wait_healthy(["live-hub"])
+    compose("up", "-d", "--wait", "--force-recreate", "--no-deps", "live-hub", env=r.env)
     time.sleep(10)  # the first feed poll and snapshot
 
 
@@ -722,37 +675,15 @@ def scenario_l8(r):
              + ("" if complete else "; some levels did not hold every stream"), {"rows": rows})
 
 
-TOXIPROXY = "http://127.0.0.1:58474"
-
-
-def toxiproxy(method, path, body=None):
-    data = json.dumps(body).encode() if body is not None else None
-    request = urllib.request.Request(TOXIPROXY + path, data=data, method=method,
-                                     headers={"Content-Type": "application/json"})
-    with NO_PROXY.open(request, timeout=5) as response:
-        return response.read()
-
-
-def add_toxic(proxy, name, kind, attributes, stream="downstream"):
-    toxiproxy("POST", f"/proxies/{proxy}/toxics", {"name": name, "type": kind, "stream": stream, "toxicity": 1.0,
-                                                    "attributes": attributes})
-
-
-def remove_toxic(proxy, name):
-    try:
-        toxiproxy("DELETE", f"/proxies/{proxy}/toxics/{name}")
-    except OSError:
-        pass
+TOXIPROXY = Toxiproxy("http://127.0.0.1:58474")
 
 
 def at(epoch, action):
-    """Runs action at the given time on its own thread; returns the thread."""
-    def go():
-        time.sleep(max(0.0, epoch - time.time()))
-        action()
-    thread = threading.Thread(target=go, daemon=True)
-    thread.start()
-    return thread
+    """Runs action at the given time on a timer thread; returns the timer."""
+    timer = threading.Timer(max(0.0, epoch - time.time()), action)
+    timer.daemon = True
+    timer.start()
+    return timer
 
 
 def everyday(r, name, rate, seconds, fault_from=None, fault_to=None):
@@ -801,22 +732,21 @@ def scenario_c3(r):
     killed = {}
 
     def kill():
-        run(["docker", "kill", "-s", "KILL", compose("ps", "-q", "valhalla").strip()])
+        compose("kill", "-s", "SIGKILL", "valhalla")
         killed["at"] = time.time()
     at(fault_from, kill)
     code, s = everyday(r, "C3", 50, seconds, fault_from=fault_from)
-    compose("up", "-d", "--no-deps", "valhalla")
-    wait_healthy(["valhalla"])
+    compose("up", "-d", "--wait", "--no-deps", "valhalla")
     errors = metric(s, "errors_not_429").get("rate", 0)
     unflagged = metric(s, "unflagged_straight_line").get("count", 0)
-    breaker = metric(s, "breaker_open_after_ms")
-    first_open = breaker.get("min")
+    first_open = metric(s, "breaker_open_after_ms").get("min") if metric(s, "breaker_opened").get("count") else None
     fault = metric(s, "http_req_duration{phase:fault}")
-    passed = "at" in killed and errors < 0.01 and unflagged == 0 and first_open is not None and first_open < 10_000
+    held, failed = thresholds_ok(s)  # everyday.js's C3 thresholds: k6 judges
+    passed = "at" in killed and bool(s) and held
     r.record("C3", passed,
              f"Valhalla killed {kill_after} s in: errors {errors:.2%}, {unflagged:.0f} unflagged straight-line "
              f"answers, breaker open {f'{first_open / 1000:.1f} s' if first_open is not None else 'never'} after the "
-             f"kill, p95 during the outage {ms(fault, 'p(95)')}",
+             f"kill, p95 during the outage {ms(fault, 'p(95)')}" + (f"; failed: {', '.join(failed)}" if failed else ""),
              {"error_rate": errors, "unflagged": unflagged, "breaker_open_after_ms": first_open,
               "outage_p95_ms": fault.get("p(95)")})
 
@@ -825,22 +755,23 @@ def scenario_c4(r):
     seconds, slow_from, slow_for = (120, 30, 60) if r.quick else (240, 60, 120)
     start = time.time() + 5
     fault_from, fault_to = start + slow_from, start + slow_from + slow_for
-    at(fault_from, lambda: add_toxic("postgres", "slow", "latency", {"latency": 500, "jitter": 0}))
-    at(fault_to, lambda: remove_toxic("postgres", "slow"))
+    at(fault_from, lambda: TOXIPROXY.add_toxic("postgres", "slow", "latency", {"latency": 500, "jitter": 0}))
+    at(fault_to, lambda: TOXIPROXY.remove_toxic("postgres", "slow"))
     try:
         code, s = everyday(r, "C4", 50, seconds, fault_from=fault_from, fault_to=fault_to)
     finally:
-        remove_toxic("postgres", "slow")
+        TOXIPROXY.remove_toxic("postgres", "slow")
     accepted = metric(s, "http_req_duration{phase:fault,status:200}")
-    refused = metric(s, "refused_503{phase:fault}").get("count", 0) or metric(s, "refused_503").get("count", 0)
+    refused = metric(s, "refused_503{phase:fault}").get("count", 0)
     missing = metric(s, "refused_without_retry_after").get("count", 0)
     errors = metric(s, "errors_not_429{phase:fault}").get("rate", 0)
     p99 = accepted.get("p(99)")
-    passed = p99 is not None and p99 <= 1600 and missing == 0 and refused > 0
+    held, failed = thresholds_ok(s)  # everyday.js's C4 thresholds: k6 judges
+    passed = bool(s) and held
     r.record("C4", passed,
              f"500 ms added to every database reply for {slow_for} s: {refused:.0f} answers 503 "
              f"({missing:.0f} without Retry-After), accepted p99 {ms(accepted, 'p(99)')} (limit: the 1.5 s deadline + "
-             f"100 ms), other errors {errors:.2%}",
+             f"100 ms), other errors {errors:.2%}" + (f"; failed: {', '.join(failed)}" if failed else ""),
              {"refused_503": refused, "without_retry_after": missing, "accepted_p99_ms": p99, "error_rate": errors})
 
 
@@ -880,7 +811,7 @@ def scenario_c6(r):
         sys.exit("C6: the bikes feed is already stale before the fault")
     # The feed's replies stop arriving: connections stay open, nothing comes back.
     fault_from = time.time()
-    add_toxic("bluebikes", "silent", "timeout", {"timeout": 0})
+    TOXIPROXY.add_toxic("bluebikes", "silent", "timeout", {"timeout": 0})
     stale_after = None
     try:
         while time.time() < fault_from + hold:
@@ -888,7 +819,7 @@ def scenario_c6(r):
                 stale_after = time.time() - fault_from
             time.sleep(0.25)
     finally:
-        remove_toxic("bluebikes", "silent")
+        TOXIPROXY.remove_toxic("bluebikes", "silent")
     fault_to = time.time()
     fresh_after = None
     while time.time() < fault_to + 30:

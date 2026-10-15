@@ -7,7 +7,7 @@ import { client, everydaySearch, get, summary, TREND_STATS } from "./lib.js";
 
 const errors = new Rate("errors_not_429");
 const fallbacks = new Rate("fallbacks");
-const RATE = Number(__ENV.RATE || 50);
+const RATE = 50;
 const MINUTES = Number(__ENV.MINUTES || 10);
 
 export const options = {

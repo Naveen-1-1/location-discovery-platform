@@ -1,15 +1,16 @@
 """Turns the backpressure benchmark's metrics into a CSV (backpressure.csv in OUT) and a summary.
 
-Usage:  python3 -I tools/backpressure-report.py [RESULTS_JSON]
+Usage:  tools/dev.sh backpressure-report [RESULTS_JSON]
 
 Reads the run windows that `tools/dev.sh proofs backpressure` saved (services/ingest/target/proofs/
-backpressure-results.json) and queries those windows from Grafana Cloud (GRAFANA_URL and GRAFANA_SA_TOKEN in .env).
+backpressure-results.json) and queries those windows from Grafana Cloud (GRAFANA_URL and GRAFANA_SA_TOKEN, from .env).
 Writes every measure of both runs as CSV and prints the summary: with the database slowed down, each partition reads
 its next batch only after committing the last one, so the import slows to the commit rate and the heap stays flat.
 """
 
 import csv
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -35,19 +36,11 @@ HEAP_LIMIT_MB = 1024 ** 3 / 1e6  # -Xmx1g, the plan's budget
 
 
 def load_env():
-    env = {}
-    for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            value = value.split("  #")[0].strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-                value = value[1:-1]
-            env[key] = value
-    for key in ("GRAFANA_URL", "GRAFANA_SA_TOKEN"):
-        if not env.get(key):
-            sys.exit(f"{key} is empty in .env")
-    return env
+    """The Grafana settings, which tools/dev.sh loads from .env."""
+    missing = [key for key in ('GRAFANA_URL', 'GRAFANA_SA_TOKEN') if not os.environ.get(key)]
+    if missing:
+        sys.exit(f"{', '.join(missing)} not set: run this as tools/dev.sh backpressure-report, with them in .env")
+    return os.environ
 
 
 ENV = load_env()

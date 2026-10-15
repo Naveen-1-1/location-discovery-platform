@@ -14,8 +14,9 @@ place's smallest "source:key"), because ids depend on commit order.
 
 Needs Docker Desktop running and the snapshots that a real import saved in data/raw; with --fetch, a missing snapshot
 is made by importing that source once into the throwaway database (how the nightly CI job gets them). c2 and
-backpressure also need Toxiproxy: the Homebrew binary (brew install toxiproxy), or a server already listening on
-127.0.0.1:8474, such as CI's container. backpressure reads the OTEL_EXPORTER_OTLP_* settings from .env.
+backpressure put Toxiproxy (the load-test stack's pinned image) between the importer and the database, on a Docker
+network of their own. backpressure exports metrics to Grafana Cloud with the OTEL_EXPORTER_OTLP_* settings in the
+environment, which tools/dev.sh proofs loads from .env.
 """
 
 import argparse
@@ -28,28 +29,26 @@ import signal
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I leaves this folder off the path
+from harness import (CHILD_ENV, JAVA, NO_TELEMETRY, NO_TRACES_OR_LOGS, ROOT, TOXIPROXY_IMAGE, Toxiproxy, migrate,
+                     migrations, run, say)
+
 WORK = ROOT / "services/ingest/target/proofs"
 JAR = ROOT / "services/ingest/target/ingest.jar"
-MIGRATIONS = ROOT / "db/src/main/resources/db/migration"
 IMAGE = "placemap/postgis-test"
+NETWORK = "placemap-proofs"  # the database and Toxiproxy, which reaches it by its container name
 CONTAINER = "placemap-proofs-db"
+PROXY_CONTAINER = "placemap-proofs-toxiproxy"
 PASSWORD = "proofs"  # a throwaway container that only listens on 127.0.0.1, not a secret
 DB_PORT = 55432
 PROXY_PORT = 55433
-TOXIPROXY = "http://127.0.0.1:8474"
+TOXIPROXY_PORT = 58475
 
 BASE_SOURCE = "osm_geofabrik_massachusetts"  # the places the trial source matches against
 TRIAL_SOURCE = "overture_places"  # 83k rows in 84 batches: links, new places, reviews and skipped rows
 BENCH_SOURCE = "boston_food_inspections"  # 905k lines: long enough to watch memory while the database is slow
-
-# As tools/dev.sh, plus the plan's 1 GB memory budget for the importer.
-JAVA = ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Xmx1g"]
-NO_TRACES_OR_LOGS = ["--management.tracing.export.otlp.enabled=false", "--management.logging.export.otlp.enabled=false"]
-NO_TELEMETRY = NO_TRACES_OR_LOGS + ["--management.otlp.metrics.export.enabled=false"]
 
 # Every table an import writes, as one JSON value per row, without the columns that legitimately differ between two
 # runs of the same input: generated ids, run ids and timestamps. Place ids become anchors.
@@ -80,22 +79,6 @@ FINGERPRINT_PARTS = {
 # checksum and counts are compared separately).
 NOT_FINGERPRINTED = {"place.category", "ingest.run"}
 
-# Children never see settings that could point them at Neon or at the telemetry backend, except where added back.
-CHILD_ENV = {k: v for k, v in os.environ.items() if not k.startswith(("PG", "OTEL_", "SPRING_", "PLACEMAP_"))}
-NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-
-def say(message):
-    print(message, flush=True)
-
-
-def run(cmd, **kwargs):
-    result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
-    if result.returncode:
-        sys.exit(f"failed ({result.returncode}): {' '.join(map(str, cmd))}\n{result.stdout}{result.stderr}")
-    return result.stdout
-
-
 class Database:
     """The throwaway PostGIS container, reached with the Mac's psql if there is one, else psql inside it."""
 
@@ -112,8 +95,11 @@ class Database:
         say("Starting a throwaway PostGIS container (the image builds once, then comes from the cache)...")
         run(["docker", "build", "-q", "-t", IMAGE, str(ROOT / "infra/docker/postgis")])
         self.stop()
-        run(["docker", "run", "-d", "--rm", "--name", CONTAINER, "-e", f"POSTGRES_PASSWORD={PASSWORD}",
-             "-p", f"127.0.0.1:{DB_PORT}:5432", "--memory", "1536m", "--shm-size", "256m", IMAGE])
+        if subprocess.run(["docker", "network", "inspect", NETWORK], capture_output=True).returncode:
+            run(["docker", "network", "create", NETWORK])
+        run(["docker", "run", "-d", "--rm", "--name", CONTAINER, "--network", NETWORK, "-e",
+             f"POSTGRES_PASSWORD={PASSWORD}", "-p", f"127.0.0.1:{DB_PORT}:5432", "--memory", "1536m",
+             "--shm-size", "256m", IMAGE])
         # The image's first-start setup only listens on a socket inside the container, so a TCP connection means the
         # real server is up.
         deadline = time.monotonic() + 90
@@ -139,12 +125,8 @@ class Database:
     def migrate(self, db):
         self.query("postgres", f"DROP DATABASE IF EXISTS {db} WITH (FORCE)")
         self.query("postgres", f"CREATE DATABASE {db}")
-        files = sorted(MIGRATIONS.glob("V*__*.sql"), key=lambda p: int(p.name[1:].split("__")[0]))
-        for file in files:
-            # One transaction per file, as Flyway applies them.
-            run(self.psql + ["-d", db, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-1", "-f", "-"],
-                input=file.read_text(encoding="utf-8"), env=self.env)
-        return [f.name for f in files]
+        migrate(f"jdbc:postgresql://127.0.0.1:{DB_PORT}/{db}", PASSWORD)
+        return [f.name for f in migrations()]
 
     def clone(self, db, template="base"):
         self.query("postgres", f"DROP DATABASE IF EXISTS {db} WITH (FORCE)")
@@ -235,67 +217,37 @@ class Ingest:
         return time.monotonic() - self.started
 
 
-class Toxiproxy:
-    """Toxiproxy in front of the container: a TCP proxy that can add faults. A server already listening
-    (CI's container) is used as it is; otherwise the Homebrew binary is started and stopped with the run."""
+class Faults:
+    """Toxiproxy between the importer and the database: a TCP proxy that can add faults. Runs as a container of the
+    load-test stack's pinned image on the database's network, started and stopped with the run."""
 
     def __init__(self):
-        self.proc = None
-        try:
-            self.call("GET", "/version")
-            say("Using the Toxiproxy server already running on " + TOXIPROXY)
-        except OSError:
-            self.proc = self.spawn()
-        try:
-            self.call("DELETE", "/proxies/postgres")  # left over from an interrupted run
-        except OSError:
-            pass
-        self.call("POST", "/proxies", {"name": "postgres", "listen": f"127.0.0.1:{PROXY_PORT}",
-                                       "upstream": f"127.0.0.1:{DB_PORT}", "enabled": True})
-
-    def spawn(self):
-        exe = shutil.which("toxiproxy-server")
-        if not exe:
-            sys.exit("Toxiproxy is not installed. Run: brew install toxiproxy")
-        WORK.mkdir(parents=True, exist_ok=True)
-        with open(WORK / "toxiproxy.log", "w", encoding="utf-8") as log:
-            proc = subprocess.Popen([exe, "-host", "127.0.0.1", "-port", TOXIPROXY.rsplit(":", 1)[1]],
-                                    stdout=log, stderr=subprocess.STDOUT)
-        deadline = time.monotonic() + 10
+        self.stop()
+        run(["docker", "run", "-d", "--rm", "--name", PROXY_CONTAINER, "--network", NETWORK,
+             "-p", f"127.0.0.1:{TOXIPROXY_PORT}:8474", "-p", f"127.0.0.1:{PROXY_PORT}:{PROXY_PORT}", TOXIPROXY_IMAGE,
+             "-host=0.0.0.0"])
+        self.api = Toxiproxy(f"http://127.0.0.1:{TOXIPROXY_PORT}")
+        deadline = time.monotonic() + 30
         while True:
             try:
-                self.call("GET", "/version")
-                return proc
+                self.api.call("GET", "/version")
+                break
             except OSError:
-                if time.monotonic() > deadline or proc.poll() is not None:
-                    sys.exit(f"Toxiproxy did not start; see {WORK / 'toxiproxy.log'}")
+                if time.monotonic() > deadline:
+                    sys.exit(f"Toxiproxy did not start within 30 s; see: docker logs {PROXY_CONTAINER}")
                 time.sleep(0.2)
-
-    @staticmethod
-    def call(method, path, body=None):
-        data = json.dumps(body).encode() if body is not None else None
-        request = urllib.request.Request(TOXIPROXY + path, data=data, method=method,
-                                         headers={"Content-Type": "application/json"})
-        with NO_PROXY.open(request, timeout=5) as response:
-            return response.read()
+        self.api.call("POST", "/proxies", {"name": "postgres", "listen": f"0.0.0.0:{PROXY_PORT}",
+                                           "upstream": f"{CONTAINER}:5432", "enabled": True})
 
     def add(self, name, kind, attributes):
-        # downstream = the database's replies to the importer
-        self.call("POST", "/proxies/postgres/toxics", {"name": name, "type": kind, "stream": "downstream",
-                                                       "toxicity": 1.0, "attributes": attributes})
+        self.api.add_toxic("postgres", name, kind, attributes)
 
     def remove(self, name):
-        self.call("DELETE", f"/proxies/postgres/toxics/{name}")
+        self.api.remove_toxic("postgres", name)
 
-    def stop(self):
-        if self.proc is None:
-            try:
-                self.call("DELETE", "/proxies/postgres")
-            except OSError:
-                pass
-            return
-        self.proc.terminate()
-        self.proc.wait()
+    @staticmethod
+    def stop():
+        subprocess.run(["docker", "rm", "-f", PROXY_CONTAINER], capture_output=True)
 
 
 DB = Database()
@@ -534,7 +486,7 @@ def c2_trial(number, trials, golden, toxiproxy, cuts, rng):
 def c2(args):
     rng = random.Random(args.seed)
     prepare("c2", [BASE_SOURCE, TRIAL_SOURCE], not args.no_build, args.fetch)
-    toxiproxy = Toxiproxy()
+    toxiproxy = Faults()
     try:
         golden, _, _ = clean_run("c2")
         # Slower replies widen the moment between a COMMIT reaching the database and its reply reaching the importer,
@@ -559,24 +511,18 @@ def c2(args):
 
 
 def otel_env():
-    env = {}
-    for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("OTEL_") and "=" in line:
-            key, value = line.split("=", 1)
-            value = value.split("  #")[0].strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-                value = value[1:-1]
-            env[key] = value
+    """The OTEL_EXPORTER_OTLP_* settings, which tools/dev.sh loads from .env."""
+    env = {k: v for k, v in os.environ.items() if k.startswith("OTEL_")}
     if not env.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        sys.exit("backpressure exports metrics to Grafana Cloud: set OTEL_EXPORTER_OTLP_* in .env")
+        sys.exit("backpressure exports metrics to Grafana Cloud: run it as tools/dev.sh proofs backpressure, with "
+                 "OTEL_EXPORTER_OTLP_* set in .env")
     return env
 
 
 def backpressure(args):
     env = dict(CHILD_ENV, PLACEMAP_ENV="benchmark", **otel_env())
     prepare("backpressure", [BASE_SOURCE, BENCH_SOURCE], not args.no_build)
-    toxiproxy = Toxiproxy()
+    toxiproxy = Faults()
     runs = {}
     try:
         for label, latency in (("baseline", 0), ("slow-db", args.latency)):
@@ -633,6 +579,7 @@ def main():
     finally:
         for ingest in list(Ingest.live):
             ingest.kill()
+        Faults.stop()
         if not args.keep:
             Database.stop()
     sys.exit(0 if ok else 1)

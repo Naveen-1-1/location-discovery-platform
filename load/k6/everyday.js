@@ -1,6 +1,6 @@
 // Everyday searches at a steady rate, the traffic that L10, C3 and C4 add their fault to. The driver times the fault
 // and passes when it starts and ends (FAULT_FROM, FAULT_TO: epoch ms), so answers can be told apart by phase.
-// Pass, per scenario: the driver reads this summary.
+// Pass: C3 and C4 by their thresholds below, which k6 judges; L10 compares two runs, so the driver judges it.
 import exec from "k6/execution";
 import { Counter, Rate, Trend } from "k6/metrics";
 import { client, everydaySearch, get, summary, TREND_STATS } from "./lib.js";
@@ -14,8 +14,27 @@ const errors = new Rate("errors_not_429");             // anything but 200 and 4
 const unflagged = new Counter("unflagged_straight_line"); // a travel-time search without travel times and no reason
 const fallbackAfter = new Trend("fallback_after_ms");     // from the fault's start to each answer that fell back
 const breakerAfter = new Trend("breaker_open_after_ms");  // ... and to each that fell back because the breaker opened
+const breakerOpened = new Counter("breaker_opened");       // how many did: a trend with no samples passes any threshold
 const refused = new Counter("refused_503");
 const noRetryAfter = new Counter("refused_without_retry_after");
+
+// What each fault scenario must hold.
+const JUDGED = {
+  // Valhalla killed: almost no errors, every straight-line answer says why, and the breaker opens within 10 s.
+  C3: {
+    errors_not_429: ["rate<0.01"],
+    unflagged_straight_line: ["count==0"],
+    breaker_opened: ["count>0"],
+    breaker_open_after_ms: ["min<10000"],
+  },
+  // The database slowed to 500 ms a reply: answers within the 1.5 s deadline + 100 ms, and refusals that say when to
+  // come back.
+  C4: {
+    "http_req_duration{phase:fault,status:200}": ["p(99)<=1600"],
+    "refused_503{phase:fault}": ["count>0"],
+    refused_without_retry_after: ["count==0"],
+  },
+};
 
 export const options = {
   summaryTrendStats: TREND_STATS,
@@ -23,14 +42,15 @@ export const options = {
     everyday: { executor: "constant-arrival-rate", rate: RATE, timeUnit: "1s", duration: __ENV.DURATION || "3m",
                 preAllocatedVUs: 50, maxVUs: 600 },
   },
-  // Listed so the summary has them; the driver judges.
-  thresholds: {
+  // Listed so the summary has them (k6 only measures a tagged sub-metric that has a threshold), then the scenario's own.
+  thresholds: Object.assign({
     "http_req_duration{phase:before}": ["p(95)>=0"],
     "http_req_duration{phase:fault}": ["p(95)>=0"],
     "http_req_duration{phase:after}": ["p(95)>=0"],
     "http_req_duration{phase:fault,status:200}": ["p(99)>=0"],
     "errors_not_429{phase:fault}": ["rate>=0"],
-  },
+    "refused_503{phase:fault}": ["count>=0"],
+  }, JUDGED[NAME] || {}),
 };
 
 function phase(now) {
@@ -53,7 +73,10 @@ export default function () {
     if (res.json("travelTimeSource") === "straight_line" && !fallback) unflagged.add(1, tags);
     if (fallback && FAULT_FROM && now >= FAULT_FROM) {
       fallbackAfter.add(now - FAULT_FROM, tags);
-      if (fallback === "breaker_open") breakerAfter.add(now - FAULT_FROM, tags);
+      if (fallback === "breaker_open") {
+        breakerAfter.add(now - FAULT_FROM, tags);
+        breakerOpened.add(1, tags);
+      }
     }
   }
 }

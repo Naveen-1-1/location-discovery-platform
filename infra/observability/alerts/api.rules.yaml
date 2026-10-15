@@ -1,6 +1,5 @@
 # Alert rules for the api service, in Prometheus rule-file format.
-# Development: the same rules as Grafana-managed rules live in infra/observability/grafana/alerting/ and are
-# applied by tools/grafana-apply.py; notifications go by email.
+# Development: tools/grafana-apply.py imports them into Grafana as Grafana-managed rules; notifications go by email.
 # Deployment: loaded by the self-hosted Prometheus and routed by Alertmanager.
 groups:
   - name: placemap-api

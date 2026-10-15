@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One entry point for local development. Every command loads .env first.
+# One entry point for local development. Commands that talk to a cloud service load .env first.
 #
 #   tools/dev.sh migrate   apply database migrations to Neon
 #   tools/dev.sh tiles     build the Boston basemap file for the frontend
@@ -12,6 +12,8 @@
 #   tools/dev.sh ingest-once SOURCE... [--force]   import (or resume) these sources now, in order, then exit
 #   tools/dev.sh sizes     show the size of every table in the database
 #   tools/dev.sh proofs c1|c2|backpressure   crash tests / backpressure benchmark on a throwaway local database
+#   tools/dev.sh backpressure-report   the benchmark's measures from Grafana Cloud, as CSV and a summary
+#   tools/dev.sh grafana   apply the dashboards and alert rules in infra/observability to Grafana Cloud
 #   tools/dev.sh load seed|up|down|status|run ...   the load-test stack: the whole app in Docker, no cloud services
 #   tools/dev.sh match-sample     draw the matching evaluation's sample from the database (data/eval/match-sample.csv)
 #   tools/dev.sh match-evaluate   precision and recall from the labelled sample, and the owner's blind check
@@ -22,9 +24,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# JDK 25 warns about libraries that load native code (H3, DuckDB) or use sun.misc.Unsafe (protobuf, inside the
-# OpenTelemetry exporter). Both are expected here, so allow them explicitly instead of printing warnings every run.
-JAVA_FLAGS=(--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow)
+# JDK 25 warns about libraries that use sun.misc.Unsafe (protobuf, inside the OpenTelemetry exporter). That is expected
+# here, so allow it instead of printing a warning every run. Native code (H3, DuckDB) is allowed by each jar's manifest.
+JAVA_FLAGS=(--sun-misc-unsafe-memory-access=allow)
 
 load_env() {
   if [[ ! -f .env ]]; then
@@ -121,8 +123,17 @@ case "${1:-help}" in
       -c "SELECT pg_size_pretty(pg_database_size(current_database())) AS database_size;"
     ;;
   proofs)
+    [[ -f .env ]] && load_env   # only backpressure needs it (its metrics go to Grafana Cloud); CI has none
     shift
     exec python3 -I tools/ingest-proofs.py "$@"
+    ;;
+  backpressure-report)
+    load_env
+    exec python3 -I tools/backpressure-report.py "${@:2}"
+    ;;
+  grafana)
+    load_env
+    exec python3 -I tools/grafana-apply.py "${@:2}"
     ;;
   load)
     shift

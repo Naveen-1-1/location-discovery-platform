@@ -48,13 +48,13 @@ function pick(weighted, r) {
 }
 
 /**
- * The everyday mix (L1, L3, L4): one of `pool` popular origins, a mode (half walking), and half the time one
+ * The everyday mix (L1, L3, L4): one of EVERYDAY_POOL popular origins, a mode (half walking), and half the time one
  * category. About 300 × 4 × 8 distinct searches, so many repeat within the 5-minute result sharing.
  */
 export const EVERYDAY_POOL = 300;
 
-export function everydaySearch(pool = EVERYDAY_POOL) {
-  const origin = ORIGINS[1 + Math.floor(Math.random() * Math.min(pool, ORIGINS.length - 1))];
+export function everydaySearch() {
+  const origin = ORIGINS[1 + Math.floor(Math.random() * Math.min(EVERYDAY_POOL, ORIGINS.length - 1))];
   const mode = pick(MODES, Math.random());
   const category = Math.random() < 0.5 ? null : CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
   return { url: nearbyUrl(origin, mode, category), tags: { mode: mode || "none" } };

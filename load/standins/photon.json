@@ -1,0 +1,8 @@
+{
+  "request": {"method": "GET", "urlPathPattern": "/api/?"},
+  "response": {
+    "status": 200,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {"type": "FeatureCollection", "features": []}
+  }
+}

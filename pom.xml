@@ -217,6 +217,18 @@
           <artifactId>exec-maven-plugin</artifactId>
           <version>${exec-maven-plugin.version}</version>
         </plugin>
+        <plugin>
+          <!-- H3 and DuckDB load native code; this lets a jar started with java -jar do so without JDK 25's warning -->
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <configuration>
+            <archive>
+              <manifestEntries>
+                <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+              </manifestEntries>
+            </archive>
+          </configuration>
+        </plugin>
       </plugins>
     </pluginManagement>
 

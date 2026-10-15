@@ -103,7 +103,7 @@ types:
 (cd frontend && npm run types)
 ```
 The importer's crash tests and backpressure benchmark run the real jar against a throwaway local database and need
-Docker Desktop, Toxiproxy (`brew install toxiproxy`) and the snapshots in `data/raw`:
+Docker Desktop (Toxiproxy runs in a container) and the snapshots in `data/raw`:
 ```bash
 tools/dev.sh proofs c1             # kill -9 at random moments, 20 trials
 tools/dev.sh proofs c2             # connection cuts during commits, 5 trials
@@ -135,7 +135,7 @@ runner (4 vCPU, 16 GB) for the authoritative ones, seeding its database from the
 
 **Alerts:** burn-rate alerts on the api's availability (99.5% of requests without a 5xx) and nearby latency (95%
 within 300 ms), plus 5xx, pinning, import and stale-feed alerts, all by email. Apply them to Grafana Cloud with
-`python3 -I tools/grafana-apply.py`.
+`tools/dev.sh grafana`.
 
 ## Licences
 - **Code:** MIT ([LICENSE](LICENSE)).

@@ -1,5 +1,7 @@
-# Alert rules for live-hub, in Prometheus rule-file format. Development uses the same rule as a Grafana-managed rule
-# (infra/observability/grafana/alerting/placemap-live.rules.json, applied by tools/grafana-apply.py).
+# Alert rules for live-hub, in Prometheus rule-file format. In development, tools/grafana-apply.py imports them into
+# Grafana as Grafana-managed rules.
+#
+# Benchmark runs (deployment_environment="benchmark") cut feeds on purpose, so they never alert.
 #
 # Departures are read only while someone is looking, so their topic is stale whenever nobody is: it is
 # left out.
@@ -7,7 +9,9 @@ groups:
   - name: placemap-live
     rules:
       - alert: LiveFeedStale
-        expr: max by (topic) (placemap_live_feed_stale{job="placemap/live-hub", topic!="departures"}) > 0
+        expr: >-
+          max by (topic) (placemap_live_feed_stale{job="placemap/live-hub", topic!="departures",
+                                                   deployment_environment!="benchmark"}) > 0
         for: 2m
         labels:
           severity: ticket

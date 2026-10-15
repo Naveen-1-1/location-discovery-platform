@@ -6,7 +6,7 @@ import { client, EVERYDAY_POOL, get, nearbyUrl, ORIGINS, summary, TREND_STATS } 
 
 const errors = new Rate("errors_not_429");
 const fallbacks = new Rate("fallbacks");
-const RATE = Number(__ENV.RATE || 20);
+const RATE = 20;
 const MINUTES = Number(__ENV.MINUTES || 5);
 const MODES = ["walk", "bike", "drive"];
 

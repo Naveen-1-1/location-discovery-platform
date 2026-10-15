@@ -4,54 +4,51 @@ Creates or updates, idempotently:
   - the "placemap" folder
   - every dashboard in infra/observability/grafana/dashboards/
   - the "email-placemap" contact point (address from ALERT_EMAIL; never stored in git)
-  - the alert rule groups in infra/observability/grafana/alerting/
+  - the alert rules in infra/observability/alerts/, imported as Grafana-managed rules (the same files promtool tests)
 
-Usage:  python3 -I tools/grafana-apply.py [--test-email]
+Usage:  tools/dev.sh grafana [--test-email]
 Needs GRAFANA_URL, GRAFANA_SA_TOKEN (service account, role Editor) and ALERT_EMAIL in .env.
-Resources are created editable in the UI (X-Disable-Provenance), so this script is the source of truth but not a lock.
+Dashboards and the contact point are created editable in the UI (X-Disable-Provenance), so this script is the source
+of truth but not a lock. Imported alert rules are read-only in the UI: change the rule files and run this again.
 """
 
 import json
+import os
 import pathlib
+import re
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FOLDER_UID = "placemap"
+FOLDER_UID = FOLDER_TITLE = "placemap"
 CONTACT_POINT = "email-placemap"
 METRICS_DS_UID = "grafanacloud-prom"
 
 
 def load_env():
-    env = {}
-    for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        value = value.split("  #")[0].strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
-        env[key] = value
-    for key in ("GRAFANA_URL", "GRAFANA_SA_TOKEN", "ALERT_EMAIL"):
-        if not env.get(key):
-            sys.exit(f"{key} is empty in .env")
-    return env
+    """The Grafana settings, which tools/dev.sh loads from .env."""
+    missing = [key for key in ('GRAFANA_URL', 'GRAFANA_SA_TOKEN', 'ALERT_EMAIL') if not os.environ.get(key)]
+    if missing:
+        sys.exit(f"{', '.join(missing)} not set: run this as tools/dev.sh grafana, with them in .env")
+    return os.environ
 
 
 ENV = load_env()
 
 
-def api(method, path, body=None, ok=(200, 201, 202, 204)):
+def api(method, path, body=None, ok=(200, 201, 202, 204), headers=None):
+    """A JSON body, or a str sent as it is; headers replace the default ones of the same name."""
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "X-Disable-Provenance": "true",
+               **(headers or {})}
     cmd = ["curl", "-sS", "-X", method, ENV["GRAFANA_URL"].rstrip("/") + path,
-           "-H", f"Authorization: Bearer {ENV['GRAFANA_SA_TOKEN']}",
-           "-H", "Content-Type: application/json", "-H", "Accept: application/json",
-           "-H", "X-Disable-Provenance: true",
-           "-w", "\n%{http_code}"]
+           "-H", f"Authorization: Bearer {ENV['GRAFANA_SA_TOKEN']}", "-w", "\n%{http_code}"]
+    for name, value in headers.items():
+        if value is not None:
+            cmd += ["-H", f"{name}: {value}"]
     if body is not None:
         cmd += ["--data-binary", "@-"]
-    out = subprocess.run(cmd, input=json.dumps(body) if body is not None else None,
-                         capture_output=True, text=True, check=True).stdout
+    data = body if isinstance(body, str) or body is None else json.dumps(body)
+    out = subprocess.run(cmd, input=data, capture_output=True, text=True, check=True).stdout
     text, _, code = out.rpartition("\n")
     status = int(code)
     if status not in ok:
@@ -62,7 +59,7 @@ def api(method, path, body=None, ok=(200, 201, 202, 204)):
 def ensure_folder():
     status, _ = api("GET", f"/api/folders/{FOLDER_UID}", ok=(200, 404))
     if status == 404:
-        api("POST", "/api/folders", {"uid": FOLDER_UID, "title": "placemap"})
+        api("POST", "/api/folders", {"uid": FOLDER_UID, "title": FOLDER_TITLE})
     print(f"folder        {FOLDER_UID}")
 
 
@@ -89,13 +86,21 @@ def ensure_contact_point():
     print(f"contact point {CONTACT_POINT} (email)")
 
 
-def apply_rule_groups():
-    for path in sorted((ROOT / "infra/observability/grafana/alerting").glob("*.rules.json")):
-        group = json.loads(path.read_text(encoding="utf-8"))
-        for rule in group["rules"]:
-            rule.update(folderUID=FOLDER_UID, ruleGroup=group["title"])
-        api("PUT", f"/api/v1/provisioning/folder/{FOLDER_UID}/rule-groups/{group['title']}", group)
-        print(f"rule group    {group['title']}: {', '.join(r['title'] for r in group['rules'])} (every {group['interval']}s)")
+def import_rule_groups():
+    """Imports each Prometheus rule file into the placemap folder with Grafana's convert API, which replaces a group of
+    the same name it imported before. Grafana evaluates them against the Grafana Cloud metrics and emails the contact
+    point."""
+    headers = {"Content-Type": "application/yaml", "X-Disable-Provenance": None,
+               "X-Grafana-Alerting-Datasource-UID": METRICS_DS_UID,
+               "X-Grafana-Alerting-Notification-Settings": json.dumps({"receiver": CONTACT_POINT})}
+    for path in sorted((ROOT / "infra/observability/alerts").glob("*.rules.yaml")):
+        text = path.read_text(encoding="utf-8")
+        # A rule file is {groups: [...]}; the API takes {folder title: [...]}.
+        body = re.sub(r"^groups:", f"{FOLDER_TITLE}:", text, count=1, flags=re.M)
+        api("POST", "/api/convert/prometheus/config/v1/rules", body, headers=headers)
+        groups = re.findall(r"^  - name: (\S+)", text, flags=re.M)
+        alerts = re.findall(r"^      - alert: (\S+)", text, flags=re.M)
+        print(f"rule group    {', '.join(groups)}: {', '.join(alerts)} (from {path.name})")
 
 
 def send_test_email():
@@ -113,6 +118,6 @@ if __name__ == "__main__":
     ensure_folder()
     apply_dashboards()
     ensure_contact_point()
-    apply_rule_groups()
+    import_rule_groups()
     if "--test-email" in sys.argv:
         send_test_email()

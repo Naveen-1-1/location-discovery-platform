@@ -19,7 +19,6 @@ dist/
 
 # Secrets (copy infra/compose/.env.example → .env)
 .env
-*.env.local
 
 # Large or generated data (built in CI or by tools/*.sh; never committed)
 data/raw/
@@ -28,10 +27,8 @@ data/release/
 *.osm.pbf
 *.pmtiles
 *.parquet
-valhalla_tiles/
 data/valhalla/
 data/load/
-photon_data/
 
 # k6 / load-test output
 load/results/

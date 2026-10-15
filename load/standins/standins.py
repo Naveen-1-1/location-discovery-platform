@@ -1,7 +1,6 @@
-"""Stand-ins for the outside services the load-test stack must not call (standard library only).
+"""A stand-in for the Bluebikes feed, which the load-test stack must not call (standard library only). Photon's is a
+WireMock stub (photon.json).
 
-  GET /api/?q=...                    Photon: an empty FeatureCollection. No load scenario searches addresses, and
-                                     during the seed an unplaced address simply stays unplaced.
   GET /gbfs/en/station_status.json   Bluebikes GBFS station_status for the stations in the seeded database, with
                                      ttl 1. Each second, a few stations' counts change, so live-hub always has
                                      changes to fan out; the same second always gives the same counts.
@@ -18,9 +17,6 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
-EMPTY_PHOTON = b'{"type":"FeatureCollection","features":[]}'
-
 
 class Stations:
     def __init__(self, path, changes_per_second):
@@ -69,9 +65,7 @@ def handler(stations):
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
-            if path.startswith("/api"):
-                self.reply(200, EMPTY_PHOTON)
-            elif path == "/gbfs/en/station_status.json":
+            if path == "/gbfs/en/station_status.json":
                 self.reply(200, json.dumps(stations.status(time.time()), separators=(",", ":")).encode())
             elif path == "/health":
                 self.reply(200, b'{"status":"UP"}')
@@ -99,7 +93,7 @@ def main():
     args = parser.parse_args()
     server = ThreadingHTTPServer(("0.0.0.0", args.port), handler(Stations(args.stations, args.changes_per_second)))
     server.daemon_threads = True
-    print(f"stand-ins on :{args.port}, stations from {args.stations}", flush=True)
+    print(f"Bluebikes stand-in on :{args.port}, stations from {args.stations}", flush=True)
     server.serve_forever()
 
 

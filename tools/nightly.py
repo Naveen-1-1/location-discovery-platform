@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 HISTORY = ROOT / "docs/benchmarks/nightly-runs.md"
 JAR = ROOT / "services/ingest/target/ingest.jar"
-JAVA = ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow"]
+JAVA = ["java", "--sun-misc-unsafe-memory-access=allow"]
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The release check reads only files: no database and no telemetry.
 OFFLINE = ["--spring.datasource.url=jdbc:postgresql://localhost/unused", "--spring.datasource.username=unused",
@@ -59,24 +59,19 @@ def docker_running():
 
 
 def test_reports(since):
-    """(tests, skipped, failed, container suites with skipped tests) over the JUnit reports written since `since`."""
+    """(tests, skipped, failed) over the JUnit reports written since `since`."""
     tests = skipped = failed = 0
-    skipped_containers = []
     reports = [r for pattern in ("*/target/surefire-reports/TEST-*.xml", "*/*/target/surefire-reports/TEST-*.xml")
                for r in ROOT.glob(pattern)]
     for report in reports:
         if report.stat().st_mtime < since:
             continue
         head = report.read_text(encoding="utf-8", errors="replace")[:2000]
-        suite = re.search(r'<testsuite[^>]*\bname="([^"]+)"', head)
         counts = {k: int(v) for k, v in re.findall(r'\b(tests|skipped|failures|errors)="(\d+)"', head)[:4]}
         tests += counts.get("tests", 0)
         skipped += counts.get("skipped", 0)
         failed += counts.get("failures", 0) + counts.get("errors", 0)
-        name = suite.group(1) if suite else report.name
-        if counts.get("skipped") and re.search(r"(Container|Integration)Test$", name):
-            skipped_containers.append(name.rsplit(".", 1)[-1])
-    return tests, skipped, failed, skipped_containers
+    return tests, skipped, failed
 
 
 def promtool(log, _):
@@ -104,10 +99,10 @@ def verify(log, _):
     if not docker_running():
         return False, "Docker is not running, so the container tests would be skipped"
     started = time.time()
-    ok = log.run(["./mvnw", "-B", "-ntp", "verify"]) == 0
-    tests, skipped, failed, containers = test_reports(started)
-    if containers:
-        return False, f"container tests skipped: {', '.join(sorted(containers))}"
+    # Turns off Testcontainers' "disabledWithoutDocker" condition, so a container test fails rather than skips.
+    ok = log.run(["./mvnw", "-B", "-ntp", "verify",
+                  "-Djunit.jupiter.conditions.deactivate=org.testcontainers.junit.jupiter.TestcontainersExtension"]) == 0
+    tests, skipped, failed = test_reports(started)
     return ok and failed == 0, f"{tests} tests, {skipped} skipped (opt-in live tests)"
 
 
@@ -127,7 +122,7 @@ def contracts(log, _):
     started = time.time()
     ok = log.run(["./mvnw", "-B", "-ntp", "-pl", "services/ingest", "-am", "test", "-Dtest=SourceContractTest",
                   "-Dsurefire.failIfNoSpecifiedTests=false", "-Dplacemap.contract=true"]) == 0
-    tests, skipped, failed, _ = test_reports(started)
+    tests, skipped, failed = test_reports(started)
     return ok and failed == 0 and tests > 0, f"{tests - skipped} sources checked, {skipped} skipped"
 
 

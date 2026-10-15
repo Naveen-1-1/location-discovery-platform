@@ -11,6 +11,9 @@ tests:
       # Departures are stale whenever nobody is looking: never an alert.
       - series: 'placemap_live_feed_stale{job="placemap/live-hub", topic="departures"}'
         values: '1x25'
+      # A benchmark that cut a feed on purpose: never an alert.
+      - series: 'placemap_live_feed_stale{job="placemap/live-hub", topic="stations", deployment_environment="benchmark"}'
+        values: '1x25'
     alert_rule_test:
       - eval_time: 6m
         alertname: LiveFeedStale

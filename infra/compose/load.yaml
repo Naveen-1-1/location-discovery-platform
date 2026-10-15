@@ -39,7 +39,7 @@ services:
 
   valhalla:
     image: ghcr.io/valhalla/valhalla:3.9.0@sha256:511c095b8caf393dccceb8b519ec96b6f85a0166b2288ba014a8a748acc5a63c
-    command: ["bash", "/serve.sh", "${PLACEMAP_VALHALLA_THREADS:-4}"]   # settings for 1×200 matrices in 1 GB
+    command: ["bash", "/serve.sh", "4"]   # 4 threads; settings for 1×200 matrices in 1 GB
     mem_limit: 1g
     cpuset: ${PLACEMAP_SUT_CPUS}
     volumes:
@@ -53,16 +53,29 @@ services:
   standins:
     image: python:3.14.7-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
     command: ["python3", "-I", "/standins/standins.py", "--stations", "/seed/stations.txt",
-              "--changes-per-second", "${PLACEMAP_BIKE_CHANGES:-5}"]
+              "--changes-per-second", "5"]
     mem_limit: 128m
     cpuset: ${PLACEMAP_SUT_CPUS}
     volumes:
       - ../../load/standins:/standins:ro
       - ../../data/load:/seed:ro           # the station ids the seed wrote
-    ports:
-      - "127.0.0.1:58088:8080"             # the seed's importer geocodes against it
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 2s
+      retries: 30
+
+  # Photon's search, answering every address with no match: no load scenario searches addresses, and during the seed
+  # an unplaced address simply stays unplaced.
+  photon:
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
+    command: ["--disable-banner", "--no-request-journal", "--disable-request-logging"]
+    mem_limit: 256m
+    cpuset: ${PLACEMAP_LOAD_CPUS:?set by tools/load-tests.py}   # idle during the scenarios; off the services' CPUs
+    volumes:
+      - ../../load/standins/photon.json:/home/wiremock/mappings/photon.json:ro
+    ports:
+      - "127.0.0.1:58088:8080"             # the seed's importer geocodes against it
+    healthcheck:                           # the image's own check, run sooner
       interval: 2s
       retries: 30
 
@@ -135,7 +148,7 @@ services:
       PLACEMAP_VALHALLA_URL: http://toxiproxy:18002
       PLACEMAP_NEARBY_TRAVELTIMETIMEOUT: 800ms       # the plan's value for an engine on the same network
       PLACEMAP_LIVE_URL: http://live-hub:8081
-      PLACEMAP_SEARCH_PHOTONURL: http://standins:8080/api/
+      PLACEMAP_SEARCH_PHOTONURL: http://photon:8080/api/
     mem_limit: 768m
     cpuset: ${PLACEMAP_SUT_CPUS}
     ulimits:

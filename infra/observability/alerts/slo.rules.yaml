@@ -1,6 +1,5 @@
-# Burn-rate alerts on the api's SLOs, in Prometheus rule-file format. Development uses the
-# same rules as Grafana-managed rules (infra/observability/grafana/alerting/placemap-slo.rules.json, applied by
-# tools/grafana-apply.py).
+# Burn-rate alerts on the api's SLOs, in Prometheus rule-file format. In development, tools/grafana-apply.py imports
+# them into Grafana as Grafana-managed rules.
 #
 # Multi-window, multi-burn-rate (Google SRE workbook, "Alerting on SLOs"): an alert needs both its long window and its
 # short window over the threshold. The long window shows the budget is really going (14.4x for an hour spends 2% of

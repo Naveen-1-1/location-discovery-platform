@@ -1,5 +1,7 @@
-# Alert rules for the importer, in Prometheus rule-file format. Development uses the same rules as Grafana-managed
-# rules (infra/observability/grafana/alerting/placemap-ingest.rules.json, applied by tools/grafana-apply.py).
+# Alert rules for the importer, in Prometheus rule-file format. In development, tools/grafana-apply.py imports them
+# into Grafana as Grafana-managed rules.
+#
+# Benchmark runs (deployment_environment="benchmark") fail and trip limits on purpose, so they never alert.
 #
 # A one-off run (tools/dev.sh ingest-once) exports its counters once, at exit, so increase() never sees them change.
 # Each rule therefore also fires for a series that is new in the window and already above zero.
@@ -9,9 +11,12 @@ groups:
       - alert: IngestRunFailed
         expr: >-
           sum by (source) (
-            (increase(placemap_ingest_runs_total{job="placemap/ingest", outcome="failed"}[15m]) > 0)
-            or (max_over_time(placemap_ingest_runs_total{job="placemap/ingest", outcome="failed"}[15m]) > 0
-                unless max_over_time(placemap_ingest_runs_total{job="placemap/ingest", outcome="failed"}[15m] offset 15m))
+            (increase(placemap_ingest_runs_total{job="placemap/ingest", outcome="failed",
+                                                 deployment_environment!="benchmark"}[15m]) > 0)
+            or (max_over_time(placemap_ingest_runs_total{job="placemap/ingest", outcome="failed",
+                                                         deployment_environment!="benchmark"}[15m]) > 0
+                unless max_over_time(placemap_ingest_runs_total{job="placemap/ingest", outcome="failed",
+                                                                deployment_environment!="benchmark"}[15m] offset 15m))
           ) > 0
         for: 0m
         labels:
@@ -22,9 +27,12 @@ groups:
       - alert: IngestSafetyLimitTripped
         expr: >-
           sum by (source, limit) (
-            (increase(placemap_ingest_limit_trips_total{job="placemap/ingest"}[15m]) > 0)
-            or (max_over_time(placemap_ingest_limit_trips_total{job="placemap/ingest"}[15m]) > 0
-                unless max_over_time(placemap_ingest_limit_trips_total{job="placemap/ingest"}[15m] offset 15m))
+            (increase(placemap_ingest_limit_trips_total{job="placemap/ingest",
+                                                        deployment_environment!="benchmark"}[15m]) > 0)
+            or (max_over_time(placemap_ingest_limit_trips_total{job="placemap/ingest",
+                                                                deployment_environment!="benchmark"}[15m]) > 0
+                unless max_over_time(placemap_ingest_limit_trips_total{job="placemap/ingest",
+                                                                       deployment_environment!="benchmark"}[15m] offset 15m))
           ) > 0
         for: 0m
         labels:
