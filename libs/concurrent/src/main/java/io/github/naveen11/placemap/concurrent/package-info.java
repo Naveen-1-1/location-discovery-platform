@@ -1,12 +1,13 @@
 /**
- * Hand-written concurrency primitives shared by the ingest, live-hub and api services.
+ * The live hub's fan-out, the hand-written concurrency code that nothing existing provides:
  *
  * <ul>
- *   <li>Ingest pipeline: {@link io.github.naveen11.placemap.concurrent.BoundedChannel},
- *       {@link io.github.naveen11.placemap.concurrent.ContiguousWatermark}.
- *   <li>Live-hub fan-out: {@link io.github.naveen11.placemap.concurrent.SnapshotPublisher},
- *       {@link io.github.naveen11.placemap.concurrent.CoalescingMailbox},
- *       {@link io.github.naveen11.placemap.concurrent.SerialDrain}.
+ *   <li>{@link io.github.naveen11.placemap.concurrent.SnapshotPublisher}: the newest snapshot per topic, handed to
+ *       subscribers without a buffer in between, so "subscribe, then read" never misses an update;
+ *   <li>{@link io.github.naveen11.placemap.concurrent.CoalescingMailbox}: a bounded per-client mailbox that keeps only
+ *       the newest value per key and turns overflow into "reload everything";
+ *   <li>{@link io.github.naveen11.placemap.concurrent.SerialDrain}: runs one connection's writes at most once at a
+ *       time on a shared pool without losing a wake-up (pool mode).
  * </ul>
  *
  * <p>Everything here is plain Java (no Spring) so it can be verified in isolation: linearizability with
