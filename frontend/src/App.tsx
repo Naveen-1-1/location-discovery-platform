@@ -79,13 +79,11 @@ export function App() {
   const selected = places.find((p) => p.id === selectedId) ?? null;
   const routed = result?.mode != null && result.fallback === null;
   const credits = [
-    ...(places.some((p) => p.category === "bike_share") ? [{ id: "bike-share-credit", html: BIKE_SHARE_CREDIT }] : []),
-    ...(places.some((p) => p.category === "transit") || vehicles.length > 0
-      ? [{ id: "transit-credit", html: TRANSIT_CREDIT }]
-      : []),
-    ...(places.some((p) => p.facts.acceptsSnap) ? [{ id: "snap-credit", html: SNAP_CREDIT }] : []),
-    ...(places.some((p) => p.category === "hospital") ? [{ id: "massgis-credit", html: MASSGIS_CREDIT }] : []),
-  ];
+    places.some((p) => p.category === "bike_share") && BIKE_SHARE_CREDIT,
+    (places.some((p) => p.category === "transit") || vehicles.length > 0) && TRANSIT_CREDIT,
+    places.some((p) => p.facts.acceptsSnap) && SNAP_CREDIT,
+    places.some((p) => p.category === "hospital") && MASSGIS_CREDIT,
+  ].filter((c): c is string => !!c);
   const liveOf = (p: NearbyPlace) => liveFor(p, live, result);
 
   function toggle(code: string) {
@@ -103,13 +101,6 @@ export function App() {
     setMode(next);
   }
 
-  function useMyLocation() {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => moveTo(pos.coords.latitude, pos.coords.longitude),
-      () => alert("Location unavailable; click the map to choose a starting point instead."),
-    );
-  }
-
   return (
     <div className="layout">
       <aside className="panel">
@@ -122,7 +113,7 @@ export function App() {
           }}
           onAddress={(a) => moveTo(a.lat, a.lon)}
         />
-        <p className="muted">Or click the map to search from there.</p>
+        <p className="muted">Or click the map, or use the map's location button, to search from there.</p>
 
         <div className="segmented" role="radiogroup" aria-label="Sort by">
           {MODES.map((m) => (
@@ -138,7 +129,6 @@ export function App() {
         </div>
 
         <div className="row">
-          <button onClick={useMyLocation}>Use my location</button>
           {mode === null ? (
             <label>
               Within{" "}

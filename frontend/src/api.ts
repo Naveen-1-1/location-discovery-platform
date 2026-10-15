@@ -1,93 +1,35 @@
-// Typed client for the api service. In development Vite proxies /api to localhost:8080.
+// Typed client for the api service. In development Vite proxies /api to localhost:8080. The response types are
+// generated from the api's own description (api-schema.ts, by npm run types from openapi.json); only what the api
+// passes through as plain JSON gets a narrower type here: live-hub's items and GeoJSON geometry.
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from "geojson";
+import type { components } from "./api-schema";
 import type { DockStatus, StopAlerts, TopicHealth } from "./live";
 
-export type Category = { code: string; label: string };
+type Schemas = components["schemas"];
 
-export type TravelMode = "walk" | "bike" | "drive";
+export type Category = Schemas["Category"];
+
+export type TravelMode = NonNullable<Schemas["NearbyResponse"]["mode"]>;
 
 /** What the filters know about a place. */
-export type PlaceFacts = {
-  acceptsSnap: boolean;
-  /** Holds an active Boston or Cambridge food or premises licence. */
-  licensed: boolean;
-  /** The latest inspection; null if never inspected. */
-  inspection: "passed" | "failed" | "other" | null;
-  /** By the place's regular week, at the time of the answer; null when its hours are unknown. */
-  openNow: boolean | null;
-};
+export type PlaceFacts = Schemas["PlaceFacts"];
 
 export type PlaceFilters = { openNow: boolean; snap: boolean; licensed: boolean; passedInspection: boolean };
 
 export const NO_FILTERS: PlaceFilters = { openNow: false, snap: false, licensed: false, passedInspection: false };
 
-export type NearbyPlace = {
-  id: number;
-  name: string;
-  category: string;
-  address: string | null;
-  lat: number;
-  lon: number;
-  /** Straight-line distance from the search's snapped origin. */
-  distanceMeters: number;
-  /** Null for a straight-line search, a fallback, or a place the routing engine cannot reach. */
-  travelSeconds: number | null;
-  travelMeters: number | null;
-  /** Set for places with live data, e.g. "bikes:<station_id>"; the same key as in the live stream. */
-  liveKey: string | null;
-  /** The live data at the time of the search; the live stream keeps it current after that. */
-  live: DockStatus | StopAlerts | null;
-  facts: PlaceFacts;
-};
+/** A place found nearby; `live` is live-hub's data at the time of the search, kept current by the stream. */
+export type NearbyPlace = Omit<Schemas["NearbyPlace"], "live"> & { live: DockStatus | StopAlerts | null };
 
 /** One place's panel (GET /api/places/{id}). */
-export type PlaceDetails = {
-  id: number;
-  name: string;
-  category: string;
-  address: string | null;
-  phone: string | null;
-  website: string | null;
-  lat: number;
-  lon: number;
-  liveKey: string | null;
-  facts: {
-    acceptsSnap: boolean;
-    licensed: boolean;
-    inspection: { result: "passed" | "failed" | "other"; at: string | null; failedChecks12m: number | null } | null;
-    /** source: "osm" (published), "cambridge_permit", or "boston_licence" (the latest the licence allows). */
-    hours: { text: string; source: "osm" | "cambridge_permit" | "boston_licence"; openNow: boolean } | null;
-    parkFeatures: { name: string; count: number }[];
-  };
-  /** Ids from data/sources.yaml, for credits. */
-  sources: string[];
-};
+export type PlaceDetails = Schemas["PlaceDetails"];
 
 /** How the search's live data went. */
-export type LiveSummary = {
-  /** "unavailable" when live-hub was slow or down: the places came without live counts. */
-  status: "ok" | "unavailable";
-  topics: Record<string, TopicHealth>;
-};
+export type LiveSummary = Omit<Schemas["LiveSummary"], "topics"> & { topics: Record<string, TopicHealth> };
 
-export type NearbyResponse = {
-  snappedCell: string;
-  lat: number;
-  lon: number;
-  /** How far the search's real starting point can be from the snapped one the times are measured from. */
-  maxSnapErrorMeters: number;
-  mode: TravelMode | null;
-  radiusMeters: number;
-  /** The routing engine that gave the travel times ("openrouteservice", "valhalla"), or "straight_line". */
-  travelTimeSource: string;
-  /** Why a search with a mode has no travel times ("timeout", "breaker_open", …); null otherwise. */
-  fallback: string | null;
-  driveWithoutTraffic: boolean;
+export type NearbyResponse = Omit<Schemas["NearbyResponse"], "places" | "live"> & {
   places: NearbyPlace[];
-  /** Null when no place in the answer has live data. */
   live: LiveSummary | null;
-  /** With "open now" on, places nearby left out because their hours are unknown; null otherwise. */
-  hiddenForUnknownHours: number | null;
 };
 
 export type NearbyQuery = {
@@ -101,22 +43,11 @@ export type NearbyQuery = {
   limit?: number;
 };
 
-/** What the api says about a route or an isochrone besides its geometry. */
-type RoutedProperties = {
-  mode: TravelMode;
-  travelTimeSource: string;
-  driveWithoutTraffic: boolean;
-  snappedCell: string;
-  maxSnapErrorMeters: number;
-};
+export type RouteFeature = Feature<LineString, Schemas["RouteProperties"]>;
 
-export type RouteFeature = Feature<
-  LineString,
-  RoutedProperties & { placeId: number; placeName: string; seconds: number; meters: number }
->;
-
-/** One area per limit, smallest first. */
-export type IsochroneCollection = FeatureCollection<Polygon | MultiPolygon, { minutes: number }> & RoutedProperties;
+/** One area per limit, smallest first; the other members describe the request. */
+export type IsochroneCollection = FeatureCollection<Polygon | MultiPolygon, Schemas["IsochroneProperties"]> &
+  Omit<Schemas["IsochroneCollection"], "type" | "features">;
 
 type Origin = { lat: number; lon: number };
 
@@ -154,7 +85,8 @@ export function isochroneUrl(origin: Origin, mode: TravelMode, minutes: readonly
   return `/api/isochrone?${params}`;
 }
 
-async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+/** GETs JSON; a failed answer throws with the status and, from problem+json, its detail. */
+export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal });
   if (!res.ok) {
     let detail = res.statusText;
@@ -173,12 +105,7 @@ export const fetchCategories = (signal?: AbortSignal) => getJson<Category[]>("/a
 export const fetchNearby = (q: NearbyQuery, signal?: AbortSignal) => getJson<NearbyResponse>(nearbyUrl(q), signal);
 
 /** What the search box shows (GET /api/search). */
-export type SearchResult = {
-  places: { id: number; name: string; category: string; address: string | null; lat: number; lon: number; distanceMeters: number }[];
-  addresses: { label: string; lat: number; lon: number; kind: string }[];
-  /** "ok", "too_short" (under three letters), "busy", "timeout" or "unavailable". */
-  addressStatus: string;
-};
+export type SearchResult = Schemas["SearchResult"];
 
 export function searchUrl(query: string, near: Origin): string {
   const params = new URLSearchParams({ q: query.trim(), lat: near.lat.toFixed(3), lon: near.lon.toFixed(3) });

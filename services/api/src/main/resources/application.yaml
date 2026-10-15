@@ -72,6 +72,8 @@ logging:
 springdoc:
   api-docs:
     enabled: ${PLACEMAP_API_DOCS:false}   # /v3/api-docs, for generating the frontend's types; off unless asked for
+  writer-with-order-by-keys: true          # a stable file for the frontend's copy (frontend/openapi.json)
+  writer-with-default-pretty-printer: true
 
 jdbc:
   datasource-proxy:

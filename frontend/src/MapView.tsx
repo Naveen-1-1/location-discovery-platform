@@ -1,9 +1,11 @@
 import type { FeatureCollection } from "geojson";
-import { addProtocol, setWorkerUrl } from "maplibre-gl";
+import { addProtocol, LngLatBounds, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { useEffect, useMemo, useRef } from "react";
 import Map, {
+  AttributionControl,
+  GeolocateControl,
   Layer,
   Marker,
   NavigationControl,
@@ -66,8 +68,8 @@ type Props = {
   isochrones: IsochroneCollection | undefined;
   /** The routing engine anything on screen came from, which then needs its credit; null for none. */
   routingEngine: string | null;
-  /** Credits for display-only sources whose places are on screen; each id names its map source. */
-  credits: { id: string; html: string }[];
+  /** Credits (HTML) for display-only sources whose places are on screen. */
+  credits: string[];
   /** The selected place's live data, if it has any. */
   selectedLive: PlaceLive | null;
   /** The selected place's details, once they arrive. */
@@ -82,6 +84,7 @@ type Props = {
 export function MapView(props: Props) {
   const { origin, radius, places, selected, mode, resultMode, route, routeState, isochrones, routingEngine } = props;
   const routingCredit = routingEngine === null ? undefined : ROUTING_CREDITS[routingEngine];
+  const extraCredits = routingCredit ? [routingCredit, ...props.credits] : props.credits;
   const style = useMemo(basemapStyle, []);
   const map = useRef<MapRef>(null);
 
@@ -89,15 +92,8 @@ export function MapView(props: Props) {
   useEffect(() => {
     const line = route?.geometry.coordinates;
     if (!line || line.length < 2) return;
-    const lons = line.map((c) => c[0]);
-    const lats = line.map((c) => c[1]);
-    map.current?.fitBounds(
-      [
-        [Math.min(...lons), Math.min(...lats)],
-        [Math.max(...lons), Math.max(...lats)],
-      ],
-      { padding: { top: 160, bottom: 60, left: 60, right: 60 }, maxZoom: 17, duration: 600 },
-    );
+    const bounds = line.reduce((b, c) => b.extend([c[0], c[1]]), new LngLatBounds());
+    map.current?.fitBounds(bounds, { padding: { top: 160, bottom: 60, left: 60, right: 60 }, maxZoom: 17, duration: 600 });
   }, [route]);
 
   const geojson = useMemo<FeatureCollection>(
@@ -149,8 +145,13 @@ export function MapView(props: Props) {
       onClick={handleClick}
       cursor="crosshair"
       style={{ width: "100%", height: "100%" }}
+      attributionControl={false}
     >
       <NavigationControl position="top-right" />
+      <GeolocateControl position="top-right" onGeolocate={(e) => props.onPickOrigin(e.coords.latitude, e.coords.longitude)} />
+      {/* The routing engine's credit, and those of display-only sources, while anything on screen comes from them.
+          The control takes its extra credits only when created, so it is remade when they change. */}
+      <AttributionControl key={extraCredits.join("\n")} customAttribution={extraCredits} />
       <Source id="isochrones" type="geojson" data={areas}>
         <Layer id="isochrone-fill" type="fill" paint={{ "fill-color": isochroneColor, "fill-opacity": 0.22 }} />
         <Layer id="isochrone-line" type="line" paint={{ "line-color": isochroneColor, "line-width": 1.5 }} />
@@ -187,19 +188,6 @@ export function MapView(props: Props) {
           paint={{ "circle-radius": 4, "circle-color": ["get", "color"], "circle-stroke-width": 1, "circle-stroke-color": "#111827" }}
         />
       </Source>
-      {/* Puts the routing engine's credit in the attribution while anything on screen comes from it. MapLibre only
-          credits sources a visible layer uses, hence the empty, transparent layer; the key swaps the source when the
-          engine changes, since a source keeps the attribution it was added with. */}
-      {routingCredit && (
-        <Source key={routingCredit} id="routing-credit" type="geojson" data={EMPTY} attribution={routingCredit}>
-          <Layer id="routing-credit" type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
-        </Source>
-      )}
-      {props.credits.map((credit) => (
-        <Source key={credit.id} id={credit.id} type="geojson" data={EMPTY} attribution={credit.html}>
-          <Layer id={credit.id} type="circle" paint={{ "circle-opacity": 0, "circle-radius": 0 }} />
-        </Source>
-      ))}
       <Marker latitude={origin.lat} longitude={origin.lon} color="#111827" />
       {selected && (
         <Popup

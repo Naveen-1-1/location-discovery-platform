@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.api.places;
 
 import io.github.naveen11.placemap.api.live.LiveSources;
+import jakarta.annotation.Nullable;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -230,7 +231,7 @@ public class PlaceRepository {
     }
 
     /** A place a name search found. */
-    public record NameMatch(long id, String name, String category, String address, double lat, double lon,
+    public record NameMatch(long id, String name, String category, @Nullable String address, double lat, double lon,
             long distanceMeters) {
     }
 

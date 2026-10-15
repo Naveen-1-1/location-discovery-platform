@@ -10,6 +10,7 @@ import io.github.naveen11.placemap.api.places.OriginSnapper;
 import io.github.naveen11.placemap.api.places.SnappedOrigin;
 import io.github.naveen11.placemap.api.routing.GuardedRouting;
 import io.github.naveen11.placemap.api.routing.TravelMode;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import java.util.List;
@@ -55,7 +56,7 @@ public class DirectionsController {
     public record RouteProperties(
             long placeId,
             String placeName,
-            String mode,
+            @Schema(allowableValues = {"walk", "bike", "drive"}) String mode,
             long seconds,
             long meters,
             String travelTimeSource,
@@ -66,7 +67,7 @@ public class DirectionsController {
     /** A GeoJSON FeatureCollection, one area per limit, smallest first; the other members describe the request. */
     public record IsochroneCollection(
             String type,
-            String mode,
+            @Schema(allowableValues = {"walk", "bike", "drive"}) String mode,
             String travelTimeSource,
             boolean driveWithoutTraffic,
             String snappedCell,

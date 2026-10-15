@@ -1,6 +1,7 @@
 package io.github.naveen11.placemap.api.places;
 
 import io.github.naveen11.placemap.api.routing.RoutingClient.Leg;
+import jakarta.annotation.Nullable;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -18,14 +19,14 @@ public record NearbyPlace(
         long id,
         String name,
         String category,
-        String address,
+        @Nullable String address,
         double lat,
         double lon,
         long distanceMeters,
-        Long travelSeconds,
-        Long travelMeters,
-        String liveKey,
-        JsonNode live,
+        @Nullable Long travelSeconds,
+        @Nullable Long travelMeters,
+        @Nullable String liveKey,
+        @Nullable JsonNode live,
         PlaceFacts facts) {
 
     /** A place without live data or facts. */

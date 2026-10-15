@@ -5,6 +5,8 @@ import io.github.naveen11.placemap.api.live.LiveData;
 import io.github.naveen11.placemap.api.live.LiveHubClient;
 import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -62,7 +64,8 @@ public class NearbyController {
      * @param status {@code ok}, or {@code unavailable} when live-hub was slow or down and badges are missing
      * @param topics per live topic, whether its feed is stale and when it last answered
      */
-    public record LiveSummary(String status, Map<String, JsonNode> topics) {}
+    public record LiveSummary(@Schema(allowableValues = {"ok", "unavailable"}) String status,
+            Map<String, JsonNode> topics) {}
 
     /**
      * @param lat the snapped origin: the centre of the search's H3 cell, not the position the client sent
@@ -79,14 +82,14 @@ public class NearbyController {
             double lat,
             double lon,
             int maxSnapErrorMeters,
-            String mode,
+            @Nullable @Schema(allowableValues = {"walk", "bike", "drive"}) String mode,
             int radiusMeters,
             String travelTimeSource,
-            String fallback,
+            @Nullable String fallback,
             boolean driveWithoutTraffic,
             List<NearbyPlace> places,
-            LiveSummary live,
-            Integer hiddenForUnknownHours) {}
+            @Nullable LiveSummary live,
+            @Nullable Integer hiddenForUnknownHours) {}
 
     /**
      * Places near a point. Without {@code mode}: the nearest within {@code radius}, by straight-line distance. With

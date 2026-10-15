@@ -1,0 +1,774 @@
+{
+  "openapi" : "3.1.0",
+  "info" : {
+    "title" : "OpenAPI definition",
+    "version" : "v0"
+  },
+  "servers" : [ {
+    "url" : "http://localhost",
+    "description" : "Generated server url"
+  } ],
+  "paths" : {
+    "/api/categories" : {
+      "get" : {
+        "operationId" : "categories",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/Category"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "nearby-controller" ]
+      }
+    },
+    "/api/isochrone" : {
+      "get" : {
+        "operationId" : "isochrone",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "lat",
+          "required" : true,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "maximum" : 90.0,
+            "minimum" : -90.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "lon",
+          "required" : true,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "maximum" : 180.0,
+            "minimum" : -180.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "mode",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "walk"
+          }
+        }, {
+          "in" : "query",
+          "name" : "minutes",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "default" : [ 5, 10, 15 ],
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IsochroneCollection"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "directions-controller" ]
+      }
+    },
+    "/api/places/nearby" : {
+      "get" : {
+        "operationId" : "nearby",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "lat",
+          "required" : true,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "maximum" : 90.0,
+            "minimum" : -90.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "lon",
+          "required" : true,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "maximum" : 180.0,
+            "minimum" : -180.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "mode",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "radius",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "maximum" : 20000,
+            "minimum" : 50
+          }
+        }, {
+          "in" : "query",
+          "name" : "category",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50,
+            "maximum" : 200,
+            "minimum" : 1
+          }
+        }, {
+          "in" : "query",
+          "name" : "snap",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean",
+            "default" : false
+          }
+        }, {
+          "in" : "query",
+          "name" : "licensed",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean",
+            "default" : false
+          }
+        }, {
+          "in" : "query",
+          "name" : "inspection",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "open",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/NearbyResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "nearby-controller" ]
+      }
+    },
+    "/api/places/{id}" : {
+      "get" : {
+        "operationId" : "place",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PlaceDetails"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "place-controller" ]
+      }
+    },
+    "/api/route" : {
+      "get" : {
+        "operationId" : "route",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "lat",
+          "required" : true,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "maximum" : 90.0,
+            "minimum" : -90.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "lon",
+          "required" : true,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "maximum" : 180.0,
+            "minimum" : -180.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "place",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "query",
+          "name" : "mode",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "walk"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RouteFeature"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "directions-controller" ]
+      }
+    },
+    "/api/search" : {
+      "get" : {
+        "operationId" : "search",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "q",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
+          }
+        }, {
+          "in" : "query",
+          "name" : "lat",
+          "required" : false,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "default" : 42.355,
+            "maximum" : 90.0,
+            "minimum" : -90.0
+          }
+        }, {
+          "in" : "query",
+          "name" : "lon",
+          "required" : false,
+          "schema" : {
+            "type" : "number",
+            "format" : "double",
+            "default" : -71.0656,
+            "maximum" : 180.0,
+            "minimum" : -180.0
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SearchResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "search-controller" ]
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "AddressMatch" : {
+        "type" : "object",
+        "properties" : {
+          "kind" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "lat" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "lon" : {
+            "type" : "number",
+            "format" : "double"
+          }
+        }
+      },
+      "Category" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Facts" : {
+        "type" : "object",
+        "properties" : {
+          "acceptsSnap" : {
+            "type" : "boolean"
+          },
+          "hours" : {
+            "oneOf" : [ {
+              "$ref" : "#/components/schemas/Hours"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "inspection" : {
+            "oneOf" : [ {
+              "$ref" : "#/components/schemas/Inspection"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "licensed" : {
+            "type" : "boolean"
+          },
+          "parkFeatures" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Feature"
+            }
+          }
+        }
+      },
+      "Feature" : {
+        "type" : "object",
+        "properties" : {
+          "count" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Hours" : {
+        "type" : "object",
+        "properties" : {
+          "openNow" : {
+            "type" : "boolean"
+          },
+          "source" : {
+            "type" : "string",
+            "enum" : [ "osm", "cambridge_permit", "boston_licence" ]
+          },
+          "text" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Inspection" : {
+        "type" : "object",
+        "properties" : {
+          "at" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "failedChecks12m" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          },
+          "result" : {
+            "type" : "string",
+            "enum" : [ "passed", "failed", "other" ]
+          }
+        }
+      },
+      "IsochroneCollection" : {
+        "type" : "object",
+        "properties" : {
+          "driveWithoutTraffic" : {
+            "type" : "boolean"
+          },
+          "features" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/IsochroneFeature"
+            }
+          },
+          "maxSnapErrorMeters" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "walk", "bike", "drive" ]
+          },
+          "snappedCell" : {
+            "type" : "string"
+          },
+          "travelTimeSource" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "IsochroneFeature" : {
+        "type" : "object",
+        "properties" : {
+          "geometry" : {
+            "type" : "object"
+          },
+          "properties" : {
+            "$ref" : "#/components/schemas/IsochroneProperties"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "IsochroneProperties" : {
+        "type" : "object",
+        "properties" : {
+          "minutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "LiveSummary" : {
+        "type" : "object",
+        "properties" : {
+          "status" : {
+            "type" : "string",
+            "enum" : [ "ok", "unavailable" ]
+          },
+          "topics" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "object"
+            }
+          }
+        }
+      },
+      "NameMatch" : {
+        "type" : "object",
+        "properties" : {
+          "address" : {
+            "type" : [ "string", "null" ]
+          },
+          "category" : {
+            "type" : "string"
+          },
+          "distanceMeters" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "lat" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "lon" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      },
+      "NearbyPlace" : {
+        "type" : "object",
+        "properties" : {
+          "address" : {
+            "type" : [ "string", "null" ]
+          },
+          "category" : {
+            "type" : "string"
+          },
+          "distanceMeters" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "facts" : {
+            "$ref" : "#/components/schemas/PlaceFacts"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "lat" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "live" : {
+            "type" : [ "object", "null" ]
+          },
+          "liveKey" : {
+            "type" : [ "string", "null" ]
+          },
+          "lon" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "travelMeters" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "travelSeconds" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          }
+        }
+      },
+      "NearbyResponse" : {
+        "type" : "object",
+        "properties" : {
+          "driveWithoutTraffic" : {
+            "type" : "boolean"
+          },
+          "fallback" : {
+            "type" : [ "string", "null" ]
+          },
+          "hiddenForUnknownHours" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          },
+          "lat" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "live" : {
+            "oneOf" : [ {
+              "$ref" : "#/components/schemas/LiveSummary"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "lon" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "maxSnapErrorMeters" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "mode" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "walk", "bike", "drive" ]
+          },
+          "places" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NearbyPlace"
+            }
+          },
+          "radiusMeters" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "snappedCell" : {
+            "type" : "string"
+          },
+          "travelTimeSource" : {
+            "type" : "string"
+          }
+        }
+      },
+      "PlaceDetails" : {
+        "type" : "object",
+        "properties" : {
+          "address" : {
+            "type" : [ "string", "null" ]
+          },
+          "category" : {
+            "type" : "string"
+          },
+          "facts" : {
+            "$ref" : "#/components/schemas/Facts"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "lat" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "liveKey" : {
+            "type" : [ "string", "null" ]
+          },
+          "lon" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : [ "string", "null" ]
+          },
+          "sources" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "website" : {
+            "type" : [ "string", "null" ]
+          }
+        }
+      },
+      "PlaceFacts" : {
+        "type" : "object",
+        "properties" : {
+          "acceptsSnap" : {
+            "type" : "boolean"
+          },
+          "inspection" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "passed", "failed", "other" ]
+          },
+          "licensed" : {
+            "type" : "boolean"
+          },
+          "openNow" : {
+            "type" : [ "boolean", "null" ]
+          }
+        }
+      },
+      "RouteFeature" : {
+        "type" : "object",
+        "properties" : {
+          "geometry" : {
+            "type" : "object"
+          },
+          "properties" : {
+            "$ref" : "#/components/schemas/RouteProperties"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RouteProperties" : {
+        "type" : "object",
+        "properties" : {
+          "driveWithoutTraffic" : {
+            "type" : "boolean"
+          },
+          "maxSnapErrorMeters" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "meters" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "walk", "bike", "drive" ]
+          },
+          "placeId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "placeName" : {
+            "type" : "string"
+          },
+          "seconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "snappedCell" : {
+            "type" : "string"
+          },
+          "travelTimeSource" : {
+            "type" : "string"
+          }
+        }
+      },
+      "SearchResult" : {
+        "type" : "object",
+        "properties" : {
+          "addressStatus" : {
+            "type" : "string"
+          },
+          "addresses" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/AddressMatch"
+            }
+          },
+          "places" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NameMatch"
+            }
+          }
+        }
+      }
+    }
+  }
+}

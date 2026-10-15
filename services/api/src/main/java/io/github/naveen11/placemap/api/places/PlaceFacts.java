@@ -1,6 +1,8 @@
 package io.github.naveen11.placemap.api.places;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Nullable;
 
 /**
  * What the filters know about a place, shown as badges.
@@ -10,7 +12,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
  *     Worked out for every answer, never kept in a shared result, like live data.
  * @param week the regular week, for working out {@code openNow}; not sent
  */
-public record PlaceFacts(boolean acceptsSnap, boolean licensed, String inspection, Boolean openNow,
+public record PlaceFacts(boolean acceptsSnap, boolean licensed,
+        @Nullable @Schema(allowableValues = {"passed", "failed", "other"}) String inspection, @Nullable Boolean openNow,
         @JsonIgnore OpenWeek week) {
 
     public static final PlaceFacts NONE = new PlaceFacts(false, false, null, null, null);

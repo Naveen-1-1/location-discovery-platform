@@ -95,6 +95,13 @@ integration tests; without Docker they are skipped.
 ./mvnw -pl services/api -am verify -Dplacemap.valhalla-url=http://localhost:8002   # + routing contract on Valhalla
 ./mvnw -pl libs/concurrent-jcstress -am verify -Pjcstress -DskipTests # JCStress (quick mode)
 ```
+The frontend's response types are generated from the api's own OpenAPI description. After changing what an endpoint
+returns, `./mvnw verify` fails until the description in `frontend/openapi.json` is rewritten; then regenerate the
+types:
+```bash
+./mvnw -pl services/api -am test -Dtest=ApiSpecTest -Dplacemap.api-spec.write=true -Dsurefire.failIfNoSpecifiedTests=false
+(cd frontend && npm run types)
+```
 The importer's crash tests and backpressure benchmark run the real jar against a throwaway local database and need
 Docker Desktop, Toxiproxy (`brew install toxiproxy`) and the snapshots in `data/raw`:
 ```bash

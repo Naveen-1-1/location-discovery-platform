@@ -1,8 +1,9 @@
 // Live data from live-hub over one Server-Sent Events stream per browser tab. In development Vite proxies
 // /live to localhost:8081. The stream starts with a snapshot of every topic it asks for, then sends only what
-// changed; after a reconnect (the browser's own, a few seconds later) the server sends a fresh snapshot, so nothing
-// needs replaying. Components say which topics they need; the stream reopens when that set changes.
+// changed; after a reconnect, a few seconds later, the server sends a fresh snapshot, so nothing needs replaying.
+// Components say which topics they need; the stream reopens when that set changes.
 import { useEffect, useSyncExternalStore } from "react";
+import ReconnectingEventSource from "reconnecting-eventsource";
 
 /** One Bluebikes dock's counts, as live-hub sends them. */
 export type DockStatus = {
@@ -93,7 +94,7 @@ function docksText(docks: number): string {
 // ---- The one stream per tab ----
 
 let state: LiveState = EMPTY_LIVE;
-let source: EventSource | null = null;
+let source: ReconnectingEventSource | null = null;
 let openTopics = "";
 let pending: LiveState | null = null;
 const listeners = new Set<() => void>();
@@ -131,23 +132,13 @@ function reconcile() {
     items: new Map([...current().items].filter(([key]) => keep.has(key.slice(0, key.indexOf(":"))))),
   });
   if (topics === "") return;
-  const es = new EventSource(`/live?topics=${topics}`);
+  // Unlike a plain EventSource, this one also comes back after an error answer, such as a proxy's 502 while live-hub
+  // restarts. It waits a random time up to 7 s, about the spread the server asks for, so a restart does not bring
+  // every tab back at once.
+  const es = new ReconnectingEventSource(`/live?topics=${topics}`, { max_retry_time: 7_000 });
   source = es;
   es.onopen = () => update({ ...current(), connected: true });
-  es.onerror = () => {
-    update({ ...current(), connected: false });
-    // The browser retries a dropped stream by itself, after the server's retry: delay. But an error answer, such as a
-    // proxy's 502 while live-hub restarts, ends the EventSource for good. Reopen it after a random 2-7 s, the same
-    // spread the server asks for, so a restart does not bring every tab back at once.
-    if (es.readyState === EventSource.CLOSED) {
-      setTimeout(() => {
-        if (source === es) {
-          openTopics = "";
-          reconcile();
-        }
-      }, 2_000 + Math.random() * 5_000);
-    }
-  };
+  es.onerror = () => update({ ...current(), connected: false });
   es.addEventListener("snapshot", (e) => update(applySnapshot(current(), JSON.parse(e.data) as SnapshotEvent)));
   es.addEventListener("status", (e) => update(applyStatus(current(), JSON.parse(e.data) as StatusEvent)));
   for (const topic of wanted.keys()) {

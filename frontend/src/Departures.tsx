@@ -1,6 +1,7 @@
 // The next MBTA departures at a stop or station, shown in its popup. Departures are not streamed (every stop together
 // is about 2 MB), so this asks live-hub for the one stop on screen, and again every 20 s while it stays open.
 import { useQuery } from "@tanstack/react-query";
+import { getJson } from "./api";
 import type { StopAlerts } from "./live";
 
 type Departure = { route: string; routeName: string; direction: number; destination: string | null; time: number };
@@ -11,11 +12,8 @@ type DeparturesResponse = {
   departures: { id: string; next: Departure[] } | null;
 };
 
-async function fetchDepartures(stop: string, signal: AbortSignal): Promise<DeparturesResponse> {
-  const res = await fetch(`/live/departures?stop=${encodeURIComponent(stop)}`, { signal });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return (await res.json()) as DeparturesResponse;
-}
+const fetchDepartures = (stop: string, signal: AbortSignal) =>
+  getJson<DeparturesResponse>(`/live/departures?stop=${encodeURIComponent(stop)}`, signal);
 
 export function minutesUntil(epochSeconds: number, nowMillis: number): string {
   const minutes = Math.round((epochSeconds * 1000 - nowMillis) / 60_000);

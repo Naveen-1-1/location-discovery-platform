@@ -1,5 +1,7 @@
 package io.github.naveen11.placemap.api.places;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Nullable;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -10,16 +12,17 @@ import java.util.List;
  * @param liveKey the live-hub key for the place's live data, or null
  * @param sources ids from data/sources.yaml of the live records behind the place, sorted
  */
-public record PlaceDetails(long id, String name, String category, String address, String phone, String website,
-        double lat, double lon, String liveKey, Facts facts, List<String> sources) {
+public record PlaceDetails(long id, String name, String category, @Nullable String address, @Nullable String phone,
+        @Nullable String website, double lat, double lon, @Nullable String liveKey, Facts facts, List<String> sources) {
 
     /** @param inspection null if the place was never inspected; hours null if unknown */
-    public record Facts(boolean acceptsSnap, boolean licensed, Inspection inspection, Hours hours,
+    public record Facts(boolean acceptsSnap, boolean licensed, @Nullable Inspection inspection, @Nullable Hours hours,
             List<Feature> parkFeatures) {
     }
 
     /** @param result {@code passed}, {@code failed} or {@code other} */
-    public record Inspection(String result, OffsetDateTime at, Integer failedChecks12m) {
+    public record Inspection(@Schema(allowableValues = {"passed", "failed", "other"}) String result,
+            @Nullable OffsetDateTime at, @Nullable Integer failedChecks12m) {
     }
 
     /**
@@ -28,7 +31,8 @@ public record PlaceDetails(long id, String name, String category, String address
      *     licence allows, which the map labels as such)
      * @param openNow by the regular week, at the time of this answer
      */
-    public record Hours(String text, String source, boolean openNow) {
+    public record Hours(String text, @Schema(allowableValues = {"osm", "cambridge_permit", "boston_licence"}) String source,
+            boolean openNow) {
     }
 
     public record Feature(String name, int count) {
