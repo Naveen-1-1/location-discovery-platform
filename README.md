@@ -5,9 +5,10 @@ gyms, parks, banks, transit, bike share, EV charging and more. Places can be fil
 (health inspections, licences, SNAP acceptance, live bike and train availability) and sorted by distance or real
 travel time. The app also gives walk, bike and drive directions and shows the area reachable within N minutes.
 
-It is also a learning project. The three backend services I write contain real thread and concurrency code, and
-load tests and crash tests prove that code holds up. Observability, CI/CD and infrastructure as code are part of
-the project from the start.
+It is also a learning project. The three backend services I write run on real threads, which Spring and its
+libraries (Spring Batch, Resilience4j) create, name and stop, plus a few small concurrency pieces of my own where
+nothing existing fits. Load tests and crash tests prove it holds up. Observability, CI/CD and infrastructure as code
+are part of the project from the start.
 
 > **Status:** Phase 7, hardening and the open data release: request-body limits, burn-rate alerts on the api's SLOs,
 > the ODbL release built locally (not yet published), and a nightly check that passed locally on 2026-10-11. Phase 7
@@ -115,7 +116,7 @@ command that ends with `NIGHTLY PASSED` or `NIGHTLY FAILED`: promtool tests of t
 `./mvnw verify` (Docker must be running), the release check, the contract tests, the full JCStress suite, and C1 and
 C2. `nightly.yml` runs the same on GitHub. Needs promtool (`brew install prometheus`) besides the tools above.
 ```bash
-tools/dev.sh nightly                       # everything, about 65 minutes (JCStress takes 45)
+tools/dev.sh nightly                       # everything, about 35 minutes (JCStress takes 13)
 tools/dev.sh nightly --only verify,c1      # some steps (a partial run is not counted)
 ```
 
