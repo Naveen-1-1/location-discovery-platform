@@ -16,7 +16,7 @@ class RateLimitFilterTest {
 
     private final Counter rejected = new SimpleMeterRegistry().counter("placemap.ratelimit.rejected");
     private final RateLimitFilter filter = new RateLimitFilter(
-            new ClientRateLimiter(new RateLimitProperties(true, 1, 2, 100), TimeMeter.SYSTEM_NANOTIME), rejected);
+            new ClientRateLimiter(new RateLimitProperties(true, 1, 2, 100), TimeMeter.SYSTEM_MILLISECONDS), rejected);
 
     @Test
     void overTheLimitAnswers429WithRetryAfterAndAProblemDetail() throws Exception {
@@ -27,7 +27,7 @@ class RateLimitFilterTest {
 
         assertThat(over.getStatus()).isEqualTo(429);
         assertThat(over.getHeader(HttpHeaders.RETRY_AFTER)).isEqualTo("1");
-        assertThat(over.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE + ";charset=UTF-8");
+        assertThat(over.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         assertThat(over.getContentAsString()).contains("\"status\":429").contains("Try again in 1 s.");
         assertThat(rejected.count()).isEqualTo(1);
     }
@@ -43,7 +43,7 @@ class RateLimitFilterTest {
     @Test
     void onlyTheApiIsLimited() {
         var registration = new RateLimitConfig().rateLimitFilter(
-                new ClientRateLimiter(new RateLimitProperties(true, 10, 20, 100), TimeMeter.SYSTEM_NANOTIME),
+                new ClientRateLimiter(new RateLimitProperties(true, 10, 20, 100), TimeMeter.SYSTEM_MILLISECONDS),
                 new SimpleMeterRegistry());
 
         assertThat(registration.getUrlPatterns()).containsExactly("/api/*");

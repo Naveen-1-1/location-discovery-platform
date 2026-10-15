@@ -13,6 +13,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,6 +27,7 @@ import org.springframework.web.client.RestClient;
 class LiveHubClientTest {
 
     private static final Duration TIMEOUT = Duration.ofMillis(150);
+    private static final VirtualThreadTaskExecutor CALLS = new VirtualThreadTaskExecutor("live-batch-");
 
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
@@ -39,7 +41,7 @@ class LiveHubClientTest {
                 .andRespond(withSuccess("""
                         {"version":7,"topics":{"bikes":{"stale":false,"updated":1700}},
                          "items":{"bikes:a":{"id":"a","bikes":3}}}""", MediaType.APPLICATION_JSON));
-        var client = new LiveHubClient(builder.build(), TIMEOUT, registry);
+        var client = new LiveHubClient(builder.build(), TIMEOUT, registry, CALLS);
 
         LiveData data = client.fetch(List.of("bikes:a", "bikes:b"), Deadline.after(Duration.ofSeconds(1)));
 
@@ -66,7 +68,7 @@ class LiveHubClientTest {
                     }
                 })
                 .build();
-        var client = new LiveHubClient(slow, TIMEOUT, registry);
+        var client = new LiveHubClient(slow, TIMEOUT, registry, CALLS);
 
         long started = System.nanoTime();
         LiveData data = client.fetch(List.of("bikes:a"), Deadline.after(Duration.ofSeconds(1)));
@@ -80,7 +82,7 @@ class LiveHubClientTest {
 
     @Test
     void neverWaitsLongerThanTheRequestHasLeft() {
-        var client = new LiveHubClient(RestClient.builder().baseUrl("http://live-hub").build(), TIMEOUT, registry);
+        var client = new LiveHubClient(RestClient.builder().baseUrl("http://live-hub").build(), TIMEOUT, registry, CALLS);
         LiveData data = client.fetch(List.of("bikes:a"), Deadline.after(Duration.ZERO));
         assertThat(data.status()).isEqualTo("unavailable");
         assertThat(count("no_time")).isEqualTo(1);
@@ -93,7 +95,7 @@ class LiveHubClientTest {
         server.expect(requestTo("http://live-hub/internal/live/batch")).andRespond(withServerError());
         server.expect(requestTo("http://live-hub/internal/live/batch"))
                 .andRespond(withSuccess("{\"unexpected\":true}", MediaType.APPLICATION_JSON));
-        var client = new LiveHubClient(builder.build(), TIMEOUT, registry);
+        var client = new LiveHubClient(builder.build(), TIMEOUT, registry, CALLS);
 
         assertThat(client.fetch(List.of("bikes:a"), Deadline.after(Duration.ofSeconds(1))).status()).isEqualTo("unavailable");
         assertThat(client.fetch(List.of("bikes:a"), Deadline.after(Duration.ofSeconds(1))).status()).isEqualTo("unavailable");
@@ -102,7 +104,7 @@ class LiveHubClientTest {
 
     @Test
     void turnedOffMeansNoLiveData() {
-        var client = new LiveHubClient(null, TIMEOUT, registry);
+        var client = new LiveHubClient(null, TIMEOUT, registry, CALLS);
         assertThat(client.fetch(List.of("bikes:a"), Deadline.after(Duration.ofSeconds(1))).status()).isEqualTo("unavailable");
         assertThat(count("disabled")).isEqualTo(1);
     }

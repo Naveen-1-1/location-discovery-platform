@@ -29,7 +29,7 @@ class BodyLimitFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(413);
         assertThat(response.getHeader(HttpHeaders.CONNECTION)).isEqualTo("close");
-        assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE + ";charset=UTF-8");
+        assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         assertThat(response.getContentAsString()).contains("\"status\":413").contains("over 1024 bytes");
         assertThat(chain.getRequest()).isNull();
         assertThat(request.reads).isZero();

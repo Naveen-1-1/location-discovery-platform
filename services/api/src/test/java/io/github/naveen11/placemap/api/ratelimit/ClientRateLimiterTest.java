@@ -20,7 +20,7 @@ class ClientRateLimiterTest {
 
                 @Override
                 public boolean isWallClockBased() {
-                    return false;
+                    return true; // Bucket4j's cache-backed buckets require it
                 }
             });
 
@@ -60,7 +60,7 @@ class ClientRateLimiterTest {
         assertThat(key).hasSize(32).doesNotContain("203").isEqualTo(limiter.clientKey("203.0.113.7"));
         assertThat(limiter.clientKey("203.0.113.8")).isNotEqualTo(key);
         var otherProcess = new ClientRateLimiter(new RateLimitProperties(true, 10, 20, 1_000),
-                TimeMeter.SYSTEM_NANOTIME);
+                TimeMeter.SYSTEM_MILLISECONDS);
         assertThat(otherProcess.clientKey("203.0.113.7")).as("the salt differs per process").isNotEqualTo(key);
     }
 

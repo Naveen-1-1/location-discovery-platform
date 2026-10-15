@@ -1,16 +1,15 @@
 package io.github.naveen11.placemap.api.bodylimit;
 
+import io.github.naveen11.placemap.api.Problems;
 import io.micrometer.core.instrument.Counter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -51,13 +50,8 @@ final class BodyLimitFilter extends OncePerRequestFilter {
 
     private void refuse(HttpServletResponse response, HttpStatus status, String detail) throws IOException {
         rejected.increment();
-        response.setStatus(status.value());
         // Tomcat closes the connection after this response instead of reading the unread body to keep it open.
         response.setHeader(HttpHeaders.CONNECTION, "close");
-        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        response.setCharacterEncoding(StandardCharsets.UTF_8);
-        response.getWriter().write("""
-                {"type":"about:blank","title":"%s","status":%d,"detail":"%s"}""".formatted(
-                status.getReasonPhrase(), status.value(), detail));
+        Problems.write(response, status, detail);
     }
 }

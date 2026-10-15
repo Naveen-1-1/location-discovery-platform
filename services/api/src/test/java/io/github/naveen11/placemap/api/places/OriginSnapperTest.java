@@ -2,13 +2,14 @@ package io.github.naveen11.placemap.api.places;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.naveen11.placemap.api.TestH3;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /** Snapping: the error is never more than the cell's radius, and the same cell always gives one answer. */
 class OriginSnapperTest {
 
-    private final OriginSnapper snapper = new OriginSnapper();
+    private final OriginSnapper snapper = new OriginSnapper(TestH3.CORE);
 
     @Test
     void theSnappingErrorIsNeverMoreThanTheReportedMaximum() {

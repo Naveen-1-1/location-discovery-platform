@@ -22,6 +22,7 @@ import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.timelimiter.TimeLimiter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -33,30 +34,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
 
 /** The plan's claims for showcase 3 (shared work, deadlines, bulkheads, breaker, fallback), at the service level. */
 class NearbyServiceTest {
 
     private static final NearbyProperties DEFAULTS = new NearbyProperties(Duration.ofMillis(1500),
-            Duration.ofMillis(800), 10_000, Duration.ofMinutes(5), Duration.ofSeconds(15), 10);
+            Duration.ofMillis(800), 10_000, Duration.ofMinutes(5), Duration.ofSeconds(15));
     private static final SnappedOrigin COMMON = new SnappedOrigin("8a2a3066...", 42.3550, -71.0656, 75);
 
     private final PlaceRepository places = mock(PlaceRepository.class);
     private final AtomicLong clock = new AtomicLong();
     private final FakeRoutingClient engine = new FakeRoutingClient();
-    private final CircuitBreaker breaker = CircuitBreaker.of("routing", GuardedRouting.breakerConfig());
+    private final CircuitBreaker breaker = CircuitBreaker.of("routing", FakeRoutingClient.BREAKER);
     private final GuardedRouting routing = engine.guarded(breaker);
     private NearbyService service;
-
-    @AfterEach
-    void close() {
-        if (service != null) {
-            service.close();
-        }
-        routing.close();
-    }
 
     @Test
     void oneHundredIdenticalSearchesShareOneDatabaseQueryAndOneRoutingCall() throws Exception {
@@ -256,10 +249,10 @@ class NearbyServiceTest {
     }
 
     private NearbyService service(NearbyProperties properties) {
-        var config = BulkheadConfig.custom().maxConcurrentCalls(properties.databaseConcurrency())
-                .maxWaitDuration(Duration.ZERO).build();
-        return new NearbyService(places, routing, properties, Bulkhead.of("database", config),
-                new SimpleMeterRegistry(), clock::get);
+        var database = BulkheadConfig.custom().maxConcurrentCalls(10).maxWaitDuration(Duration.ZERO).build();
+        return new NearbyService(places, routing, TimeLimiter.of(properties.travelTimeTimeout()), properties,
+                Bulkhead.of("database", database), new SimpleMeterRegistry(), clock::get,
+                new VirtualThreadTaskExecutor("nearby-load-"));
     }
 
     /**

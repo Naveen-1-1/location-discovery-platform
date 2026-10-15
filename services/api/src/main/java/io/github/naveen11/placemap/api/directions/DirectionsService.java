@@ -11,13 +11,12 @@ import io.github.naveen11.placemap.api.routing.GuardedRouting;
 import io.github.naveen11.placemap.api.routing.RoutingClient.Isochrone;
 import io.github.naveen11.placemap.api.routing.RoutingClient.Route;
 import io.github.naveen11.placemap.api.routing.TravelMode;
+import io.github.resilience4j.timelimiter.TimeLimiter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.cache.CaffeineCacheMetrics;
-import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -25,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * requests from one cell wait on one engine call, and the answer is kept a while (routes {@code routeTtl},
  * isochrones {@code isochroneTtl}), which spares openrouteservice's daily quotas. Failures are not kept.
  */
-public class DirectionsService implements AutoCloseable {
+public class DirectionsService {
 
     public record RouteKey(SnappedOrigin origin, long placeId, TravelMode mode) {}
 
@@ -53,17 +52,19 @@ public class DirectionsService implements AutoCloseable {
 
     private final PlaceRepository places;
     private final GuardedRouting routing;
-    private final Duration timeout;
-    private final ExecutorService loaders =
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("directions-load-", 1).factory());
+    private final TimeLimiter timeout;
     private final AsyncLoadingCache<RouteKey, RouteResult> routes;
     private final AsyncLoadingCache<IsochroneKey, IsochroneResult> isochrones;
 
-    public DirectionsService(PlaceRepository places, GuardedRouting routing, DirectionsProperties properties,
-            MeterRegistry registry) {
+    /**
+     * @param timeout the {@code directions} time limiter: how long one engine call may take
+     * @param loaders where each shared load runs (one virtual thread each)
+     */
+    public DirectionsService(PlaceRepository places, GuardedRouting routing, TimeLimiter timeout,
+            DirectionsProperties properties, MeterRegistry registry, Executor loaders) {
         this.places = places;
         this.routing = routing;
-        this.timeout = properties.timeout();
+        this.timeout = timeout;
         this.routes = Caffeine.newBuilder()
                 .maximumSize(properties.cacheSize())
                 .expireAfterWrite(properties.routeTtl())
@@ -102,10 +103,5 @@ public class DirectionsService implements AutoCloseable {
         List<Isochrone> areas = routing.call(timeout,
                 engine -> engine.isochrones(key.origin().point(), key.mode(), key.minutes()));
         return new IsochroneResult(areas, routing.engine());
-    }
-
-    @Override
-    public void close() {
-        loaders.close();
     }
 }

@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.api.routing;
 
+import io.github.naveen11.placemap.api.TestH3;
 import java.net.URI;
 import java.time.Duration;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -27,6 +28,6 @@ class ValhallaRoutingClientLiveTest extends RoutingClientContract {
         RestClient rest = ValhallaRoutingClient.configure(RestClient.builder(), valhalla)
                 .requestFactory(RoutingConfig.jdk(valhalla.timeout()))
                 .build();
-        return new ValhallaRoutingClient(rest, rest, valhalla.maxSnapMeters());
+        return new ValhallaRoutingClient(rest, rest, valhalla.maxSnapMeters(), TestH3.CORE);
     }
 }

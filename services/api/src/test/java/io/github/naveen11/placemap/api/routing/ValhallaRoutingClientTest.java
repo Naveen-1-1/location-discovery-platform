@@ -8,6 +8,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import io.github.naveen11.placemap.api.TestH3;
 import io.github.naveen11.placemap.api.routing.RoutingClient.Isochrone;
 import io.github.naveen11.placemap.api.routing.RoutingClient.Leg;
 import io.github.naveen11.placemap.api.routing.RoutingClient.Route;
@@ -57,7 +58,7 @@ class ValhallaRoutingClientTest {
         RestClient.Builder builder = ValhallaRoutingClient.configure(RestClient.builder(), VALHALLA);
         server = MockRestServiceServer.bindTo(builder).build();
         RestClient rest = builder.build();
-        client = new ValhallaRoutingClient(rest, rest, VALHALLA.maxSnapMeters());
+        client = new ValhallaRoutingClient(rest, rest, VALHALLA.maxSnapMeters(), TestH3.CORE);
     }
 
     @Test
@@ -69,7 +70,7 @@ class ValhallaRoutingClientTest {
                          "targets": [{"lat": 42.3561, "lon": -71.0656}, {"lat": 42.3736, "lon": -71.119},
                                      {"lat": 42.3, "lon": -70.8}],
                          "costing": "pedestrian", "units": "kilometers", "verbose": true,
-                         "expansion_max_distance": 67997}
+                         "expansion_max_distance": 68024}
                         """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess(fixture("matrix-pedestrian.json"), MediaType.APPLICATION_JSON));
 
@@ -220,7 +221,7 @@ class ValhallaRoutingClientTest {
                     }
                 })
                 .build();
-        var slow = new ValhallaRoutingClient(timingOut, timingOut, 350);
+        var slow = new ValhallaRoutingClient(timingOut, timingOut, 350, TestH3.CORE);
 
         assertThatThrownBy(() -> slow.travelTimes(COMMON, List.of(FROG_POND), TravelMode.WALK))
                 .isInstanceOf(RoutingException.class)

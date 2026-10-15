@@ -6,6 +6,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.uber.h3core.H3Core;
+import io.github.naveen11.placemap.api.TestH3;
 import io.github.naveen11.placemap.api.live.LiveData;
 import io.github.naveen11.placemap.api.live.LiveHubClient;
 import io.github.naveen11.placemap.api.routing.TravelMode;
@@ -51,6 +53,11 @@ class NearbyControllerTest {
         @Bean
         Clock clock() {
             return Clock.fixed(MONDAY_1402, ZoneOffset.UTC);
+        }
+
+        @Bean
+        H3Core h3Core() {
+            return TestH3.CORE;
         }
     }
 

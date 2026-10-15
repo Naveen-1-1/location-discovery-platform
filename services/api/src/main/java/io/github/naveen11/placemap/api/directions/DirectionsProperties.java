@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * for.
  *
  * @param deadline how long a request may take in total
- * @param timeout how long the engine call may take
+ * @param timeout how long the engine call may take (read by the {@code directions} time limiter's settings)
  * @param routeTtl how long a route is shared
  * @param isochroneTtl how long isochrones are shared; reachable areas change even more rarely than routes
  * @param maxMinutes the longest isochrone limit a client may ask for

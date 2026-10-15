@@ -6,6 +6,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.uber.h3core.H3Core;
+import io.github.naveen11.placemap.api.TestH3;
 import io.github.naveen11.placemap.api.directions.DirectionsService.IsochroneKey;
 import io.github.naveen11.placemap.api.directions.DirectionsService.IsochroneResult;
 import io.github.naveen11.placemap.api.directions.DirectionsService.RouteResult;
@@ -24,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -38,6 +41,11 @@ class DirectionsControllerTest {
     @TestConfiguration
     @EnableConfigurationProperties(DirectionsProperties.class)
     static class Properties {
+
+        @Bean
+        H3Core h3Core() {
+            return TestH3.CORE;
+        }
     }
 
     @Autowired

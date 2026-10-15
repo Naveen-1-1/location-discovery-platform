@@ -3,6 +3,9 @@ package io.github.naveen11.placemap.api.routing;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.uber.h3core.H3Core;
+import com.uber.h3core.LengthUnit;
+import com.uber.h3core.util.LatLng;
 import io.github.naveen11.placemap.api.routing.RoutingException.Kind;
 import java.io.IOException;
 import java.io.InputStream;
@@ -66,15 +69,18 @@ public final class ValhallaRoutingClient implements RoutingClient {
     private final RestClient matrix;
     private final RestClient slow;
     private final double maxSnapMeters;
+    private final H3Core h3;
 
     /**
      * @param matrix the client for travel times, with a timeout that fits nearby's deadline
      * @param slow the client for routes and isochrones
+     * @param h3 for great-circle distances
      */
-    public ValhallaRoutingClient(RestClient matrix, RestClient slow, double maxSnapMeters) {
+    public ValhallaRoutingClient(RestClient matrix, RestClient slow, double maxSnapMeters, H3Core h3) {
         this.matrix = matrix;
         this.slow = slow;
         this.maxSnapMeters = maxSnapMeters;
+        this.h3 = h3;
     }
 
     /** The base URL and accepted type both clients share. */
@@ -258,10 +264,8 @@ public final class ValhallaRoutingClient implements RoutingClient {
                 && distanceMeters(target, snapped.lat(), snapped.lon()) <= maxSnapMeters;
     }
 
-    private static double distanceMeters(GeoPoint p, double lat, double lon) {
-        double dLat = Math.toRadians(lat - p.lat());
-        double dLon = Math.toRadians(lon - p.lon()) * Math.cos(Math.toRadians(p.lat()));
-        return 6_371_000 * Math.hypot(dLat, dLon);
+    private double distanceMeters(GeoPoint p, double lat, double lon) {
+        return h3.greatCircleDistance(new LatLng(p.lat(), p.lon()), new LatLng(lat, lon), LengthUnit.m);
     }
 
     private static Stream<Throwable> causes(Throwable e) {

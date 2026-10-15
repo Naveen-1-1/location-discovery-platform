@@ -24,8 +24,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import org.junit.jupiter.api.AfterEach;
+import io.github.resilience4j.timelimiter.TimeLimiter;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
 import tools.jackson.databind.json.JsonMapper;
 
 class DirectionsServiceTest {
@@ -37,14 +38,9 @@ class DirectionsServiceTest {
     private final PlaceRepository places = mock(PlaceRepository.class);
     private final FakeRoutingClient engine = new FakeRoutingClient();
     private final GuardedRouting routing = engine.guarded();
-    private final DirectionsService directions = new DirectionsService(places, routing, DEFAULTS,
-            new SimpleMeterRegistry());
-
-    @AfterEach
-    void close() {
-        directions.close();
-        routing.close();
-    }
+    private final DirectionsService directions = new DirectionsService(places, routing,
+            TimeLimiter.of(DEFAULTS.timeout()), DEFAULTS, new SimpleMeterRegistry(),
+            new VirtualThreadTaskExecutor("directions-load-"));
 
     @Test
     void identicalRouteRequestsShareOneEngineCall() throws Exception {

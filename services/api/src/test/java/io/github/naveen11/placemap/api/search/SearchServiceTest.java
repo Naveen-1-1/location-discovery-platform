@@ -21,12 +21,13 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
 
 /** The search box: names and addresses together, addresses shared, and Photon never holding up the answer. */
 class SearchServiceTest {
 
     private static final SearchProperties PROPERTIES = new SearchProperties(URI.create("https://photon.test/api/"),
-            Duration.ofMillis(300), 1, 100, Duration.ofMinutes(10), Duration.ofMillis(1500), 8, 5, "-71.2,42.2,-70.8,42.4");
+            Duration.ofMillis(300), 100, Duration.ofMinutes(10), Duration.ofMillis(1500), 8, 5, "-71.2,42.2,-70.8,42.4");
     private static final PlaceRepository.NameMatch TATTE =
             new PlaceRepository.NameMatch(7, "Tatte Bakery & Café", "food", "1 Main St", 42.356, -71.066, 120);
     private static final AddressMatch ELM = new AddressMatch("12 Elm Street, Somerville", 42.39, -71.12, "house");
@@ -37,7 +38,7 @@ class SearchServiceTest {
     private SearchService service() {
         return new SearchService(places, photon, Bulkhead.ofDefaults("database"),
                 Bulkhead.of("photon", BulkheadConfig.custom().maxConcurrentCalls(1).maxWaitDuration(Duration.ZERO).build()),
-                PROPERTIES, new SimpleMeterRegistry());
+                PROPERTIES, new SimpleMeterRegistry(), new VirtualThreadTaskExecutor("search-photon-"));
     }
 
     private static Deadline soon() {

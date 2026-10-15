@@ -60,6 +60,7 @@
     <opening-hours-parser.version>0.29.0</opening-hours-parser.version>
     <resilience4j.version>2.4.0</resilience4j.version>
     <bucket4j.version>8.20.0</bucket4j.version>
+    <springdoc.version>3.1.1</springdoc.version>
     <!-- 3.13.2 is the newest stable release; the 4.0 line is still in beta. -->
     <wiremock.version>3.13.2</wiremock.version>
 
@@ -150,6 +151,22 @@
         <groupId>com.bucket4j</groupId>
         <artifactId>bucket4j_jdk17-core</artifactId>
         <version>${bucket4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.bucket4j</groupId>
+        <artifactId>bucket4j_jdk17-caffeine</artifactId>
+        <version>${bucket4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+      <!-- Resilience4j's BOM does not list its Boot 4 module yet. -->
+      <dependency>
+        <groupId>io.github.resilience4j</groupId>
+        <artifactId>resilience4j-spring-boot4</artifactId>
+        <version>${resilience4j.version}</version>
       </dependency>
       <dependency>
         <groupId>org.wiremock</groupId>

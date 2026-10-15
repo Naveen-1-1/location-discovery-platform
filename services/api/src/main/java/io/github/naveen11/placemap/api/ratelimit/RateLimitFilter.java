@@ -1,21 +1,17 @@
 package io.github.naveen11.placemap.api.ratelimit;
 
+import io.github.naveen11.placemap.api.Problems;
 import io.micrometer.core.instrument.Counter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * Answers 429 with Retry-After once a client is over its limit. It runs before Spring MVC, so it writes
- * the problem-details body itself, in the same shape the rest of the API uses.
- */
+/** Answers 429 with Retry-After and a problem detail once a client is over its limit. */
 final class RateLimitFilter extends OncePerRequestFilter {
 
     private final ClientRateLimiter limiter;
@@ -36,13 +32,8 @@ final class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         rejected.increment();
-        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(decision.retryAfterSeconds()));
-        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        response.setCharacterEncoding(StandardCharsets.UTF_8);
-        response.getWriter().write("""
-                {"type":"about:blank","title":"Too Many Requests","status":429,\
-                "detail":"Too many requests from this client. Try again in %d s."}""".formatted(
-                decision.retryAfterSeconds()));
+        Problems.write(response, HttpStatus.TOO_MANY_REQUESTS,
+                "Too many requests from this client. Try again in %d s.".formatted(decision.retryAfterSeconds()));
     }
 }

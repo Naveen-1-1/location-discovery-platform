@@ -11,6 +11,7 @@ import io.github.naveen11.placemap.api.routing.RoutingClient.Leg;
 import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.timelimiter.TimeLimiter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.cache.CaffeineCacheMetrics;
 import java.time.Duration;
@@ -19,8 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,13 +35,13 @@ import org.slf4j.LoggerFactory;
  *   <li>A load passes the database bulkhead without waiting (full means the caller gets a 503) and fetches the
  *       {@value #CANDIDATES} nearest candidates.
  *   <li>With a mode, the load then asks the engine for travel times to all candidates in one call, through the
- *       shared routing guard (bulkhead, circuit breaker) and cut off after {@code travelTimeTimeout}. Any failure there
- *       falls back to the straight-line order, flagged in the result.
+ *       shared routing guard (bulkhead, circuit breaker), cut off by the {@code travel-times} time limiter. Any failure
+ *       there falls back to the straight-line order, flagged in the result.
  *   <li>Failed loads are not cached. Results with travel times are shared for {@code cacheTtl}, fallbacks for the
  *       much shorter {@code fallbackTtl}.
  * </ol>
  */
-public class NearbyService implements AutoCloseable {
+public class NearbyService {
 
     /** Candidates fetched from the database and sent to the routing engine in one call (the plan's 1×200). */
     public static final int CANDIDATES = 200;
@@ -52,22 +52,20 @@ public class NearbyService implements AutoCloseable {
 
     private final PlaceRepository places;
     private final GuardedRouting routing;
+    private final TimeLimiter travelTimes;
     private final Bulkhead database;
-    private final Duration travelTimeTimeout;
     private final MeterRegistry registry;
-    private final ExecutorService loaders =
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("nearby-load-", 1).factory());
     private final AsyncLoadingCache<NearbyQuery, NearbyResult> cache;
 
-    public NearbyService(PlaceRepository places, GuardedRouting routing, NearbyProperties properties, Bulkhead database,
-            MeterRegistry registry, Ticker ticker) {
+    /** @param loaders where each shared load runs (one virtual thread each) */
+    public NearbyService(PlaceRepository places, GuardedRouting routing, TimeLimiter travelTimes,
+            NearbyProperties properties, Bulkhead database, MeterRegistry registry, Ticker ticker, Executor loaders) {
         this.places = places;
         this.routing = routing;
+        this.travelTimes = travelTimes;
         this.database = database;
-        this.travelTimeTimeout = properties.travelTimeTimeout();
         this.registry = registry;
-        // Loads run on virtual threads; the cache's own housekeeping stays on its default pool, which outlives this
-        // service during shutdown.
+        // The cache's own housekeeping stays on its default pool, which outlives this service during shutdown.
         this.cache = Caffeine.newBuilder()
                 .maximumSize(properties.cacheSize())
                 .expireAfter(new ResultExpiry(properties.cacheTtl(), properties.fallbackTtl()))
@@ -122,7 +120,7 @@ public class NearbyService implements AutoCloseable {
         }
         List<GeoPoint> targets = candidates.stream().map(p -> new GeoPoint(p.lat(), p.lon())).toList();
         try {
-            List<Leg> legs = routing.call(travelTimeTimeout,
+            List<Leg> legs = routing.call(travelTimes,
                     engine -> engine.travelTimes(query.origin().point(), targets, query.mode()));
             return loaded(query, routing.engine(), null, byTravelTime(candidates, legs), hidden);
         } catch (GuardedRouting.Refused refused) {
@@ -157,11 +155,6 @@ public class NearbyService implements AutoCloseable {
         return cache.synchronous().policy().expireVariably()
                 .flatMap(expiry -> expiry.getExpiresAfter(query))
                 .filter(left -> left.compareTo(Duration.ofDays(1)) < 0);
-    }
-
-    @Override
-    public void close() {
-        loaders.close();
     }
 
     /** Routed results live for {@code routed}, fallbacks for {@code fallback}; reads do not extend either. */

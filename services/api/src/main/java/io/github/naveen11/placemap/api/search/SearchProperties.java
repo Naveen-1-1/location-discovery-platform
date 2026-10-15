@@ -11,7 +11,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param photonUrl Photon's search endpoint: the public instance in development, our own later
  * @param photonTimeout how long one Photon call may take; the search answers with places only after that
- * @param photonConcurrency the Photon bulkhead: calls in flight at once; one more is answered without addresses
  * @param cacheTtl how long a Photon answer is reused for the same text near the same place
  * @param deadline the whole search
  * @param bbox the four towns' bounding box (data/area/area.geojson), "minLon,minLat,maxLon,maxLat"
@@ -20,7 +19,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record SearchProperties(
         @DefaultValue("https://photon.komoot.io/api/") URI photonUrl,
         @DefaultValue("1200ms") Duration photonTimeout,
-        @DefaultValue("4") int photonConcurrency,
         @DefaultValue("10000") int cacheSize,
         @DefaultValue("10m") Duration cacheTtl,
         @DefaultValue("1500ms") Duration deadline,

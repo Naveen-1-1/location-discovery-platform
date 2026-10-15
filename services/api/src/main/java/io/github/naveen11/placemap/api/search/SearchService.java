@@ -12,8 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
@@ -53,12 +52,11 @@ public class SearchService {
     private final Bulkhead photonCalls;
     private final SearchProperties properties;
     private final MeterRegistry registry;
-    private final ExecutorService photonThreads =
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("search-photon-", 1).factory());
     private final AsyncCache<AddressKey, List<AddressMatch>> addresses;
 
+    /** @param photonThreads where each Photon call runs (one virtual thread each) */
     public SearchService(PlaceRepository places, PhotonClient photon, Bulkhead database, Bulkhead photonCalls,
-            SearchProperties properties, MeterRegistry registry) {
+            SearchProperties properties, MeterRegistry registry, Executor photonThreads) {
         this.places = places;
         this.photon = photon;
         this.database = database;

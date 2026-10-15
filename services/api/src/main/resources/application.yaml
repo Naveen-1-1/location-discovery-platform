@@ -69,6 +69,10 @@ logging:
     # (placemap.nearby.rejected) and logs real database errors itself.
     "[com.github.benmanes.caffeine.cache.LocalAsyncCache]": error
 
+springdoc:
+  api-docs:
+    enabled: ${PLACEMAP_API_DOCS:false}   # /v3/api-docs, for generating the frontend's types; off unless asked for
+
 jdbc:
   datasource-proxy:
     include-parameter-values: false   # keep coordinates out of trace attributes
@@ -91,10 +95,41 @@ placemap:
     timeout: 150ms
   routing:
     engine: ${PLACEMAP_ROUTING_ENGINE:ors}   # ors, or valhalla: our own engine (the load-test stack)
-    concurrency: 8               # the routing bulkhead, shared by nearby, routes and isochrones
     valhalla:
       base-url: ${PLACEMAP_VALHALLA_URL:http://localhost:8002}
     ors:
       api-key: ${ORS_API_KEY:}   # from .env; empty means straight-line distances only
       matrix-timeout: 1s         # a backstop: nearby enforces travel-time-timeout itself
       timeout: 5s
+
+# Overload protection (plan: fail fast). A full bulkhead refuses at once: waiting would only push a request past its
+# deadline. Metrics come with each instance (resilience4j_*).
+resilience4j:
+  bulkhead:
+    instances:
+      routing:                   # calls to the engine in flight, shared by nearby, routes and isochrones
+        max-concurrent-calls: 8
+        max-wait-duration: 0
+      database:                  # every database search, nearby and names: as many as the pool has connections
+        max-concurrent-calls: 10
+        max-wait-duration: 0
+      photon:                    # address searches in flight; one more is answered without addresses
+        max-concurrent-calls: 4
+        max-wait-duration: 0
+  circuitbreaker:
+    instances:
+      routing:                   # opens when half of at least 5 calls in the last 10 s failed; 2 trial calls after 10 s
+        sliding-window-type: time_based
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        # "No route from here" is an answer, not a failure of the engine.
+        ignore-exception-predicate: io.github.naveen11.placemap.api.routing.RoutingException$Unroutable
+  timelimiter:
+    instances:
+      travel-times:              # the one travel-time call inside nearby's deadline
+        timeout-duration: ${placemap.nearby.travel-time-timeout}
+      directions:                # routes and isochrones
+        timeout-duration: ${placemap.directions.timeout}

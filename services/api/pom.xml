@@ -51,7 +51,11 @@
       <groupId>com.github.ben-manes.caffeine</groupId>
       <artifactId>caffeine</artifactId>
     </dependency>
-    <!-- Bulkheads and the routing circuit breaker: the core libraries, wired with @Bean. -->
+    <!-- Bulkheads, the routing circuit breaker and time limiters, configured under resilience4j.* with metrics. -->
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-spring-boot4</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-bulkhead</artifactId>
@@ -62,12 +66,25 @@
     </dependency>
     <dependency>
       <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-timelimiter</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
       <artifactId>resilience4j-micrometer</artifactId>
     </dependency>
-    <!-- Per-client rate limits. -->
+    <!-- Per-client rate limits: one bucket per client, kept in a bounded Caffeine cache. -->
     <dependency>
       <groupId>com.bucket4j</groupId>
       <artifactId>bucket4j_jdk17-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.bucket4j</groupId>
+      <artifactId>bucket4j_jdk17-caffeine</artifactId>
+    </dependency>
+    <!-- The OpenAPI description the frontend's types are generated from; served only when PLACEMAP_API_DOCS=true. -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
     </dependency>
     <!-- Snapping the search origin to an H3 cell. Native code: each call takes microseconds. -->
     <dependency>

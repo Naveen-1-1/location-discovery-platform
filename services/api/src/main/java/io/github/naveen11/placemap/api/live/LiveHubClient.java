@@ -9,8 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
@@ -28,21 +27,24 @@ import tools.jackson.databind.JsonNode;
  * alongside the database and routing steps. It runs on its own virtual thread so the wait can be cut off exactly; the
  * HTTP client's own timeout ends the abandoned call shortly after.
  */
-public class LiveHubClient implements AutoCloseable {
+public class LiveHubClient {
 
     private static final Logger log = LoggerFactory.getLogger(LiveHubClient.class);
 
     private final RestClient http;
     private final Duration timeout;
     private final MeterRegistry registry;
-    private final ExecutorService calls =
-            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("live-batch-", 1).factory());
+    private final Executor calls;
 
-    /** @param http a client for live-hub's base URL, or null when live data is turned off */
-    public LiveHubClient(RestClient http, Duration timeout, MeterRegistry registry) {
+    /**
+     * @param http  a client for live-hub's base URL, or null when live data is turned off
+     * @param calls where each call runs (one virtual thread each), so the wait can be cut off exactly
+     */
+    public LiveHubClient(RestClient http, Duration timeout, MeterRegistry registry, Executor calls) {
         this.http = http;
         this.timeout = timeout;
         this.registry = registry;
+        this.calls = calls;
     }
 
     /** Live data for {@code keys}, or {@link LiveData#unavailable()}. Call only with at least one key. */
@@ -87,10 +89,5 @@ public class LiveHubClient implements AutoCloseable {
     private LiveData outcome(String outcome, LiveData data) {
         registry.counter("placemap.nearby.live", "outcome", outcome).increment();
         return data;
-    }
-
-    @Override
-    public void close() {
-        calls.close();
     }
 }

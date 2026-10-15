@@ -2,17 +2,21 @@ package io.github.naveen11.placemap.api.search;
 
 import io.github.naveen11.placemap.api.places.PlaceRepository;
 import io.github.resilience4j.bulkhead.Bulkhead;
-import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.concurrent.Executor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.task.SimpleAsyncTaskExecutorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-/** Wires the search box: Photon behind its own bulkhead, names behind the database's. */
+/** Wires the search box: Photon behind its own bulkhead, names behind the database's (resilience4j.* settings). */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(SearchProperties.class)
 class SearchConfig {
@@ -31,14 +35,17 @@ class SearchConfig {
         return new PhotonClient(http, properties.bbox());
     }
 
+    /** Photon calls, one virtual thread each, so the search can stop waiting at its deadline. */
+    @Bean(defaultCandidate = false)
+    SimpleAsyncTaskExecutor photonCalls(SimpleAsyncTaskExecutorBuilder builder) {
+        return builder.threadNamePrefix("search-photon-").taskTerminationTimeout(Duration.ofSeconds(5)).build();
+    }
+
     @Bean
     SearchService searchService(PlaceRepository places, PhotonClient photon, Bulkhead databaseBulkhead,
-            SearchProperties properties, MeterRegistry registry) {
-        // Full means answered at once without addresses: waiting would only push the search past its deadline.
-        Bulkhead photonCalls = Bulkhead.of("photon", BulkheadConfig.custom()
-                .maxConcurrentCalls(properties.photonConcurrency())
-                .maxWaitDuration(Duration.ZERO)
-                .build());
-        return new SearchService(places, photon, databaseBulkhead, photonCalls, properties, registry);
+            BulkheadRegistry bulkheads, SearchProperties properties, MeterRegistry registry,
+            @Qualifier("photonCalls") Executor photonCalls) {
+        return new SearchService(places, photon, databaseBulkhead, bulkheads.bulkhead("photon"), properties, registry,
+                photonCalls);
     }
 }

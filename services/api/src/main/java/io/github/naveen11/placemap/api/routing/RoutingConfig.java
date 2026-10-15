@@ -1,18 +1,19 @@
 package io.github.naveen11.placemap.api.routing;
 
-import io.github.resilience4j.bulkhead.BulkheadConfig;
+import com.uber.h3core.H3Core;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.github.resilience4j.micrometer.tagged.TaggedBulkheadMetrics;
-import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.concurrent.Executor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.task.SimpleAsyncTaskExecutorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -27,29 +28,27 @@ class RoutingConfig {
 
     private static final Logger log = LoggerFactory.getLogger(RoutingConfig.class);
 
-    /** The engine behind the shared bulkhead and circuit breaker, both exported as metrics. */
+    /** The engine behind the shared {@code routing} bulkhead and circuit breaker (resilience4j.* settings). */
     @Bean
-    GuardedRouting guardedRouting(RoutingClient client, RoutingProperties properties, MeterRegistry registry) {
-        var bulkheads = BulkheadRegistry.ofDefaults();
-        var bulkhead = bulkheads.bulkhead("routing", BulkheadConfig.custom()
-                .maxConcurrentCalls(properties.concurrency())
-                .maxWaitDuration(Duration.ZERO)   // full means refused at once; waiting would only miss deadlines
-                .build());
-        var breakers = CircuitBreakerRegistry.ofDefaults();
-        var breaker = breakers.circuitBreaker("routing", GuardedRouting.breakerConfig());
-        TaggedBulkheadMetrics.ofBulkheadRegistry(bulkheads).bindTo(registry);
-        TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(breakers).bindTo(registry);
-        return new GuardedRouting(client, bulkhead, breaker);
+    GuardedRouting guardedRouting(RoutingClient client, BulkheadRegistry bulkheads, CircuitBreakerRegistry breakers,
+            @Qualifier("routingCalls") Executor calls) {
+        return new GuardedRouting(client, bulkheads.bulkhead("routing"), breakers.circuitBreaker("routing"), calls);
+    }
+
+    /** Engine calls, one virtual thread each, so a time limiter can stop waiting for one. */
+    @Bean(defaultCandidate = false)
+    SimpleAsyncTaskExecutor routingCalls(SimpleAsyncTaskExecutorBuilder builder) {
+        return builder.threadNamePrefix("routing-call-").taskTerminationTimeout(Duration.ofSeconds(5)).build();
     }
 
     @Bean
-    RoutingClient routingClient(RoutingProperties properties, RestClient.Builder builder) {
+    RoutingClient routingClient(RoutingProperties properties, RestClient.Builder builder, H3Core h3) {
         if (properties.engine() == RoutingProperties.Engine.VALHALLA) {
             RoutingProperties.Valhalla valhalla = properties.valhalla();
             log.info("Routing with Valhalla at {}", valhalla.baseUrl());
             RestClient.Builder base = ValhallaRoutingClient.configure(builder, valhalla);
             return new ValhallaRoutingClient(base.clone().requestFactory(jdk(valhalla.matrixTimeout())).build(),
-                    base.clone().requestFactory(jdk(valhalla.timeout())).build(), valhalla.maxSnapMeters());
+                    base.clone().requestFactory(jdk(valhalla.timeout())).build(), valhalla.maxSnapMeters(), h3);
         }
         RoutingProperties.Ors ors = properties.ors();
         if (ors.apiKey() == null || ors.apiKey().isBlank()) {

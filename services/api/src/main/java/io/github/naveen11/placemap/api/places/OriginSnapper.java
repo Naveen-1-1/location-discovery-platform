@@ -3,8 +3,6 @@ package io.github.naveen11.placemap.api.places;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.LengthUnit;
 import com.uber.h3core.util.LatLng;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,12 +17,8 @@ public class OriginSnapper {
 
     private final H3Core h3;
 
-    public OriginSnapper() {
-        try {
-            h3 = H3Core.newInstance();
-        } catch (IOException e) {
-            throw new UncheckedIOException("could not load the H3 native library", e);
-        }
+    public OriginSnapper(H3Core h3) {
+        this.h3 = h3;
     }
 
     public SnappedOrigin snap(double lat, double lon) {

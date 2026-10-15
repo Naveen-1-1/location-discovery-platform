@@ -17,7 +17,7 @@ class RateLimitConfig {
 
     @Bean
     ClientRateLimiter clientRateLimiter(RateLimitProperties properties) {
-        return new ClientRateLimiter(properties, TimeMeter.SYSTEM_NANOTIME);
+        return new ClientRateLimiter(properties, TimeMeter.SYSTEM_MILLISECONDS);
     }
 
     @Bean

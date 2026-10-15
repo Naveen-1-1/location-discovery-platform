@@ -1,5 +1,7 @@
 package io.github.naveen11.placemap.api.routing;
 
+import java.util.function.Predicate;
+
 /**
  * A routing call that gave no answer. Callers fall back: nearby sorts by straight-line distance, while
  * routes and isochrones report the failure.
@@ -35,5 +37,14 @@ public class RoutingException extends RuntimeException {
 
     public Kind kind() {
         return kind;
+    }
+
+    /** For the circuit breaker (named in its settings): "no route from here" is an answer, not a failure. */
+    public static final class Unroutable implements Predicate<Throwable> {
+
+        @Override
+        public boolean test(Throwable e) {
+            return e instanceof RoutingException failure && failure.kind() == Kind.UNROUTABLE;
+        }
     }
 }

@@ -9,12 +9,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * {@code placemap.routing.*}.
  *
  * @param engine which routing engine answers: the hosted openrouteservice, or our own Valhalla
- * @param concurrency the routing bulkhead: calls to the engine in flight at once
  */
 @ConfigurationProperties("placemap.routing")
 public record RoutingProperties(
         @DefaultValue("ors") Engine engine,
-        @DefaultValue("8") int concurrency,
         @DefaultValue Ors ors,
         @DefaultValue Valhalla valhalla) {
 
