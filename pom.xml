@@ -46,7 +46,7 @@
     <lincheck.version>3.7</lincheck.version>
 
     <!-- Must match the OpenTelemetry API that Boot manages (1.62.0) -->
-    <otel-logback-appender.version>2.28.0-alpha</otel-logback-appender.version>
+    <otel-logback-appender.version>2.31.1-alpha</otel-logback-appender.version>
     <datasource-micrometer.version>2.3.0</datasource-micrometer.version>
 
     <!-- Libraries the Boot BOM does not manage -->
@@ -54,7 +54,7 @@
     <commons-io.version>2.22.0</commons-io.version>
     <jts.version>1.20.0</jts.version>
     <archunit.version>1.5.1</archunit.version>
-    <duckdb.version>1.5.5.1</duckdb.version>
+    <duckdb.version>1.5.6.0</duckdb.version>
     <h3.version>4.5.0</h3.version>
     <commons-text.version>1.15.0</commons-text.version>
     <proj4j.version>1.4.3</proj4j.version>
