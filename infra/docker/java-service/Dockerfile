@@ -1,6 +1,6 @@
 # The api or live-hub for the load-test stack: the service's own jar on Temurin 25's JRE, for amd64 and arm64.
 # Built with the jar's folder as the context, e.g. services/api/target with JAR=api.jar.
-FROM eclipse-temurin:25.0.4.1_1-jre-noble@sha256:d9a39a23634650173f1e2bbc176227af9728587ecf0f4b62d53e9355cd7a19ab
+FROM eclipse-temurin:26.0.2_10-jre-noble@sha256:0140636ef128fa014041fa12dae3a9de53b6a6c6f055271f4e6a7417ea34012c
 
 ARG JAR
 COPY ${JAR} /app/service.jar
