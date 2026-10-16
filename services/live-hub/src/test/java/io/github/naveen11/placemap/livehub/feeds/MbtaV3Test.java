@@ -39,14 +39,21 @@ class MbtaV3Test {
 
     @Test
     void aVehicleBecomesTheSameItemAsFromTheOpenFile() {
-        assertThat(new String(MbtaV3.vehicle(JSON.readTree(BUS)), StandardCharsets.UTF_8)).isEqualTo(
-                "{\"id\":\"y0772\",\"route\":\"225\",\"label\":\"0772\",\"lat\":42.25181,\"lon\":-71.00512,"
-                        + "\"bearing\":null,\"status\":\"STOPPED_AT\",\"stop\":\"32001\",\"updated\":1791752031}");
+        assertThat(new String(MbtaV3.vehicle(JSON.readTree(BUS), Area.ANYWHERE), StandardCharsets.UTF_8)).isEqualTo(
+                "{\"id\":\"y0772\",\"route\":\"225\",\"lat\":42.25181,\"lon\":-71.00512}");
     }
 
     @Test
+    void aVehicleThatLeavesTheAreaIsRemoved() {
+        MbtaStream.Handler handler = MbtaV3.vehicles(new Area(-71.0, 42.3, -70.9, 42.4)); // y0772 is south-west of it
+
+        assertThat(handler.change("update", JSON.readTree(BUS), NOW, TTL)).singleElement()
+                .isInstanceOfSatisfying(FeedUpdate.Remove.class, r -> assertThat(r.id()).isEqualTo("y0772"));
+    }
+
+        @Test
     void vehicleEventsBecomeOneUpdateEach() {
-        MbtaStream.Handler handler = MbtaV3.vehicles();
+        MbtaStream.Handler handler = MbtaV3.vehicles(Area.ANYWHERE);
         var reset = (FeedUpdate.Replace) handler.reset(JSON.readTree("[" + BUS + "]"), NOW, TTL);
         assertThat(reset.items()).containsOnlyKeys("y0772");
 

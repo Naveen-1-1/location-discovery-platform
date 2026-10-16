@@ -70,6 +70,8 @@ public record LiveProperties(
      * @param vehiclesIdle     a vehicles stream silent this long is reconnected (vehicles move every few seconds)
      * @param alertsIdle       the same for alerts, which can be quiet for long stretches
      * @param departuresDemand trip updates are polled only this long after someone last asked for departures
+     * @param area             the four towns' bounding box, "minLon,minLat,maxLon,maxLat" (data/area/area.geojson, as
+     *                         the api's search); vehicles farther than about 1 km outside it are not sent
      */
     public record Mbta(
             @DefaultValue("true") boolean enabled,
@@ -85,6 +87,7 @@ public record LiveProperties(
             @DefaultValue("15s") Duration departuresInterval,
             @DefaultValue("2m") Duration departuresDemand,
             @DefaultValue("5s") Duration connectTimeout,
-            @DefaultValue("20s") Duration timeout) {
+            @DefaultValue("20s") Duration timeout,
+            @DefaultValue("-71.1913,42.2279,-70.8688,42.4182") String area) {
     }
 }

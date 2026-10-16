@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
@@ -18,12 +19,29 @@ class SnapshotWriterTest {
 
     private final AtomicLong millis = new AtomicLong(1_000_000);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-    private final SnapshotWriter writer = new SnapshotWriter(16, Duration.ofMillis(10), Duration.ofMillis(250), 3,
+    private final SnapshotWriter writer = new SnapshotWriter(16, Duration.ofMillis(10), Duration.ofMillis(250), 3, 128,
             millis::get, System::nanoTime, new LiveMetrics(registry));
     private final List<String> delivered = new ArrayList<>();
 
     SnapshotWriterTest() {
         writer.publisher().subscribe((key, frame) -> delivered.add(text(frame.bytes())));
+    }
+
+    @Test
+    void timesEachAnswerFromTheQueueToItsPublication() throws Exception {
+        var nanos = new AtomicLong();
+        var timed = new SnapshotWriter(16, Duration.ofMillis(10), Duration.ofMillis(250), 3, 128, millis::get, nanos::get,
+                new LiveMetrics(registry));
+
+        assertThat(timed.submit(replace(Map.of("a", "{\"id\":\"a\",\"bikes\":3}")))).isTrue();
+        nanos.addAndGet(Duration.ofMillis(40).toNanos()); // waits in the queue
+        timed.drain();
+        nanos.addAndGet(Duration.ofMillis(200).toNanos()); // until the next tick
+        timed.tick();
+
+        var delay = registry.get("placemap.live.publish.delay").tag("topic", "bikes").timer();
+        assertThat(delay.count()).isOne();
+        assertThat(delay.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(240);
     }
 
     @Test
@@ -33,7 +51,7 @@ class SnapshotWriterTest {
         TopicView bikes = snapshot.topic(Topic.BIKES);
         assertThat(bikes.stale()).isTrue();
         assertThat(text(bikes.snapshotEvent()))
-                .isEqualTo("event: snapshot\ndata: {\"topic\":\"bikes\",\"stale\":true,\"updated\":null,\"items\":[]}\n\n");
+                .isEqualTo("event: snapshot\ndata: {\"topic\":\"bikes\",\"t\":1000000,\"stale\":true,\"updated\":null,\"items\":[]}\n\n");
     }
 
     @Test
@@ -47,8 +65,38 @@ class SnapshotWriterTest {
                 "id: 1\nevent: bikes\ndata: {\"t\":1000000,\"id\":\"b\",\"bikes\":0}\n\n",
                 "id: 1\nevent: status\ndata: {\"topic\":\"bikes\",\"stale\":false,\"updated\":1000000}\n\n");
         assertThat(text(writer.current().topic(Topic.BIKES).snapshotEvent())).isEqualTo(
-                "event: snapshot\ndata: {\"topic\":\"bikes\",\"stale\":false,\"updated\":1000000,\"items\":["
+                "event: snapshot\ndata: {\"topic\":\"bikes\",\"t\":1000000,\"stale\":false,\"updated\":1000000,\"items\":["
                         + "{\"id\":\"a\",\"bikes\":3},{\"id\":\"b\",\"bikes\":0}]}\n\n");
+    }
+
+    @Test
+    void aPublishThatChangesManyItemsOfATopicSendsItWhole() {
+        var keys = new ArrayList<LiveKey>();
+        var frames = new ArrayList<Frame>();
+        writer.publisher().subscribe((key, frame) -> {
+            keys.add(key);
+            frames.add(frame);
+        });
+        var many = new LinkedHashMap<String, String>();
+        for (int i = 0; i < 129; i++) { // one more than the threshold
+            many.put("s" + i, "{\"id\":\"s" + i + "\",\"bikes\":1}");
+        }
+        writer.apply(replace(many));
+        writer.tick();
+
+        assertThat(keys).containsExactlyInAnyOrder(LiveKey.whole(Topic.BIKES), LiveKey.status(Topic.BIKES));
+        assertThat(frames).filteredOn(Frame::whole).singleElement().satisfies(frame -> {
+            assertThat(frame.topic()).isEqualTo(Topic.BIKES);
+            assertThat(frame.version()).isEqualTo(1);
+        });
+        assertThat(writer.current().topic(Topic.BIKES).items()).hasSize(129);
+        assertThat(registry.get("placemap.live.whole.topic").tag("topic", "bikes").counter().count()).isOne();
+
+        keys.clear();
+        many.put("s0", "{\"id\":\"s0\",\"bikes\":2}");
+        writer.apply(replace(many));
+        writer.tick();
+        assertThat(keys).as("a few changes go one by one again").containsExactly(LiveKey.item(Topic.BIKES, "s0"));
     }
 
     @Test

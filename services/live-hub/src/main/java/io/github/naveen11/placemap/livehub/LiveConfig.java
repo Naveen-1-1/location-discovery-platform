@@ -3,6 +3,7 @@ package io.github.naveen11.placemap.livehub;
 import io.github.naveen11.placemap.concurrent.SnapshotPublisher;
 import io.github.naveen11.placemap.livehub.departures.Demand;
 import io.github.naveen11.placemap.livehub.departures.PollNow;
+import io.github.naveen11.placemap.livehub.feeds.Area;
 import io.github.naveen11.placemap.livehub.feeds.BluebikesFeed;
 import io.github.naveen11.placemap.livehub.feeds.FeedScheduler;
 import io.github.naveen11.placemap.livehub.feeds.MbtaParsers;
@@ -103,8 +104,10 @@ public class LiveConfig {
 
     @Bean
     SnapshotWriter snapshotWriter(LiveProperties properties, LiveMetrics metrics) {
+        // A quarter of a client's mailbox: one publish's changes to a topic never come near filling it.
         return new SnapshotWriter(properties.queueCapacity(), properties.submitWait(), properties.tick(),
-                properties.staleAfterTtls(), System::currentTimeMillis, System::nanoTime, metrics);
+                properties.staleAfterTtls(), properties.mailboxCapacity() / 4, System::currentTimeMillis,
+                System::nanoTime, metrics);
     }
 
     @Bean
@@ -173,13 +176,14 @@ public class LiveConfig {
                             .build();
                     var names = new MbtaStatic(client, mbta.gtfsUrl());
                     scheduler.start(names);
+                    Area area = Area.around(mbta.area()); // the map shows only the four towns
                     // With a key, the V3 streams lead and each open file is read only while its stream is down.
                     BooleanSupplier alertsFallback = () -> true;
                     BooleanSupplier vehiclesFallback = () -> true;
                     if (!mbta.apiKey().isBlank()) {
                         MbtaStream alerts = stream(mbta, "/alerts", Topic.ALERTS, MbtaV3.alerts(names::names),
                                 mbta.alertsIdle());
-                        MbtaStream vehicles = stream(mbta, "/vehicles", Topic.VEHICLES, MbtaV3.vehicles(),
+                        MbtaStream vehicles = stream(mbta, "/vehicles", Topic.VEHICLES, MbtaV3.vehicles(area),
                                 mbta.vehiclesIdle());
                         alertsFallback = () -> !alerts.healthy();
                         vehiclesFallback = () -> !vehicles.healthy();
@@ -190,7 +194,7 @@ public class LiveConfig {
                             Topic.ALERTS, mbta.alertsInterval(), MbtaParsers.alerts(names::names), alertsFallback,
                             writer, metrics, System::currentTimeMillis));
                     scheduler.start(new MbtaRealtimeFeed(client, mbta.realtimeUrl() + "VehiclePositions_enhanced.json",
-                            Topic.VEHICLES, mbta.vehiclesInterval(), MbtaParsers.vehicles(), vehiclesFallback,
+                            Topic.VEHICLES, mbta.vehiclesInterval(), MbtaParsers.vehicles(area), vehiclesFallback,
                             writer, metrics, System::currentTimeMillis));
                     departuresPollNow.connect(scheduler.start(new MbtaRealtimeFeed(client,
                             mbta.realtimeUrl() + "TripUpdates_enhanced.json", Topic.DEPARTURES,

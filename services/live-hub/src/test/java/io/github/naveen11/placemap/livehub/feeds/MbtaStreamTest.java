@@ -22,7 +22,7 @@ class MbtaStreamTest {
     private static final URI VEHICLES = URI.create("https://api-v3.mbta.com/vehicles");
 
     private final List<FeedUpdate> submitted = new ArrayList<>();
-    private final MbtaStream stream = new MbtaStream(VEHICLES, "unused", Topic.VEHICLES, MbtaV3.vehicles(),
+    private final MbtaStream stream = new MbtaStream(VEHICLES, "unused", Topic.VEHICLES, MbtaV3.vehicles(Area.ANYWHERE),
             submitted::add, new LiveMetrics(new SimpleMeterRegistry()), Duration.ofSeconds(15), Duration.ofMinutes(1),
             () -> 42L);
 

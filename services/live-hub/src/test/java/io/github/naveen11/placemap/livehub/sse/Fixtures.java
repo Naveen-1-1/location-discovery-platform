@@ -29,7 +29,7 @@ final class Fixtures {
     }
 
     static Frame frame(long version, String id, int bikes) {
-        return new Frame(version, 0, ("id: " + version + "\nevent: bikes\ndata: {\"id\":\"" + id
+        return new Frame(version, 0, Topic.BIKES, ("id: " + version + "\nevent: bikes\ndata: {\"id\":\"" + id
                 + "\",\"bikes\":" + bikes + "}\n\n").getBytes(StandardCharsets.UTF_8));
     }
 

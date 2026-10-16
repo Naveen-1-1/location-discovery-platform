@@ -11,6 +11,7 @@ import io.github.naveen11.placemap.livehub.state.Topic;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
@@ -28,6 +29,9 @@ import java.util.function.Supplier;
  *   <li><b>Connecting is a resync.</b> The mailbox starts with a RESYNC and the session subscribes before its drain
  *       starts. The drain takes the RESYNC, reads the current snapshot, sends it with {@code id: V}, and from then on
  *       skips frames with version ≤ V. An overflow takes the same path.
+ *   <li><b>A whole-topic frame is a resync of one topic.</b> The drain sends that topic's current snapshot and from then
+ *       on skips the topic's frames with a version at or below it, so a change still waiting from before is never
+ *       written over the newer snapshot, nor the snapshot over a newer change.
  *   <li><b>Two drain styles.</b> {@link ConnectionMode#VIRTUAL}: {@link #runLoop()} on its own virtual thread, waiting
  *       in {@code take()}. {@link ConnectionMode#POOL}: a {@link SerialDrain} job on a shared pool that writes what is
  *       waiting and returns.
@@ -75,6 +79,7 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
     // Drain only (one drain at a time, so plain fields).
     private boolean started;
     private long loadedVersion = -1;
+    private final long[] topicLoaded = new long[Topic.values().length]; // by ordinal; -1 until a whole-topic frame
     private final ArrayList<Frame> batch = new ArrayList<>(BATCH);
     private final long[] written = new long[BATCH];
 
@@ -92,6 +97,7 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
         this.metrics = metrics;
         this.onClose = onClose;
         this.lastWriteNanos = nanoClock.getAsLong();
+        Arrays.fill(topicLoaded, -1);
     }
 
     String client() {
@@ -253,8 +259,12 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
                     writeSnapshot();
                 } else if (frame == Frame.HEARTBEAT) {
                     sink.write(frame.bytes());
-                } else if (frame.version() > loadedVersion) {
-                    sink.write(frame.bytes());
+                } else if (frame.version() > loaded(frame.topic())) {
+                    if (frame.whole()) {
+                        writeTopic(frame.topic());
+                    } else {
+                        sink.write(frame.bytes());
+                    }
                     written[delivered++] = frame.publishedNanos();
                 }
             }
@@ -279,6 +289,18 @@ public final class ClientSession implements SnapshotPublisher.Subscriber<LiveKey
             sink.write(snapshot.topic(topic).snapshotEvent());
         }
         metrics.snapshotSent();
+    }
+
+    /** The newest version the client already has for the topic: from the last resync or whole-topic snapshot. */
+    private long loaded(Topic topic) {
+        return topic == null ? loadedVersion : Math.max(loadedVersion, topicLoaded[topic.ordinal()]);
+    }
+
+    private void writeTopic(Topic topic) throws IOException {
+        LiveSnapshot snapshot = snapshots.get(); // the newest, so it holds every change already written for the topic
+        topicLoaded[topic.ordinal()] = snapshot.version();
+        sink.write(("id: " + snapshot.version() + "\n").getBytes(StandardCharsets.US_ASCII));
+        sink.write(snapshot.topic(topic).snapshotEvent());
     }
 
     /** Ends the response once. Drain only, so it never races a write. */

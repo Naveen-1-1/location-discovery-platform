@@ -12,6 +12,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -34,6 +35,9 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>A tick with nothing new publishes nothing, so versions only move when something changed.
  *   <li>A topic is stale once its feed has not answered for {@code staleAfterTtls} × its ttl; flipping either way
  *       sends a {@code status} event.
+ *   <li>A publish that changes more than {@code wholeTopicAfter} items of one topic (a vehicle poll moves hundreds)
+ *       sends that topic as one whole-topic frame instead of one frame per item: each client's mailbox then holds one
+ *       key for it, not hundreds, and the client gets the topic's snapshot.
  *   <li>When the queue is full a feed waits up to {@code submitWait}, then its update is dropped and counted. Every
  *       poll carries the feed's whole state, so the next one repairs it.
  * </ul>
@@ -54,10 +58,15 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         }
     }
 
-    private final BlockingQueue<FeedUpdate> queue;
+    /** An update and when it reached the writer's queue. */
+    private record Queued(FeedUpdate update, long submittedNanos) {
+    }
+
+    private final BlockingQueue<Queued> queue;
     private final Duration submitWait;
     private final long tickNanos;
     private final int staleAfterTtls;
+    private final int wholeTopicAfter;
     private final LongSupplier millisClock;
     private final LongSupplier nanoClock;
     private final LiveMetrics metrics;
@@ -70,14 +79,17 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
     private final Map<LiveKey, byte[]> changes = new LinkedHashMap<>(); // REMOVED marks a removal
     private final EnumSet<Topic> changedTopics = EnumSet.noneOf(Topic.class);
     private final EnumSet<Topic> changedStatus = EnumSet.noneOf(Topic.class);
+    private final Map<Topic, Long> waitingSince = new EnumMap<>(Topic.class); // oldest answer not yet published
+    private final List<Queued> batch = new ArrayList<>();
     private LiveSnapshot current;
 
     public SnapshotWriter(int queueCapacity, Duration submitWait, Duration tick, int staleAfterTtls,
-            LongSupplier millisClock, LongSupplier nanoClock, LiveMetrics metrics) {
+            int wholeTopicAfter, LongSupplier millisClock, LongSupplier nanoClock, LiveMetrics metrics) {
         this.queue = new ArrayBlockingQueue<>(queueCapacity);
         this.submitWait = submitWait;
         this.tickNanos = tick.toNanos();
         this.staleAfterTtls = staleAfterTtls;
+        this.wholeTopicAfter = wholeTopicAfter;
         this.millisClock = millisClock;
         this.nanoClock = nanoClock;
         this.metrics = metrics;
@@ -85,7 +97,7 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         for (Topic topic : Topic.values()) {
             items.put(topic, new TreeMap<>());
             health.put(topic, new Health(topic.defaultTtl()));
-            views.put(topic, view(topic));
+            views.put(topic, view(topic, millisClock.getAsLong()));
         }
         this.current = new LiveSnapshot(0, millisClock.getAsLong(), Collections.unmodifiableMap(views));
         this.publisher = new SnapshotPublisher<>(current, LiveSnapshot::version);
@@ -118,7 +130,7 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
     @Override
     public boolean submit(FeedUpdate update) throws InterruptedException {
         Objects.requireNonNull(update, "update");
-        if (queue.offer(update, submitWait.toNanos(), TimeUnit.NANOSECONDS)) {
+        if (queue.offer(new Queued(update, nanoClock.getAsLong()), submitWait.toNanos(), TimeUnit.NANOSECONDS)) {
             return true;
         }
         metrics.updateDropped(update.topic());
@@ -135,18 +147,15 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
     }
 
     private void run() {
-        var batch = new ArrayList<FeedUpdate>();
         long nextTick = nanoClock.getAsLong() + tickNanos;
         try {
             while (true) {
                 long wait = nextTick - nanoClock.getAsLong();
                 if (wait > 0) {
-                    FeedUpdate first = queue.poll(wait, TimeUnit.NANOSECONDS);
+                    Queued first = queue.poll(wait, TimeUnit.NANOSECONDS);
                     if (first != null) {
-                        apply(first);
-                        queue.drainTo(batch);
-                        batch.forEach(this::apply);
-                        batch.clear();
+                        take(first);
+                        drain();
                     }
                     continue;
                 }
@@ -160,6 +169,21 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         } catch (InterruptedException e) {
             // close(): stop.
         }
+    }
+
+    /** Applies every update waiting in the queue. Writer thread only; package-private for tests. */
+    void drain() {
+        queue.drainTo(batch);
+        batch.forEach(this::take);
+        batch.clear();
+    }
+
+    private void take(Queued queued) {
+        FeedUpdate update = queued.update();
+        if (!(update instanceof FeedUpdate.Failed)) { // a failure publishes nothing to wait for
+            waitingSince.putIfAbsent(update.topic(), queued.submittedNanos());
+        }
+        apply(update);
     }
 
     /** Applies one update to the live state. Writer thread only; package-private so tests can drive it directly. */
@@ -238,37 +262,54 @@ public final class SnapshotWriter implements UpdateSink, AutoCloseable {
         long started = nanoClock.getAsLong();
         long version = current.version() + 1;
         long nowMillis = millisClock.getAsLong();
+        var changed = new EnumMap<Topic, Integer>(Topic.class);
+        changes.keySet().forEach(key -> changed.merge(key.topic(), 1, Integer::sum));
         var frames = new LinkedHashMap<LiveKey, Frame>();
         changes.forEach((key, json) -> {
-            if (key.topic().streamed()) {
-                frames.put(key, new Frame(version, started, deltaEvent(version, nowMillis, key, json)));
+            Topic topic = key.topic();
+            if (!topic.streamed()) {
+                return;
+            }
+            if (changed.get(topic) > wholeTopicAfter) {
+                frames.putIfAbsent(LiveKey.whole(topic), Frame.wholeTopic(version, started, topic));
+            } else {
+                frames.put(key, new Frame(version, started, topic, deltaEvent(version, nowMillis, key, json)));
+            }
+        });
+        changed.forEach((topic, count) -> {
+            if (topic.streamed() && count > wholeTopicAfter) {
+                metrics.wholeTopic(topic);
             }
         });
         for (Topic topic : changedStatus) {
             if (topic.streamed()) {
-                frames.put(LiveKey.status(topic), new Frame(version, started, statusEvent(version, topic)));
+                frames.put(LiveKey.status(topic), new Frame(version, started, topic, statusEvent(version, topic)));
             }
         }
         var views = new EnumMap<>(current.topics());
         for (Topic topic : changedTopics) {
-            views.put(topic, view(topic));
+            views.put(topic, view(topic, nowMillis));
         }
         changes.clear();
         changedTopics.clear();
         changedStatus.clear();
+        waitingSince.forEach((topic, since) -> metrics.publishDelay(topic, started - since));
+        waitingSince.clear();
         current = new LiveSnapshot(version, nowMillis, Collections.unmodifiableMap(views));
         publisher.publish(current, frames);
         metrics.publishTook(nanoClock.getAsLong() - started);
     }
 
-    private TopicView view(Topic topic) {
+    /** The topic's view, its snapshot event stamped with the publication time ({@code "t"}) for client-side lag. */
+    private TopicView view(Topic topic, long nowMillis) {
         Health h = health.get(topic);
         var copy = Collections.unmodifiableMap(new TreeMap<>(items.get(topic)));
         if (!topic.streamed()) {
             return new TopicView(topic, copy, h.stale, h.updatedMillis, new byte[0]);
         }
         var out = new ByteArrayOutputStream(64 + copy.size() * 160);
-        out.writeBytes(utf8("event: snapshot\ndata: {\"topic\":\"" + topic.wire() + "\",\"stale\":" + h.stale
+        out.writeBytes(utf8("event: snapshot\ndata: {\"topic\":\"" + topic.wire() + "\",\"t\":" + nowMillis
+                + ",\"stale\":" + h.stale
                 + ",\"updated\":" + updated(h) + ",\"items\":["));
         boolean first = true;
         for (byte[] json : copy.values()) {

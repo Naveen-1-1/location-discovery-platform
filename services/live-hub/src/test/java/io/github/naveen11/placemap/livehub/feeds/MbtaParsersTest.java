@@ -49,12 +49,27 @@ class MbtaParsersTest {
                   "trip":{"route_id":"CR-Franklin","direction_id":1},"vehicle":{"id":"1814","label":"1814"}}},
                  {"id":"y1","vehicle":{"vehicle":{"id":"y1"}}}]}""");
 
-        Map<String, byte[]> items = MbtaParsers.vehicles().items(root, NOW);
+        Map<String, byte[]> items = MbtaParsers.vehicles(Area.ANYWHERE).items(root, NOW);
 
         assertThat(items).containsOnlyKeys("1814"); // no position, no pin
-        assertThat(text(items.get("1814"))).isEqualTo("{\"id\":\"1814\",\"route\":\"CR-Franklin\",\"label\":\"1814\","
-                + "\"lat\":42.16014,\"lon\":-71.23457,\"bearing\":181,\"status\":\"IN_TRANSIT_TO\",\"stop\":\"FB-0166-S\","
-                + "\"updated\":1791749583}");
+        assertThat(text(items.get("1814"))).as("only what the map draws")
+                .isEqualTo("{\"id\":\"1814\",\"route\":\"CR-Franklin\",\"lat\":42.16014,\"lon\":-71.23457}");
+    }
+
+    @Test
+    void vehiclesOutsideTheAreaAreLeftOut() {
+        JsonNode root = JSON.readTree("""
+                {"entity":[
+                 {"id":"1814","vehicle":{"position":{"latitude":42.16013717651367,"longitude":-71.23456573486328},
+                  "trip":{"route_id":"CR-Franklin"},"vehicle":{"id":"1814"}}},
+                 {"id":"y0772","vehicle":{"position":{"latitude":42.251811,"longitude":-71.005119},
+                  "trip":{"route_id":"225"},"vehicle":{"id":"y0772"}}},
+                 {"id":"y0001","vehicle":{"position":{"latitude":42.2240,"longitude":-71.0500},
+                  "trip":{"route_id":"215"},"vehicle":{"id":"y0001"}}}]}""");
+        Area fourTowns = Area.around("-71.1913,42.2279,-70.8688,42.4182");
+
+        assertThat(MbtaParsers.vehicles(fourTowns).items(root, NOW)).as("Franklin is out; within 1 km of the edge is in")
+                .containsOnlyKeys("y0772", "y0001");
     }
 
     @Test

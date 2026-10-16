@@ -27,13 +27,13 @@ public final class MbtaV3 {
     }
 
     /** Vehicles change one at a time: each event becomes one upsert or removal. */
-    public static MbtaStream.Handler vehicles() {
+    public static MbtaStream.Handler vehicles(Area area) {
         return new MbtaStream.Handler() {
             @Override
             public FeedUpdate reset(JsonNode resources, long now, Duration ttl) {
                 var items = new HashMap<String, byte[]>();
                 for (JsonNode resource : resources.values()) {
-                    byte[] json = vehicle(resource);
+                    byte[] json = vehicle(resource, area);
                     if (json != null) {
                         items.put(resource.path("id").asString(), json);
                     }
@@ -47,7 +47,7 @@ public final class MbtaV3 {
                 if (id == null) {
                     return List.of();
                 }
-                byte[] json = event.equals("remove") ? null : vehicle(resource);
+                byte[] json = event.equals("remove") ? null : vehicle(resource, area); // left the area: gone
                 return List.of(json == null ? new FeedUpdate.Remove(Topic.VEHICLES, id, now, ttl)
                         : new FeedUpdate.Upsert(Topic.VEHICLES, id, json, now, ttl));
             }
@@ -59,19 +59,17 @@ public final class MbtaV3 {
         };
     }
 
-    /** One vehicle's item, or null without a position. */
-    static byte[] vehicle(JsonNode resource) {
+    /** One vehicle's item, or null without a position or outside the area. */
+    static byte[] vehicle(JsonNode resource, Area area) {
         JsonNode a = resource.path("attributes");
         if (!a.path("latitude").isNumber() || !a.path("longitude").isNumber()) {
             return null;
         }
-        JsonNode bearing = a.path("bearing");
-        String updated = a.path("updated_at").asString(null);
-        return JSON.writeValueAsBytes(new Vehicle(resource.path("id").asString(), related(resource, "route"),
-                a.path("label").asString(null), MbtaParsers.round(a.path("latitude").asDouble()),
-                MbtaParsers.round(a.path("longitude").asDouble()),
-                bearing.isNumber() ? (int) Math.round(bearing.asDouble()) : null, a.path("current_status").asString(null),
-                related(resource, "stop"), updated == null ? 0 : OffsetDateTime.parse(updated).toEpochSecond()));
+        double lat = MbtaParsers.round(a.path("latitude").asDouble());
+        double lon = MbtaParsers.round(a.path("longitude").asDouble());
+        return area.contains(lat, lon)
+                ? JSON.writeValueAsBytes(new Vehicle(resource.path("id").asString(), related(resource, "route"), lat, lon))
+                : null;
     }
 
     /**

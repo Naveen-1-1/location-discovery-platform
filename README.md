@@ -22,7 +22,8 @@ are part of the project from the start.
 - **`ingest`:** imports Overture, OpenStreetMap and the official datasets, and matches official records to places.
   Each import is a Spring Batch job whose batches run in parallel partitions, and it resumes after `kill -9`.
 - **`live-hub`:** polls Bluebikes and MBTA feeds and streams updates to browsers over Server-Sent Events. Each
-  client has a small mailbox, and clients that fall too far behind are evicted.
+  client has a small mailbox; a poll that moves hundreds of vehicles reaches it as one snapshot, and clients that
+  fall too far behind are evicted.
 - **`api`:** nearby search sorted by travel time. It runs its lookups in parallel with deadlines, merges identical
   in-flight requests, and enforces per-client rate limits and per-dependency bulkheads.
 

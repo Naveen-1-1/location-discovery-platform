@@ -81,6 +81,26 @@ class ClientSessionTest {
 
     @ParameterizedTest
     @EnumSource(ConnectionMode.class)
+    void aWholeTopicFrameSendsTheTopicsCurrentSnapshotThenOnlyNewerChanges(ConnectionMode mode)
+            throws InterruptedException {
+        start(mode, 8);
+        await("the snapshot is written", () -> sink.text().contains("\"v\":5"));
+
+        current.set(snapshot(7, "\"y\"")); // published after the whole-topic frame below
+        session.deliver(LiveKey.whole(Topic.BIKES), Frame.wholeTopic(6, 0, Topic.BIKES));
+        await("the topic's current snapshot is written", () -> sink.text().contains("\"v\":7"));
+        session.deliver(key("a"), frame(7, "a", 1)); // already in snapshot 7
+        session.deliver(key("a"), frame(8, "a", 2));
+        await("the newer change is written", () -> sink.text().contains("\"bikes\":2"));
+
+        assertThat(sink.text()).isEqualTo("retry: 3000\n\n"
+                + "id: 5\nevent: snapshot\ndata: {\"v\":5,\"items\":[\"x\"]}\n\n"
+                + "id: 7\nevent: snapshot\ndata: {\"v\":7,\"items\":[\"y\"]}\n\n"
+                + "id: 8\nevent: bikes\ndata: {\"id\":\"a\",\"bikes\":2}\n\n");
+    }
+
+    @ParameterizedTest
+    @EnumSource(ConnectionMode.class)
     void closingEndsTheResponseOnceAndCleansUpOnce(ConnectionMode mode) throws InterruptedException {
         start(mode, 8);
         await("the snapshot is written", () -> sink.text().contains("\"v\":5"));

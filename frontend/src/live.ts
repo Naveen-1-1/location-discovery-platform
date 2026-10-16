@@ -21,16 +21,12 @@ export type StopAlert = { id: string; effect: string | null; detail: string | nu
 /** The MBTA alerts in effect at one stop or station. */
 export type StopAlerts = { id: string; elevator: boolean; escalator: boolean; alerts: StopAlert[] };
 
+/** What live-hub sends of a vehicle inside the four towns: what the map draws, a dot coloured by its route. */
 export type Vehicle = {
   id: string;
   route: string | null;
-  label: string | null;
   lat: number;
   lon: number;
-  bearing: number | null;
-  status: string | null;
-  stop: string | null;
-  updated: number;
 };
 
 export type LiveItem = DockStatus | StopAlerts | Vehicle;

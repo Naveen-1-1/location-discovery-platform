@@ -40,7 +40,7 @@ class MbtaRealtimeFeedTest {
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final AtomicBoolean wanted = new AtomicBoolean(true);
     private final MbtaRealtimeFeed feed = new MbtaRealtimeFeed(builder.build(), URL, Topic.VEHICLES,
-            Duration.ofSeconds(15), MbtaParsers.vehicles(), wanted::get, submitted::add,
+            Duration.ofSeconds(15), MbtaParsers.vehicles(Area.ANYWHERE), wanted::get, submitted::add,
             new LiveMetrics(registry), () -> 1_000L);
 
     @Test

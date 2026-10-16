@@ -30,8 +30,8 @@ public final class MbtaParsers {
     record StopAlerts(String id, boolean elevator, boolean escalator, List<StopAlert> alerts) {
     }
 
-    record Vehicle(String id, String route, String label, double lat, double lon, Integer bearing, String status,
-            String stop, long updated) {
+    /** What the map draws of a vehicle: a dot, coloured by its route. */
+    record Vehicle(String id, String route, double lat, double lon) {
     }
 
     record Departure(String route, String routeName, int direction, String destination, long time) {
@@ -87,8 +87,8 @@ public final class MbtaParsers {
         return items;
     }
 
-    /** Every vehicle with a position, rounded to about 1 m. */
-    public static MbtaRealtimeFeed.Parser vehicles() {
+    /** Every vehicle with a position inside the area, rounded to about 1 m. */
+    public static MbtaRealtimeFeed.Parser vehicles(Area area) {
         return (root, now) -> {
             var items = new HashMap<String, byte[]>();
             for (JsonNode entity : root.path("entity").values()) {
@@ -98,13 +98,12 @@ public final class MbtaParsers {
                 if (id == null || !position.has("latitude")) {
                     continue;
                 }
-                JsonNode bearing = position.path("bearing");
-                var vehicle = new Vehicle(id, v.path("trip").path("route_id").asString(null),
-                        v.path("vehicle").path("label").asString(null), round(position.path("latitude").asDouble()),
-                        round(position.path("longitude").asDouble()), bearing.isNumber() ? (int) Math.round(bearing.asDouble()) : null,
-                        v.path("current_status").asString(null), v.path("stop_id").asString(null),
-                        v.path("timestamp").asLong(0));
-                items.put(id, JSON.writeValueAsBytes(vehicle));
+                double lat = round(position.path("latitude").asDouble());
+                double lon = round(position.path("longitude").asDouble());
+                if (area.contains(lat, lon)) {
+                    items.put(id, JSON.writeValueAsBytes(
+                            new Vehicle(id, v.path("trip").path("route_id").asString(null), lat, lon)));
+                }
             }
             return items;
         };

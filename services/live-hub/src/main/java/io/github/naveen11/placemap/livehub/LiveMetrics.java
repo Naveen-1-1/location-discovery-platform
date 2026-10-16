@@ -81,6 +81,22 @@ public class LiveMetrics {
         publish.record(nanos, TimeUnit.NANOSECONDS);
     }
 
+    /** A publish that sent a topic whole, because it changed too many of its items to send one by one. */
+    public void wholeTopic(Topic topic) {
+        registry.counter("placemap.live.whole.topic", "topic", topic.wire()).increment();
+    }
+
+    /** From a feed's answer reaching the snapshot writer until the snapshot carrying it was published. */
+    public void publishDelay(Topic topic, long nanos) {
+        Timer.builder("placemap.live.publish.delay")
+                .description("From a feed's answer reaching the snapshot writer until the snapshot carrying it was "
+                        + "published")
+                .tag("topic", topic.wire())
+                .publishPercentileHistogram()
+                .register(registry)
+                .record(Math.max(0, nanos), TimeUnit.NANOSECONDS);
+    }
+
     public void fanoutLag(long nanos) {
         fanoutLag.record(Math.max(0, nanos), TimeUnit.NANOSECONDS);
     }

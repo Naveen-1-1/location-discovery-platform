@@ -29,7 +29,7 @@ class GbfsSequenceTest {
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
     private final LiveMetrics metrics = new LiveMetrics(new SimpleMeterRegistry());
-    private final SnapshotWriter writer = new SnapshotWriter(16, Duration.ofMillis(10), Duration.ofMillis(250), 3,
+    private final SnapshotWriter writer = new SnapshotWriter(16, Duration.ofMillis(10), Duration.ofMillis(250), 3, 128,
             millis::get, System::nanoTime, metrics);
     private final BluebikesFeed feed = new BluebikesFeed(builder.build(), URL, Duration.ofSeconds(15),
             Duration.ofMinutes(5), update -> {
