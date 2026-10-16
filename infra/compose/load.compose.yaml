@@ -52,13 +52,18 @@ services:
 
   standins:
     image: python:3.14.7-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    # Vehicles at MBTA's weekday rate: 818 at the morning peak, and at midday 79% of them (up to 88%) changed between
+    # two 15 s polls, so each reports every 18 s here (83%).
     command: ["python3", "-I", "/standins/standins.py", "--stations", "/seed/stations.txt",
-              "--changes-per-second", "5"]
+              "--changes-per-second", "5", "--vehicles", "818", "--vehicle-period", "18",
+              "--vehicle-inner-share", "0.8"]
     mem_limit: 128m
     cpuset: ${PLACEMAP_SUT_CPUS}
     volumes:
       - ../../load/standins:/standins:ro
       - ../../data/load:/seed:ro           # the station ids the seed wrote
+    ports:
+      - "127.0.0.1:58089:8080"             # its control endpoint, for scenarios that step the vehicle rate
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 2s
@@ -121,7 +126,10 @@ services:
       # one per core trim the native part further.
       HEAP_PERCENT: "60"
       MALLOC_ARENA_MAX: "2"
-      PLACEMAP_LIVE_MBTA_ENABLED: "false"
+      # MBTA's open files from the stand-in (no key, so polled every 15 s: the burstiest way vehicles arrive), through
+      # Toxiproxy for the stale check; the static GTFS straight from it.
+      PLACEMAP_LIVE_MBTA_REALTIMEURL: http://toxiproxy:18081/realtime/
+      PLACEMAP_LIVE_MBTA_GTFSURL: http://standins:8080/MBTA_GTFS.zip
     mem_limit: 1g
     cpuset: ${PLACEMAP_SUT_CPUS}
     ulimits:

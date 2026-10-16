@@ -4,7 +4,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 /**
  * Reads one HTTP/1.1 response that carries Server-Sent Events: the status line, the headers, then events from a plain
@@ -114,13 +113,42 @@ final class SseReader {
         return i > 5 ? t : -1;
     }
 
+    /** The topic a snapshot is of, from its {@code {"topic":"<name>",...}}; empty if the data does not start that way. */
+    static String snapshotTopic(String data) {
+        String prefix = "{\"topic\":\"";
+        int end = data.startsWith(prefix) ? data.indexOf('"', prefix.length()) : -1;
+        return end < 0 ? "" : data.substring(prefix.length(), end);
+    }
+
+    /** When a snapshot was published, from its {@code {"topic":"<name>","t":<ms>,...}}; -1 if it carries no time. */
+    static long snapshotMillis(String data) {
+        String prefix = "{\"topic\":\"";
+        int at = data.startsWith(prefix) ? data.indexOf("\",\"t\":", prefix.length()) : -1;
+        if (at < 0) {
+            return -1;
+        }
+        long t = 0;
+        int i = at + 6;
+        int start = i;
+        for (; i < data.length() && Character.isDigit(data.charAt(i)); i++) {
+            t = t * 10 + (data.charAt(i) - '0');
+        }
+        return i > start ? t : -1;
+    }
+
     /** Lines (LF or CRLF, UTF-8) and raw bytes from a stream, through one buffer. */
     static final class Lines {
+        /**
+         * How much of a line is kept. The client reads only each event's start (its time or its topic), and a
+         * snapshot is one line of up to megabytes: kept whole, thousands of streams would hold one each.
+         */
+        static final int KEPT = 1024;
+
         private final InputStream in;
         private final byte[] buffer = new byte[8192];
         private int pos;
         private int limit;
-        private byte[] line = new byte[256];
+        private final byte[] line = new byte[KEPT];
 
         Lines(InputStream in) {
             this.in = in;
@@ -136,21 +164,22 @@ final class SseReader {
             return true;
         }
 
-        /** The next line without its end, or null at the end of the stream. */
+        /** The next line without its end, cut to its first {@value #KEPT} bytes; null at the end of the stream. */
         String readLine() throws IOException {
             int length = 0;
+            byte last = 0;
             while (true) {
                 if (pos == limit && !fill()) {
                     return length == 0 ? null : decode(length);
                 }
                 byte b = buffer[pos++];
                 if (b == '\n') {
-                    return decode(length > 0 && line[length - 1] == '\r' ? length - 1 : length);
+                    return decode(last == '\r' && length > 0 && line[length - 1] == '\r' ? length - 1 : length);
                 }
-                if (length == line.length) {
-                    line = Arrays.copyOf(line, length * 2);
+                if (length < KEPT) {
+                    line[length++] = b;
                 }
-                line[length++] = b;
+                last = b;
             }
         }
 

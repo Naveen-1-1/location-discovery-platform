@@ -47,6 +47,30 @@ class SseReaderTest {
     }
 
     @Test
+    void aLongLineIsReadWholeButKeptShort() throws Exception {
+        String items = "{\"id\":\"y1234\"},".repeat(10_000);
+        var reader = new SseReader(stream("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n"
+                + "event: snapshot\ndata: {\"topic\":\"vehicles\",\"items\":[" + items + "]}\n\n"
+                + "event: vehicles\ndata: {\"t\":5,\"id\":\"y1\"}\n\n"));
+        reader.readHead();
+
+        SseReader.Event snapshot = reader.next();
+        assertThat(snapshot.data()).hasSize(SseReader.Lines.KEPT - "data: ".length());
+        assertThat(SseReader.snapshotTopic(snapshot.data())).isEqualTo("vehicles");
+        assertThat(reader.next()).isEqualTo(new SseReader.Event("vehicles", "{\"t\":5,\"id\":\"y1\"}"));
+    }
+
+    @Test
+    void aSnapshotNamesItsTopic() {
+        assertThat(SseReader.snapshotTopic("{\"topic\":\"vehicles\",\"stale\":false,\"items\":[]}")).isEqualTo("vehicles");
+        assertThat(SseReader.snapshotTopic("{\"t\":5}")).isEmpty();
+        assertThat(SseReader.snapshotTopic("{\"topic\":\"unterminated")).isEmpty();
+        assertThat(SseReader.snapshotMillis("{\"topic\":\"vehicles\",\"t\":1792170000123,\"stale\":false}"))
+                .isEqualTo(1792170000123L);
+        assertThat(SseReader.snapshotMillis("{\"topic\":\"vehicles\",\"stale\":false}")).isEqualTo(-1);
+    }
+
+    @Test
     void lagPercentilesComeFromTheBuckets() {
         var histogram = new SseIdleClient.LagHistogram();
         for (int i = 1; i <= 100; i++) {

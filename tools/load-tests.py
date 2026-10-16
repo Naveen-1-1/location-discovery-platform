@@ -267,8 +267,13 @@ def up(args):
     if nearby.get("travelTimeSource") != "valhalla" or not nearby.get("places"):
         sys.exit(f"The api answered without Valhalla's travel times: travelTimeSource={nearby.get('travelTimeSource')}, "
                  f"fallback={nearby.get('fallback')}, {len(nearby.get('places') or [])} places")
+    deadline = time.time() + 45  # the first vehicle poll; the stand-in may have started a moment after live-hub
+    while topic_stale("vehicles"):
+        if time.time() > deadline:
+            sys.exit("live-hub's vehicles topic is still stale 45 s after start: is the MBTA stand-in answering?")
+        time.sleep(1)
     say(f"STACK UP: {seed_info['id']} ({seed_info['places']} places); nearby from Boston Common: "
-        f"{len(nearby['places'])} places by walking time from Valhalla. api {API}, live-hub {LIVE}, "
+        f"{len(nearby['places'])} places by walking time from Valhalla; vehicles fresh. api {API}, live-hub {LIVE}, "
         f"Prometheus {PROMETHEUS}")
 
 
@@ -619,7 +624,7 @@ def live_sessions_settled(limit=120):
     return None
 
 
-def sse(r, name, clients, seconds, slow_share=0.0, ramp=250):
+def sse(r, name, clients, seconds, slow_share=0.0, ramp=250, topics="bikes", extra=()):
     """Runs the idle-stream client; returns its summary (or {} if it failed)."""
     settled = live_sessions_settled()
     if settled is None:
@@ -627,9 +632,9 @@ def sse(r, name, clients, seconds, slow_share=0.0, ramp=250):
     elif settled > 10:
         say(f"  live-hub took {settled:.0f} s to let go of the streams from before {name}")
     args = ["--profile", "tools", "run", "--rm", "--no-deps", "-T", "--user", f"{os.getuid()}:{os.getgid()}",
-            "sse-client", "--url", "http://live-hub:8081/live?topics=bikes", "--clients", str(clients),
+            "sse-client", "--url", f"http://live-hub:8081/live?topics={topics}", "--clients", str(clients),
             "--ramp", str(ramp), "--duration", str(seconds), "--slow-share", str(slow_share),
-            "--out", f"/work/{name}.sse.json"]
+            "--out", f"/work/{name}.sse.json", *extra]
     with open(r.dir / f"{name}.sse.log", "w", encoding="utf-8") as log:
         code = subprocess.run(COMPOSE + args, env=r.env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
     path = r.dir / f"{name}.sse.json"
@@ -735,6 +740,7 @@ def scenario_l8(r):
              + ("" if complete else "; some levels did not hold every stream"), {"rows": rows})
 
 
+
 NEARBY_HITS = 'sum by (result) (increase(cache_gets_total{{job="placemap/api", cache="nearby"}}[{w}]))'
 
 
@@ -746,7 +752,7 @@ def scenario_l11(r):
     started = time.time() + 3  # k6 takes a moment to start
     code, s = r.k6("L11", "L11-ceiling.js", shape)
     time.sleep(12)  # metrics arrive every 5 s
-    rows, sustained, missed = [], None, None
+    rows, sustained, missed, sustained_end = [], None, None, None
     for i, rate in enumerate(range(shape["FIRST_RATE"], shape["LAST_RATE"] + 1, shape["STEP_BY"])):
         d = metric(s, f"http_req_duration{{step:{rate}}}")
         if not d.get("count"):
@@ -765,9 +771,15 @@ def scenario_l11(r):
         if not met:
             missed = rate
             break
-        sustained = rate
+        sustained, sustained_end = rate, to
     limited = metric(s, "limited_429").get("count", 0)
     dropped = metric(s, "dropped_iterations").get("count", 0)
+    # Iterations k6 could not start (no free VU) before the sustained step ended: k6, not the api, would have capped
+    # the rate there. Drops in the step that missed come from its slow answers and do not change the ceiling. k6
+    # writes the counter only once it is non-zero, so its largest value by then is the count.
+    dropped_by_ceiling = 0 if sustained_end is None else prom_value(
+        f'max(max_over_time(k6_dropped_iterations_total{{run="{r.dir.name}", scenario="ceiling"}}'
+        f'[{int(sustained_end - started) + 60}s]))', at=sustained_end, default=0)
     table = ["| Rate | Requests | p95 | p99 | Fallbacks | Errors | 503s | Cache hits | Met |",
              "|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
     for row in rows:
@@ -775,13 +787,103 @@ def scenario_l11(r):
                      f"{row['fallback_rate'] or 0:.2%} | {row['error_rate'] or 0:.2%} | {row['rejected_503']:.0f} | "
                      f"{row['cache_hit_rate']:.0%} | {'yes' if row['met'] else 'no'} |")
     (r.dir / "L11.md").write_text("\n".join(table) + "\n", encoding="utf-8")
-    passed = code in (0, 99) and sustained is not None and limited == 0 and dropped == 0
+    passed = code in (0, 99) and sustained is not None and limited == 0 and dropped_by_ceiling == 0
     r.record("L11", passed,
              f"sustained {f'{sustained}/s' if sustained else 'none'} (the last step meeting L1's line"
              + (f"; {missed}/s missed it" if missed else "; every step met it, up to the cap") + "), "
-             f"{limited:.0f} answers 429, {dropped:.0f} dropped iterations; steps in L11.md",
+             f"{limited:.0f} answers 429, {dropped_by_ceiling:.0f} dropped iterations up to it ({dropped:.0f} in all); "
+             f"steps in L11.md",
              {"sustained_rate": sustained, "first_missed_rate": missed, "limited_429": limited,
-              "dropped_iterations": dropped, "steps": rows, "shape": shape})
+              "dropped_iterations": dropped, "dropped_by_ceiling": dropped_by_ceiling, "steps": rows,
+              "shape": shape})
+
+
+STANDINS = "http://127.0.0.1:58089"
+VEHICLES_TOPICS = "alerts,bikes,vehicles"  # what the map asks for with "Show buses and trains" on
+
+
+def vehicles_multiple(k):
+    request = urllib.request.Request(f"{STANDINS}/control/vehicles?multiple={k}", data=b"", method="POST")
+    with NO_PROXY.open(request, timeout=5) as response:
+        return json.loads(response.read())
+
+
+def scenario_l12(r):
+    """Live trains and buses: 5,000 viewers with vehicles on, at MBTA's measured rate, then at 2x, 4x and 8x."""
+    clients, real, step = (1000, 60, 30) if r.quick else (5000, 600, 120)
+    multiples = [1, 2, 4, 8]
+    seconds = real + step * (len(multiples) - 1)
+    ramp = 250
+    if live_sessions_settled() is None:
+        say("  live-hub still holds streams from before L12 after 120 s; starting anyway")
+    setting = vehicles_multiple(1)
+    steady = time.time() + 3 + clients / ramp + 10  # compose run, the ramp, the client's own 10 s
+    phases = []  # (multiple, start, end), wall clock
+    t = steady
+    for k in multiples:
+        length = real if k == 1 else step
+        phases.append((k, t, t + length))
+        if k > 1:
+            at(t, lambda k=k: vehicles_multiple(k))
+        t += length
+    try:
+        with Sampler("live-hub") as sampler:
+            boundaries = ",".join(str(round(start - steady)) for _, start, _ in phases[1:])
+            s = sse(r, "L12", clients, seconds, topics=VEHICLES_TOPICS, ramp=ramp, extra=("--phases", boundaries))
+    finally:
+        vehicles_multiple(1)
+    time.sleep(12)  # metrics arrive every 5 s
+    windows = s.get("windows", [])
+    by_phase = {row["phase"]: row for row in s.get("lag_by_phase", {}).get("vehicles", [])}
+    rows = []
+    for i, (k, start, end) in enumerate(phases):
+        settle = 20  # a switch's first windows still carry the step before
+        mine = [w for w in windows if start - steady + (settle if k > 1 else 0) < w["t"] <= end - steady]
+        w = f"{max(10, int(end - start))}s"
+        overflows = prom_value(f"sum(increase(placemap_live_mailbox_overflows_total[{w}]))", at=end)
+        delay = 1000 * prom_value(f'histogram_quantile(0.99, sum(increase(placemap_live_publish_delay_seconds'
+                                  f'{{topic="vehicles"}}[{w}])))', at=end, default=-0.001)
+        worst = max((x.get("vehicles_p99", -1) for x in mine), default=-1)  # the slowest 10 s window's p99
+        client = by_phase.get(i, {}).get("p99", -1)  # the p99 over the whole phase
+        seconds_in = 10 * len(mine)
+        rows.append({
+            "multiple": k, "vehicles": setting["vehicles"] * k, "windows": len(mine),
+            "min_open": min((x["open"] for x in mine), default=0),
+            "resyncs": sum(x.get("resyncs", 0) for x in mine), "server_overflows": round(overflows),
+            "vehicles_client_p99_ms": client, "vehicles_worst_window_p99_ms": worst,
+            "publish_delay_p99_ms": round(delay),
+            "delivery_p99_ms": client + max(0, round(delay)) if client >= 0 else -1,
+            "bytes_per_viewer_per_s": round(sum(x.get("bytes", 0) for x in mine) / max(1, clients * seconds_in)),
+            "peak_mb": round(sampler.peak_mb(start, end))})
+        row = rows[-1]
+        row["kept_up"] = (row["resyncs"] == 0 and row["server_overflows"] == 0
+                          and 0 <= row["delivery_p99_ms"] < 1000 and row["min_open"] >= clients)
+    table = ["| Rate | Vehicles | Resyncs (client) | Overflows (live-hub) | Vehicles lag p99 | Worst 10 s window | "
+             "Publish delay p99 | Delivery p99 | Bytes/viewer/s | Peak MB | Kept up |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
+    for row in rows:
+        table.append(f"| {row['multiple']}x | {row['vehicles']} | {row['resyncs']} | {row['server_overflows']} | "
+                     f"{row['vehicles_client_p99_ms']} ms | {row['vehicles_worst_window_p99_ms']} ms | "
+                     f"{row['publish_delay_p99_ms']} ms | "
+                     f"{row['delivery_p99_ms']} ms | {row['bytes_per_viewer_per_s']} | {row['peak_mb']} | "
+                     f"{'yes' if row['kept_up'] else 'no'} |")
+    (r.dir / "L12.md").write_text("\n".join(table) + "\n", encoding="utf-8")
+    first = rows[0] if rows else {}
+    highest = None
+    for row in rows:
+        if not row["kept_up"]:
+            break
+        highest = row["multiple"]
+    passed = bool(s) and bool(first) and first["kept_up"] and first["peak_mb"] < 1024
+    r.record("L12", passed,
+             f"{first.get('min_open', 0)} of {clients} viewers held on {VEHICLES_TOPICS} at MBTA's rate "
+             f"({setting['vehicles']} vehicles, each reporting every {setting['per_vehicle_period_s']} s): "
+             f"{first.get('resyncs', -1)} resyncs, {first.get('server_overflows', -1)} mailbox overflows, vehicles "
+             f"delivered p99 {first.get('delivery_p99_ms', -1)} ms from live-hub's receipt, "
+             f"{first.get('bytes_per_viewer_per_s', 0)} bytes a viewer a second, live-hub peak "
+             f"{first.get('peak_mb', 0)} MB; keeps up to {f'{highest}x' if highest else 'none'}; rates in L12.md",
+             {"clients": clients, "setting": setting, "phases": rows, "highest_multiple": highest,
+              "client": {k: v for k, v in s.items() if k != "windows"}, "memory": sampler.breakdown()})
 
 
 TOXIPROXY = Toxiproxy("http://127.0.0.1:58474")
@@ -904,54 +1006,66 @@ def scenario_c5(r):
              {"recovered_within_30s": rec.get("within_30s", 0), "share": share, "recoveries": rec})
 
 
-def bikes_stale():
-    request = urllib.request.Request(f"{LIVE}/internal/live/batch", data=b'{"keys":["bikes:none"]}', method="POST",
+def topic_stale(topic):
+    body = json.dumps({"keys": [f"{topic}:none"]}).encode()
+    request = urllib.request.Request(f"{LIVE}/internal/live/batch", data=body, method="POST",
                                      headers={"Content-Type": "application/json"})
     with NO_PROXY.open(request, timeout=2) as response:
-        return json.loads(response.read())["topics"]["bikes"]["stale"]
+        return json.loads(response.read())["topics"][topic]["stale"]
 
 
-def scenario_c6(r):
-    hold = 30 if r.quick else 60
+def feed_goes_silent(r, name, label, proxy, topic, ttl, fresh_within):
+    """A feed's replies stop arriving for a while: its topic must turn stale within 3x its ttl (+1 s for a tick and a
+    poll), turn fresh again once the feed is back, and live-hub must not pile up threads waiting on it."""
+    hold = 30 if r.quick and ttl < 10 else 60
     threads = 'max(max_over_time(jvm_threads_live{{job="placemap/live-hub"}}[{w}]))'
     time.sleep(10)
     before = prom_value(threads.format(w="60s"))
-    if bikes_stale():
-        sys.exit("C6: the bikes feed is already stale before the fault")
+    if topic_stale(topic):
+        sys.exit(f"{name}: the {topic} feed is already stale before the fault")
     # The feed's replies stop arriving: connections stay open, nothing comes back.
     fault_from = time.time()
-    TOXIPROXY.add_toxic("bluebikes", "silent", "timeout", {"timeout": 0})
+    TOXIPROXY.add_toxic(proxy, "silent", "timeout", {"timeout": 0})
     stale_after = None
     try:
         while time.time() < fault_from + hold:
-            if stale_after is None and bikes_stale():
+            if stale_after is None and topic_stale(topic):
                 stale_after = time.time() - fault_from
             time.sleep(0.25)
     finally:
-        TOXIPROXY.remove_toxic("bluebikes", "silent")
+        TOXIPROXY.remove_toxic(proxy, "silent")
     fault_to = time.time()
     fresh_after = None
-    while time.time() < fault_to + 30:
-        if not bikes_stale():
+    while time.time() < fault_to + fresh_within:
+        if not topic_stale(topic):
             fresh_after = time.time() - fault_to
             break
         time.sleep(0.25)
     time.sleep(12)
     during = prom_value(threads.format(w=f"{int(hold)}s"), at=fault_to)
-    ttl = 1  # the stand-in feed's ttl
     passed = stale_after is not None and stale_after <= 3 * ttl + 1 and fresh_after is not None and during <= before + 2
-    r.record("C6", passed,
-             f"the Bluebikes feed went silent for {hold} s: stale after "
+    r.record(name, passed,
+             f"the {label} feed went silent for {hold} s: stale after "
              f"{f'{stale_after:.1f} s' if stale_after is not None else 'never'} (ttl {ttl} s, limit 3x ttl + 1 s), "
-             f"fresh again {f'{fresh_after:.1f} s' if fresh_after is not None else 'never'} after it came back, "
-             f"live-hub threads {before:.0f} before, at most {during:.0f} during",
+             f"fresh again {f'{fresh_after:.1f} s' if fresh_after is not None else f'not within {fresh_within} s'} "
+             f"after it came back, live-hub threads {before:.0f} before, at most {during:.0f} during",
              {"stale_after_s": stale_after, "fresh_after_s": fresh_after, "threads_before": before,
-              "threads_during": during})
+              "threads_during": during, "ttl_s": ttl})
+
+
+def scenario_c6(r):
+    feed_goes_silent(r, "C6", "Bluebikes", "bluebikes", "bikes", ttl=1, fresh_within=30)  # the stand-in's ttl
+
+
+def scenario_c7(r):
+    # Vehicles: ttl = the 15 s poll. A poll caught by the fault waits out its 20 s read timeout before the next one.
+    feed_goes_silent(r, "C7", "vehicles", "mbta", "vehicles", ttl=15, fresh_within=60)
 
 
 SCENARIOS = {"L1": scenario_l1, "L2": scenario_l2, "L3": scenario_l3, "L4": scenario_l4, "L5": scenario_l5,
              "L6": scenario_l6, "L7": scenario_l7, "L8": scenario_l8, "L9": scenario_l9, "L10": scenario_l10,
-             "L11": scenario_l11, "C3": scenario_c3, "C4": scenario_c4, "C5": scenario_c5, "C6": scenario_c6}
+             "L11": scenario_l11, "L12": scenario_l12, "C3": scenario_c3, "C4": scenario_c4, "C5": scenario_c5,
+             "C6": scenario_c6, "C7": scenario_c7}
 
 
 def run_scenarios(args):

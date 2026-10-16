@@ -1,5 +1,6 @@
 package io.github.naveen11.placemap.load;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -13,8 +14,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -23,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Holds thousands of live-hub streams open, one virtual thread each, the way browsers hold an EventSource, and
@@ -37,6 +45,10 @@ import java.util.concurrent.atomic.AtomicLongArray;
  *       EventSource does; how long each took to get a fresh snapshot is recorded.
  *   <li>Slow readers (a share of the streams) read their first snapshot, then nothing: a 4 KB receive buffer fills,
  *       live-hub's writes stall, and its watchdog should evict them. At the end each is checked for being closed.
+ *   <li>A connection gets one snapshot per topic it asked for; a second snapshot of its first topic is a resync (its
+ *       mailbox overflowed). A later snapshot of one other topic alone is that topic sent whole (live-hub's answer to
+ *       a publish that changed many of its items): an update, whose lag counts for its topic. Lag is also kept per
+ *       topic, and the bytes read once steady, per stream and second.
  * </ul>
  *
  * <p>Usage: {@code java -jar sse-idle-client.jar --url http://live-hub:8081/live?topics=bikes --clients 5000
@@ -44,7 +56,8 @@ import java.util.concurrent.atomic.AtomicLongArray;
  */
 public final class SseIdleClient {
 
-    record Options(URI url, int clients, int ramp, Duration duration, double slowShare, Path out, Duration window) {
+    record Options(URI url, int clients, int ramp, Duration duration, double slowShare, Path out, Duration window,
+            long[] phases) {
 
         static Options parse(String[] args) {
             URI url = URI.create("http://live-hub:8081/live?topics=bikes");
@@ -53,6 +66,7 @@ public final class SseIdleClient {
             Duration duration = Duration.ofMinutes(10);
             double slowShare = 0;
             Path out = null;
+            long[] phases = new long[0];
             for (int i = 0; i + 1 < args.length; i += 2) {
                 String value = args[i + 1];
                 switch (args[i]) {
@@ -62,10 +76,11 @@ public final class SseIdleClient {
                     case "--duration" -> duration = Duration.ofSeconds(Long.parseLong(value));
                     case "--slow-share" -> slowShare = Double.parseDouble(value);
                     case "--out" -> out = Path.of(value);
+                    case "--phases" -> phases = Arrays.stream(value.split(",")).mapToLong(Long::parseLong).toArray();
                     default -> throw new IllegalArgumentException("unknown option " + args[i]);
                 }
             }
-            return new Options(url, clients, ramp, duration, slowShare, out, Duration.ofSeconds(10));
+            return new Options(url, clients, ramp, duration, slowShare, out, Duration.ofSeconds(10), phases);
         }
     }
 
@@ -137,8 +152,13 @@ public final class SseIdleClient {
         final AtomicLong ends = new AtomicLong();
         final AtomicLong snapshots = new AtomicLong();
         final AtomicLong resyncs = new AtomicLong();
+        final AtomicLong wholeTopics = new AtomicLong();
         final AtomicLong events = new AtomicLong();
         final LagHistogram lag = new LagHistogram();
+        final Map<String, LagHistogram> lagByTopic = new ConcurrentHashMap<>();
+        final Map<String, LagHistogram> lagByPhase = new ConcurrentHashMap<>(); // "<topic>#<phase>"
+        volatile long steadyStartNanos;
+        final LongAdder steadyBytes = new LongAdder();
         final ConcurrentLinkedQueue<Long> recoveries = new ConcurrentLinkedQueue<>();
         final AtomicInteger unrecovered = new AtomicInteger();
         final AtomicInteger slowEvicted = new AtomicInteger();
@@ -156,6 +176,7 @@ public final class SseIdleClient {
     private final Stats stats = new Stats();
     private final List<Stream> streams = new ArrayList<>();
     private int openAtEnd;
+    private double steadySeconds;
 
     SseIdleClient(Options options) {
         this.options = options;
@@ -189,10 +210,14 @@ public final class SseIdleClient {
             log("opened %d streams in %.1f s; %d open", options.clients(), (System.nanoTime() - start) / 1e9,
                     stats.open.get());
             TimeUnit.SECONDS.sleep(10); // the last snapshots go out
-            stats.steady = true;
             long steadyStart = System.nanoTime();
+            stats.steadyStartNanos = steadyStart;
+            stats.steady = true;
             long[] previous = stats.lag.snapshot();
+            Map<String, long[]> previousByTopic = byTopic();
             long previousEvents = stats.events.get();
+            long previousResyncs = stats.resyncs.get();
+            long previousBytes = stats.steadyBytes.sum();
             long end = steadyStart + options.duration().toNanos();
             while (System.nanoTime() < end) {
                 long next = Math.min(end, System.nanoTime() + options.window().toNanos());
@@ -200,17 +225,32 @@ public final class SseIdleClient {
                 long[] now = stats.lag.snapshot();
                 long[] window = LagHistogram.minus(now, previous);
                 long events = stats.events.get();
+                long resyncs = stats.resyncs.get();
+                long bytes = stats.steadyBytes.sum();
+                Map<String, long[]> nowByTopic = byTopic();
+                var topics = new StringBuilder();
+                for (Map.Entry<String, long[]> topic : nowByTopic.entrySet()) {
+                    long[] counts = topic.getValue();
+                    long[] before = previousByTopic.getOrDefault(topic.getKey(), new long[counts.length]);
+                    topics.append(String.format(Locale.ROOT, ",\"%s_p99\":%d", topic.getKey(),
+                            LagHistogram.percentile(LagHistogram.minus(counts, before), 0.99)));
+                }
                 String line = String.format(Locale.ROOT,
-                        "{\"t\":%d,\"open\":%d,\"events\":%d,\"p50\":%d,\"p99\":%d,\"max\":%d}",
+                        "{\"t\":%d,\"open\":%d,\"events\":%d,\"resyncs\":%d,\"bytes\":%d,\"p50\":%d,\"p99\":%d,"
+                                + "\"max\":%d%s}",
                         Math.round((System.nanoTime() - steadyStart) / 1e9), stats.open.get(), events - previousEvents,
-                        LagHistogram.percentile(window, 0.5), LagHistogram.percentile(window, 0.99),
-                        LagHistogram.max(window));
+                        resyncs - previousResyncs, bytes - previousBytes, LagHistogram.percentile(window, 0.5),
+                        LagHistogram.percentile(window, 0.99), LagHistogram.max(window), topics);
                 windows.add(line);
                 log("%s", line);
                 previous = now;
+                previousByTopic = nowByTopic;
                 previousEvents = events;
+                previousResyncs = resyncs;
+                previousBytes = bytes;
             }
             openAtEnd = stats.open.get(); // before the client closes them itself
+            steadySeconds = (System.nanoTime() - steadyStart) / 1e9;
             stats.stopping = true;
             streams.stream().filter(s -> !s.slow).forEach(Stream::close);
             try (ExecutorService checks = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -240,8 +280,11 @@ public final class SseIdleClient {
         return String.format(Locale.ROOT, """
                 {"url":"%s","clients":%d,"slow":%d,"duration_s":%d,
                  "peak_open":%d,"open_at_end":%d,"attempts":%d,"refused":%d,"failures":%d,"ends":%d,
-                 "snapshots":%d,"resyncs":%d,"events":%d,
+                 "snapshots":%d,"resyncs":%d,"whole_topics":%d,"events":%d,
                  "lag_ms":{"count":%d,"p50":%d,"p95":%d,"p99":%d,"p999":%d,"max":%d},
+                 "lag_by_topic":{%s},
+                 "lag_by_phase":{%s},
+                 "bytes_read":%d,"bytes_per_stream_per_s":%.1f,
                  "recoveries":{"count":%d,"within_30s":%d,"p50_ms":%d,"p99_ms":%d,"max_ms":%d,"unrecovered":%d},
                  "slow_clients":{"evicted":%d,"still_open":%d},
                  "windows":[%s]}
@@ -249,11 +292,63 @@ public final class SseIdleClient {
                 options.url(), options.clients(), streams.stream().filter(s -> s.slow).count(),
                 options.duration().toSeconds(), stats.peakOpen.get(), openAtEnd, stats.attempts.get(),
                 stats.refused.get(), stats.failures.get(), stats.ends.get(), stats.snapshots.get(), stats.resyncs.get(),
-                stats.events.get(), LagHistogram.count(lag), LagHistogram.percentile(lag, 0.5),
+                stats.wholeTopics.get(), stats.events.get(), LagHistogram.count(lag), LagHistogram.percentile(lag, 0.5),
                 LagHistogram.percentile(lag, 0.95), LagHistogram.percentile(lag, 0.99),
-                LagHistogram.percentile(lag, 0.999), LagHistogram.max(lag), recoveries.size(), within30,
+                LagHistogram.percentile(lag, 0.999), LagHistogram.max(lag), lagByTopic(), lagByPhase(), stats.steadyBytes.sum(),
+                stats.steadyBytes.sum() / Math.max(1.0, options.clients() * steadySeconds), recoveries.size(), within30,
                 at(recoveries, 0.5), at(recoveries, 0.99), recoveries.isEmpty() ? -1 : recoveries.getLast(),
                 stats.unrecovered.get(), stats.slowEvicted.get(), stats.slowOpen.get(), String.join(",\n  ", windows));
+    }
+
+    /** One topic's lag, for the whole run and, with {@code --phases}, for the phase it fell in. */
+    private void recordLag(String topic, long lag) {
+        stats.lagByTopic.computeIfAbsent(topic, name -> new LagHistogram()).record(lag);
+        if (options.phases().length > 0) {
+            stats.lagByPhase.computeIfAbsent(topic + "#" + phase(), key -> new LagHistogram()).record(lag);
+        }
+    }
+
+    /** How many of the {@code --phases} boundaries (seconds into the steady part) have passed. */
+    private int phase() {
+        double elapsed = (System.nanoTime() - stats.steadyStartNanos) / 1e9;
+        int phase = 0;
+        for (long boundary : options.phases()) {
+            if (elapsed >= boundary) {
+                phase++;
+            }
+        }
+        return phase;
+    }
+
+    /** {@code "vehicles":[{"phase":0,"count":…,"p50":…,"p99":…,"max":…},…]}, each topic's lag per phase. */
+    private String lagByPhase() {
+        var byTopic = new TreeMap<String, List<String>>();
+        new TreeMap<>(stats.lagByPhase).forEach((key, histogram) -> {
+            String topic = key.substring(0, key.lastIndexOf('#'));
+            long[] c = histogram.snapshot();
+            byTopic.computeIfAbsent(topic, t -> new ArrayList<>()).add(String.format(Locale.ROOT,
+                    "{\"phase\":%s,\"count\":%d,\"p50\":%d,\"p99\":%d,\"max\":%d}", key.substring(key.lastIndexOf('#') + 1),
+                    LagHistogram.count(c), LagHistogram.percentile(c, 0.5), LagHistogram.percentile(c, 0.99),
+                    LagHistogram.max(c)));
+        });
+        var json = new ArrayList<String>();
+        byTopic.forEach((topic, phases) -> json.add("\"" + topic + "\":[" + String.join(",", phases) + "]"));
+        return String.join(",", json);
+    }
+
+    /** Each topic's lag counts so far, by topic name. */
+    private Map<String, long[]> byTopic() {
+        var copy = new TreeMap<String, long[]>();
+        stats.lagByTopic.forEach((topic, histogram) -> copy.put(topic, histogram.snapshot()));
+        return copy;
+    }
+
+    private String lagByTopic() {
+        var json = new ArrayList<String>();
+        byTopic().forEach((topic, c) -> json.add(String.format(Locale.ROOT,
+                "\"%s\":{\"count\":%d,\"p50\":%d,\"p99\":%d,\"max\":%d}", topic, LagHistogram.count(c),
+                LagHistogram.percentile(c, 0.5), LagHistogram.percentile(c, 0.99), LagHistogram.max(c))));
+        return String.join(",", json);
     }
 
     private static long at(List<Long> sorted, double share) {
@@ -283,6 +378,9 @@ public final class SseIdleClient {
         public void run() {
             while (!stats.stopping && !Thread.currentThread().isInterrupted()) {
                 boolean hadSnapshot = false;
+                String firstTopic = null; // the connection's first snapshot; seeing it again means a resync
+                Set<String> burst = new HashSet<>(); // the topics of the resync being read, while inBurst
+                boolean inBurst = false;
                 try (Socket s = new Socket()) {
                     socket = s;
                     if (slow) {
@@ -292,7 +390,7 @@ public final class SseIdleClient {
                     s.connect(new InetSocketAddress(options.url().getHost(), options.url().getPort()), 5000);
                     s.setSoTimeout(slow ? 0 : 30_000); // heartbeats come every 15 s
                     request(s.getOutputStream());
-                    var reader = new SseReader(s.getInputStream());
+                    var reader = new SseReader(new Counting(s.getInputStream()));
                     int status = reader.readHead();
                     if (status != 200) {
                         stats.refused.incrementAndGet();
@@ -302,9 +400,24 @@ public final class SseIdleClient {
                     for (SseReader.Event e = reader.next(); e != null; e = reader.next()) {
                         if (e.name().equals("snapshot")) {
                             stats.snapshots.incrementAndGet();
+                            String topic = SseReader.snapshotTopic(e.data());
                             if (hadSnapshot) {
-                                stats.resyncs.incrementAndGet();
+                                if (topic.equals(firstTopic)) {
+                                    stats.resyncs.incrementAndGet();
+                                    burst.clear();
+                                    burst.add(topic);
+                                    inBurst = true;
+                                } else if (!inBurst || !burst.add(topic)) { // not part of a resync: sent whole
+                                    stats.wholeTopics.incrementAndGet();
+                                    long published = SseReader.snapshotMillis(e.data());
+                                    if (published > 0 && stats.steady) {
+                                        recordLag(topic, System.currentTimeMillis() - published);
+                                    }
+                                }
                             } else {
+                                firstTopic = topic;
+                                burst.add(topic);
+                                inBurst = true;
                                 hadSnapshot = true;
                                 stats.opened();
                                 long down = disconnectedAt;
@@ -322,11 +435,14 @@ public final class SseIdleClient {
                                 }
                             }
                         } else {
+                            inBurst = false; // a resync's snapshots come one after another
                             long published = SseReader.publishedMillis(e.data());
                             if (published > 0) {
                                 stats.events.incrementAndGet();
                                 if (stats.steady) {
-                                    stats.lag.record(System.currentTimeMillis() - published);
+                                    long lag = System.currentTimeMillis() - published;
+                                    stats.lag.record(lag);
+                                    recordLag(e.name(), lag);
                                 }
                             }
                         }
@@ -409,6 +525,31 @@ public final class SseIdleClient {
                 stats.slowOpen.incrementAndGet(); // open but quiet: not closed by the server
             } catch (IOException e) {
                 stats.slowEvicted.incrementAndGet(); // reset by the server
+            }
+        }
+
+        /** Counts the bytes read once the run is steady. */
+        private final class Counting extends FilterInputStream {
+            Counting(InputStream in) {
+                super(in);
+            }
+
+            @Override
+            public int read() throws IOException {
+                int b = super.read();
+                if (b >= 0 && stats.steady) {
+                    stats.steadyBytes.increment();
+                }
+                return b;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                int n = super.read(b, off, len);
+                if (n > 0 && stats.steady) {
+                    stats.steadyBytes.add(n);
+                }
+                return n;
             }
         }
 
