@@ -675,6 +675,55 @@ def scenario_l8(r):
              + ("" if complete else "; some levels did not hold every stream"), {"rows": rows})
 
 
+NEARBY_HITS = 'sum by (result) (increase(cache_gets_total{{job="placemap/api", cache="nearby"}}[{w}]))'
+
+
+def scenario_l11(r):
+    """The traffic ceiling: L1's mix at rising rates; the last step before the first miss is the sustained rate."""
+    shape = (dict(WARMUP_SECONDS=20, STEP_SECONDS=40, SETTLE_SECONDS=20, FIRST_RATE=50, STEP_BY=25, LAST_RATE=100)
+             if r.quick else dict(WARMUP_SECONDS=60, STEP_SECONDS=120, SETTLE_SECONDS=60, FIRST_RATE=50, STEP_BY=25,
+                                  LAST_RATE=500))
+    started = time.time() + 3  # k6 takes a moment to start
+    code, s = r.k6("L11", "L11-ceiling.js", shape)
+    time.sleep(12)  # metrics arrive every 5 s
+    rows, sustained, missed = [], None, None
+    for i, rate in enumerate(range(shape["FIRST_RATE"], shape["LAST_RATE"] + 1, shape["STEP_BY"])):
+        d = metric(s, f"http_req_duration{{step:{rate}}}")
+        if not d.get("count"):
+            break
+        e, f = metric(s, f"errors_not_429{{step:{rate}}}"), metric(s, f"fallbacks{{step:{rate}}}")
+        rejected = metric(s, f"rejected_503{{step:{rate}}}").get("count", 0)
+        met = d.get("p(95)", 1e9) < 300 and e.get("rate", 1) < 0.005 and f.get("rate", 0) < 0.01
+        to = started + shape["WARMUP_SECONDS"] + (i + 1) * shape["STEP_SECONDS"]
+        window = max(10, int(min(to, time.time() - 12) - (to - shape["STEP_SECONDS"] + 5)))
+        gets = {row["metric"].get("result"): float(row["value"][1])
+                for row in prom(NEARBY_HITS.format(w=f"{window}s"), at=min(to, time.time() - 12))}
+        hits = gets.get("hit", 0) / max(1, gets.get("hit", 0) + gets.get("miss", 0))
+        rows.append({"rate": rate, "requests": d.get("count"), "p95_ms": d.get("p(95)"), "p99_ms": d.get("p(99)"),
+                     "error_rate": e.get("rate"), "fallback_rate": f.get("rate"), "rejected_503": rejected,
+                     "cache_hit_rate": round(hits, 3), "met": met})
+        if not met:
+            missed = rate
+            break
+        sustained = rate
+    limited = metric(s, "limited_429").get("count", 0)
+    dropped = metric(s, "dropped_iterations").get("count", 0)
+    table = ["| Rate | Requests | p95 | p99 | Fallbacks | Errors | 503s | Cache hits | Met |",
+             "|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
+    for row in rows:
+        table.append(f"| {row['rate']}/s | {row['requests']:.0f} | {row['p95_ms']:.0f} ms | {row['p99_ms']:.0f} ms | "
+                     f"{row['fallback_rate'] or 0:.2%} | {row['error_rate'] or 0:.2%} | {row['rejected_503']:.0f} | "
+                     f"{row['cache_hit_rate']:.0%} | {'yes' if row['met'] else 'no'} |")
+    (r.dir / "L11.md").write_text("\n".join(table) + "\n", encoding="utf-8")
+    passed = code in (0, 99) and sustained is not None and limited == 0 and dropped == 0
+    r.record("L11", passed,
+             f"sustained {f'{sustained}/s' if sustained else 'none'} (the last step meeting L1's line"
+             + (f"; {missed}/s missed it" if missed else "; every step met it, up to the cap") + "), "
+             f"{limited:.0f} answers 429, {dropped:.0f} dropped iterations; steps in L11.md",
+             {"sustained_rate": sustained, "first_missed_rate": missed, "limited_429": limited,
+              "dropped_iterations": dropped, "steps": rows, "shape": shape})
+
+
 TOXIPROXY = Toxiproxy("http://127.0.0.1:58474")
 
 
@@ -842,7 +891,7 @@ def scenario_c6(r):
 
 SCENARIOS = {"L1": scenario_l1, "L2": scenario_l2, "L3": scenario_l3, "L4": scenario_l4, "L5": scenario_l5,
              "L6": scenario_l6, "L7": scenario_l7, "L8": scenario_l8, "L9": scenario_l9, "L10": scenario_l10,
-             "C3": scenario_c3, "C4": scenario_c4, "C5": scenario_c5, "C6": scenario_c6}
+             "L11": scenario_l11, "C3": scenario_c3, "C4": scenario_c4, "C5": scenario_c5, "C6": scenario_c6}
 
 
 def run_scenarios(args):
@@ -870,10 +919,11 @@ def run_scenarios(args):
     say(f"{verdict}; results in {r.dir.relative_to(ROOT)}")
     if os.environ.get("GITHUB_STEP_SUMMARY"):  # the run's page on GitHub
         lines = [f"{n} {'PASSED' if v['passed'] else 'FAILED'}: {v['line']}" for n, v in r.results.items()]
-        l8 = r.dir / "L8.md"
+        tables = [f"\n#### {path.stem}\n\n" + path.read_text(encoding="utf-8")
+                  for path in (r.dir / f"{n}.md" for n in SCENARIOS) if path.exists()]
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as page:
             page.write("\n".join(["### Load and crash tests", "```", header, *lines, verdict, "```", ""])
-                       + (l8.read_text(encoding="utf-8") if l8.exists() else ""))
+                       + "".join(tables))
     sys.exit(1 if failed else 0)
 
 
