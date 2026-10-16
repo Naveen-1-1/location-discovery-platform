@@ -12,7 +12,9 @@ import io.github.naveen11.placemap.api.routing.TravelMode;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.timelimiter.TimeLimiter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.BaseUnits;
 import io.micrometer.core.instrument.binder.cache.CaffeineCacheMetrics;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -38,7 +40,8 @@ import org.slf4j.LoggerFactory;
  *       shared routing guard (bulkhead, circuit breaker), cut off by the {@code travel-times} time limiter. Any failure
  *       there falls back to the straight-line order, flagged in the result.
  *   <li>Failed loads are not cached. Results with travel times are shared for {@code cacheTtl}, fallbacks for the
- *       much shorter {@code fallbackTtl}.
+ *       much shorter {@code fallbackTtl}. The cache is bounded by the results' estimated size ({@link ResultSize}),
+ *       not their number: one result can hold {@value #CANDIDATES} places.
  * </ol>
  */
 public class NearbyService {
@@ -67,12 +70,17 @@ public class NearbyService {
         this.registry = registry;
         // The cache's own housekeeping stays on its default pool, which outlives this service during shutdown.
         this.cache = Caffeine.newBuilder()
-                .maximumSize(properties.cacheSize())
+                .maximumWeight(properties.cacheMemory().toBytes())
+                .weigher((NearbyQuery query, NearbyResult result) -> ResultSize.bytes(result))
                 .expireAfter(new ResultExpiry(properties.cacheTtl(), properties.fallbackTtl()))
                 .ticker(ticker)
                 .recordStats()
                 .buildAsync((query, ignored) -> CompletableFuture.supplyAsync(() -> load(query), loaders));
         CaffeineCacheMetrics.monitor(registry, cache, "nearby");
+        Gauge.builder("placemap.nearby.cache.weight", this, NearbyService::cachedBytes)
+                .description("Estimated heap held by shared nearby results")
+                .baseUnit(BaseUnits.BYTES)
+                .register(registry);
     }
 
     /** How far each mode searches for candidates (plan: walk 2.5 km, bike 8 km, drive 20 km). */
@@ -148,6 +156,16 @@ public class NearbyService {
         String outcome = fallback != null ? fallback : query.mode() == null ? "not_requested" : "none";
         registry.counter("placemap.nearby.loads", "travel_time_source", source, "fallback", outcome).increment();
         return new NearbyResult(query, source, fallback, found, hiddenForUnknownHours);
+    }
+
+    /** The shared results' estimated size in bytes. */
+    long cachedBytes() {
+        return cache.synchronous().policy().eviction().map(eviction -> eviction.weightedSize().orElse(0)).orElse(0L);
+    }
+
+    /** Runs the cache's pending evictions now. For tests. */
+    void cleanUp() {
+        cache.synchronous().cleanUp();
     }
 
     /** How long the query's result stays shared; empty while it is still loading or once it is gone. For tests. */

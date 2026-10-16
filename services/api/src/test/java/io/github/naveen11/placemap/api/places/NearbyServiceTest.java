@@ -36,12 +36,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.VirtualThreadTaskExecutor;
+import org.springframework.util.unit.DataSize;
 
 /** The plan's claims for showcase 3 (shared work, deadlines, bulkheads, breaker, fallback), at the service level. */
 class NearbyServiceTest {
 
     private static final NearbyProperties DEFAULTS = new NearbyProperties(Duration.ofMillis(1500),
-            Duration.ofMillis(800), 10_000, Duration.ofMinutes(5), Duration.ofSeconds(15));
+            Duration.ofMillis(800), DataSize.ofMegabytes(256), Duration.ofMinutes(5), Duration.ofSeconds(15));
     private static final SnappedOrigin COMMON = new SnappedOrigin("8a2a3066...", 42.3550, -71.0656, 75);
 
     private final PlaceRepository places = mock(PlaceRepository.class);
@@ -243,6 +244,23 @@ class NearbyServiceTest {
     }
 
     @Test
+    void sharedResultsStayWithinTheirMemoryBudget() {
+        returnPlaces(200);
+        engine.travelTimes = targets -> legs(targets.size());
+        int oneResult = ResultSize.bytes(search(service(DEFAULTS), walk(2_500)));
+        var budget = DataSize.ofBytes(5L * oneResult);
+        service = service(new NearbyProperties(DEFAULTS.deadline(), DEFAULTS.travelTimeTimeout(), budget,
+                DEFAULTS.cacheTtl(), DEFAULTS.fallbackTtl()));
+
+        for (int radius = 100; radius <= 2_500; radius += 100) { // 25 different searches of 200 places each
+            search(walk(radius));
+        }
+        service.cleanUp();
+
+        assertThat(service.cachedBytes()).isPositive().isLessThanOrEqualTo(budget.toBytes());
+    }
+
+        @Test
     void theQueryKeyIgnoresTheOrderOfCategories() {
         assertThat(new NearbyQuery(COMMON, TravelMode.WALK, List.of("gym", "food", "gym"), 2_500))
                 .isEqualTo(new NearbyQuery(COMMON, TravelMode.WALK, List.of("food", "gym"), 2_500));
@@ -260,6 +278,10 @@ class NearbyServiceTest {
      * thread just after the callers are answered, so moving the test clock any earlier would race with it.
      */
     private NearbyResult search(NearbyQuery query) {
+        return search(service, query);
+    }
+
+    private NearbyResult search(NearbyService service, NearbyQuery query) {
         NearbyResult result = service.nearby(query, Deadline.after(Duration.ofSeconds(5))).join();
         long giveUp = System.nanoTime() + Duration.ofSeconds(2).toNanos();
         while (service.sharedFor(query).isEmpty() && System.nanoTime() < giveUp) {
