@@ -13,7 +13,11 @@ server:
   # Trust X-Forwarded-For only from proxies on loopback or private networks (Caddy in front), so the
   # per-client stream limit sees each client instead of the proxy.
   forward-headers-strategy: native
+  # Every open stream keeps a buffer this size for its request's headers, and one for its reply's: 4 KB instead of
+  # 8 is room for anything a browser or the api sends here (no sign-in, so no cookies). Socket buffers: TomcatConfig.
+  max-http-request-header-size: 4KB
   tomcat:
+    max-http-response-header-size: 4KB
     max-connections: 12000       # room for the 5,000-stream test (L6) plus ordinary requests
     # Also Tomcat's blocking-write timeout: the backstop behind the watchdog's 10 s eviction.
     connection-timeout: 15s

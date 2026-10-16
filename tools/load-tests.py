@@ -513,17 +513,46 @@ def scenario_l9(r):
 
 
 class Sampler:
-    """Samples a service's container memory and CPU every few seconds while a scenario runs."""
+    """Samples a service's container memory and CPU every few seconds while a scenario runs.
+
+    The headline figure is docker stats' (what the earlier runs used). Each sample also reads the container's cgroup
+    (memory.current and memory.stat's anon, file, kernel and socket parts), and the end reads memory.events, so a
+    peak can be explained: what the limit counts, what it does not, and whether the kernel had to reclaim.
+    """
 
     UNITS = {"B": 1, "KiB": 2**10, "MiB": 2**20, "GiB": 2**30, "kB": 1e3, "MB": 1e6, "GB": 1e9}
+    CGROUP = ("for f in memory.current memory.max memory.peak memory.stat memory.events; do echo \"## $f\"; "
+              "cat /sys/fs/cgroup/$f 2>/dev/null; done")
+    STAT_KEYS = ("anon", "file", "kernel", "sock", "active_file", "inactive_file", "slab", "kernel_stack", "pagetables")
 
     def __init__(self, service, every=5):
+        self.service = service
         self.cid = compose("ps", "-q", service).strip()
         self.every = every
         self.memory = []
+        self.times = []
         self.cpu = []
+        self.cgroups = []  # one dict a sample, in MiB, next to self.memory's
+        self.events_before = self.cgroup().get("events", {})
+        self.started = time.time()
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.loop, daemon=True)
+
+    def cgroup(self):
+        out = subprocess.run(["docker", "exec", self.cid, "sh", "-c", self.CGROUP],
+                             capture_output=True, text=True).stdout
+        files, name = {}, None
+        for line in out.splitlines():
+            if line.startswith("## "):
+                name = line[3:]
+                files[name] = []
+            elif name:
+                files[name].append(line.split())
+        one = lambda f: int(files[f][0][0]) if files.get(f) and files[f][0][0].isdigit() else None
+        kv = lambda f: {k: int(v) for k, v in files.get(f, []) if v.isdigit()}
+        stat = kv("memory.stat")
+        return {"current": one("memory.current"), "max": one("memory.max"), "peak": one("memory.peak"),
+                "stat": {k: stat[k] for k in self.STAT_KEYS if k in stat}, "events": kv("memory.events")}
 
     def loop(self):
         while not self.stop.is_set():
@@ -532,7 +561,9 @@ class Sampler:
             m = re.match(r"([\d.]+)\s*([A-Za-z]+)\s*/.*\|([\d.]+)%", out)
             if m:
                 self.memory.append(float(m.group(1)) * self.UNITS.get(m.group(2), 1) / 2**20)
+                self.times.append(time.time())
                 self.cpu.append(float(m.group(3)))
+                self.cgroups.append(self.cgroup())
             self.stop.wait(self.every)
 
     def __enter__(self):
@@ -542,12 +573,40 @@ class Sampler:
     def __exit__(self, *exc):
         self.stop.set()
         self.thread.join()
+        self.events_after = self.cgroup().get("events", {})
+        self.ended = time.time()
 
-    def peak_mb(self):
-        return max(self.memory, default=0)
+    def peak_mb(self, start=None, end=None):
+        return max((mb for mb, t in zip(self.memory, self.times)
+                    if (start is None or t >= start) and (end is None or t <= end)), default=0)
 
     def mean_cpu(self):
         return sum(self.cpu) / len(self.cpu) if self.cpu else 0
+
+    def breakdown(self):
+        """At the peak sample: the cgroup's parts in MiB; over the run: the limit's events and the JVM's own view."""
+        if not self.memory:
+            return {}
+        mib = lambda b: None if b is None else round(b / 2**20, 1)
+        at = self.cgroups[self.memory.index(self.peak_mb())]
+        last = self.cgroups[-1]
+        job = f"placemap/{self.service}"
+        w = f"{max(10, int(self.ended - self.started))}s"
+        jvm = lambda q: round(prom_value(f"max_over_time(({q})[{w}:5s])", at=self.ended) / 2**20, 1)
+        return {
+            "docker_stats_peak_mib": round(self.peak_mb(), 1),
+            "cgroup_at_peak_mib": {"current": mib(at["current"]), "max": mib(at["max"]),
+                                   **{k: mib(v) for k, v in at["stat"].items()}},
+            "cgroup_peak_mib": mib(last["peak"]),
+            "limit_events": {k: self.events_after.get(k, 0) - self.events_before.get(k, 0)
+                             for k in ("high", "max", "oom", "oom_kill")},
+            "jvm_max_mib": {
+                "heap_used": jvm(f'sum(jvm_memory_used_bytes{{job="{job}", area="heap"}})'),
+                "heap_committed": jvm(f'sum(jvm_memory_committed_bytes{{job="{job}", area="heap"}})'),
+                "nonheap_committed": jvm(f'sum(jvm_memory_committed_bytes{{job="{job}", area="nonheap"}})'),
+                "direct_buffers": jvm(f'sum(jvm_buffer_memory_used_bytes{{job="{job}", id="direct"}})'),
+            },
+        }
 
 
 def live_sessions_settled(limit=120):
@@ -609,7 +668,8 @@ def scenario_l6(r):
              f"{'min' if seconds >= 60 else 's'}, lag p99 {lag.get('p99', -1)} ms (live-hub's own {server['fanout_p99_ms']:.0f} ms), "
              f"live-hub peak {sampler.peak_mb():.0f} MB, {s.get('events', 0)} changes delivered",
              {"clients": clients, "seconds": seconds, "client": {k: v for k, v in s.items() if k != "windows"},
-              "server": server, "live_hub_peak_mb": sampler.peak_mb(), "live_hub_mean_cpu": sampler.mean_cpu()})
+              "server": server, "live_hub_peak_mb": sampler.peak_mb(), "live_hub_mean_cpu": sampler.mean_cpu(),
+              "memory": sampler.breakdown()})
 
 
 def scenario_l7(r):

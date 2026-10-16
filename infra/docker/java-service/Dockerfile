@@ -8,8 +8,12 @@ COPY ${JAR} /app/service.jar
 USER 10001:10001
 # As tools/dev.sh: protobuf uses sun.misc.Unsafe, which is expected (the jar's manifest allows its native code).
 # Under 1.8 GB the JVM picks the Serial collector, which stops the service for every collection; G1 is its choice on
-# any larger machine, so the tests measure the collector a real deployment runs. The heap gets 70% of the container's
-# memory limit; the rest is for the JIT, metaspace, platform thread stacks and network buffers. A service whose heap
-# runs out exits, as a supervisor would want, instead of limping on with failing threads.
-ENTRYPOINT ["java", "--sun-misc-unsafe-memory-access=allow", \
-            "-XX:+UseG1GC", "-XX:MaxRAMPercentage=70", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/service.jar"]
+# any larger machine, so the tests measure the collector a real deployment runs. The heap gets HEAP_PERCENT of the
+# container's memory limit (70% unless the service sets less); the rest is for the JIT, metaspace, platform thread
+# stacks and network buffers. G1 grows the heap to its maximum under load, so the share, not the service's need, sets
+# how close the container comes to its limit. A service whose heap runs out exits, as a supervisor would want, instead
+# of limping on with failing threads. The shell only reads the share, then becomes java with the container's
+# arguments (the stream client takes its options that way).
+ENV HEAP_PERCENT=70
+ENTRYPOINT ["/bin/sh", "-c", "exec java --sun-misc-unsafe-memory-access=allow -XX:+UseG1GC \
+-XX:MaxRAMPercentage=\"$HEAP_PERCENT\" -XX:+ExitOnOutOfMemoryError -jar /app/service.jar \"$@\"", "service"]

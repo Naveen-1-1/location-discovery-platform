@@ -116,6 +116,11 @@ services:
       PLACEMAP_LIVE_THREADS: ${PLACEMAP_LIVE_THREADS:-virtual}            # or pool, for L8
       PLACEMAP_LIVE_BLUEBIKES_URL: http://toxiproxy:18080/gbfs/en/station_status.json
       PLACEMAP_LIVE_BLUEBIKES_MININTERVAL: 1s                            # the stand-in's ttl is 1 s
+      # 5,000 streams keep about 480 MiB live; a 60% heap (614 MiB) holds that and leaves the native part (~300 MiB)
+      # room under the limit, where G1 growing a 70% heap kept the container at its limit. Two malloc arenas instead of
+      # one per core trim the native part further.
+      HEAP_PERCENT: "60"
+      MALLOC_ARENA_MAX: "2"
       PLACEMAP_LIVE_MBTA_ENABLED: "false"
     mem_limit: 1g
     cpuset: ${PLACEMAP_SUT_CPUS}

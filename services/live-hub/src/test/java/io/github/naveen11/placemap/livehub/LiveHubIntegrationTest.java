@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -118,6 +120,23 @@ class LiveHubIntegrationTest {
             reader.interrupt();
             stream.body().close();
         }
+    }
+
+    @Test
+    void ordinaryRequestsFitTheSmallerConnectionBuffers() throws Exception {
+        // About 3 KB of headers, more than a browser or the api sends here, and a body of 500 keys (~11 KB), which
+        // Tomcat now reads 2 KB at a time.
+        String keys = IntStream.range(0, 500).mapToObj("\"bikes:station-%04d\""::formatted)
+                .collect(Collectors.joining(","));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/internal/live/batch"))
+                        .header("Content-Type", "application/json")
+                        .header("X-Padding", "x".repeat(3_000))
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"keys\":[" + keys + "]}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"topics\"");
     }
 
     private static void read(Stream<String> lines, LinkedBlockingQueue<Event> events) {
