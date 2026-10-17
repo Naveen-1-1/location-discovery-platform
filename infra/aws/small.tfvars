@@ -1,10 +1,9 @@
-# A smaller environment for a new account's first Fargate limit (12 vCPUs at once): at most api 4 + Valhalla 4 +
-# live-hub 2 + PostGIS 1 + the stand-ins 1 = 12, and each scaled service can still add copies. The first runs showed
-# the shared results answer about 80% of the popular mix, so PostGIS has little to do.
+# A smaller environment for a new account's first Fargate limit (12 vCPUs at once): at most api 3 + Valhalla 5 +
+# live-hub 1 + PostGIS 2 + the stand-ins 1 = 12. Valhalla, the limit, gets the room, in 1-vCPU copies so it can add
+# them one at a time; live-hub stays one copy, as on the Mac (5,000 viewers fit in one).
 scaling = {
-  api        = { min = 2, max = 4, cpu = 60 }
-  valhalla   = { min = 1, max = 2, cpu = 60 }
-  "live-hub" = { min = 1, max = 2, cpu = 40 }
+  api        = { min = 2, max = 3, cpu = 60, requests = 50 }
+  valhalla   = { min = 2, max = 5, cpu = 50, requests = 5 }
+  "live-hub" = { min = 1, max = 1, cpu = 40, requests = 0 }
 }
-valhalla_size = { cpu = 2048, memory = 4096, threads = 2 }
-postgis_size  = { cpu = 1024, memory = 2048, shared_buffers = "512MB", effective_cache_size = "1536MB" }
+valhalla_size = { cpu = 1024, memory = 2048, threads = 2 }

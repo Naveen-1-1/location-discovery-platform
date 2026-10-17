@@ -30,22 +30,18 @@ variable "loadgen_architecture" {
   default     = "x86_64"
 }
 
-# How many copies each scaled service may run, and the average CPU it scales out above. The api also scales on
-# requests per copy (api_requests_per_copy).
+# How many copies each scaled service may run; the average CPU it scales out above; and, behind the load balancer, the
+# requests a second each copy should take on average before another is added (0: CPU only). Valhalla answers a few
+# matrices at a time per copy, so its requests pile up and time out while its average CPU still looks moderate:
+# requests per copy add a copy before that happens.
 variable "scaling" {
-  description = "Minimum and maximum copies, and the CPU target in percent, per scaled service."
-  type        = map(object({ min = number, max = number, cpu = number }))
+  description = "Minimum and maximum copies, the CPU target in percent, and requests a second per copy (0: none)."
+  type        = map(object({ min = number, max = number, cpu = number, requests = number }))
   default = {
-    api        = { min = 2, max = 10, cpu = 60 }
-    valhalla   = { min = 2, max = 6, cpu = 60 }
-    "live-hub" = { min = 1, max = 4, cpu = 40 }
+    api        = { min = 2, max = 10, cpu = 60, requests = 50 }
+    valhalla   = { min = 2, max = 6, cpu = 50, requests = 20 }
+    "live-hub" = { min = 1, max = 4, cpu = 40, requests = 0 }
   }
-}
-
-variable "api_requests_per_copy" {
-  description = "Requests a second each api copy should take on average before another is added."
-  type        = number
-  default     = 50
 }
 
 variable "postgis_size" {

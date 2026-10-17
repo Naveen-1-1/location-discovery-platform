@@ -2,7 +2,7 @@
 
   python3 -I drive.py --bundle DIR --run ID --alb HOST --cluster NAME --bucket NAME --region REGION
                       --sse-image IMAGE --alb-suffix SUFFIX --target-groups JSON [--quick] [--soak-rate N]
-                      [--soak-max-minutes N]
+                      [--soak-max-minutes N] [--ramp-from N] [--ramp-by N]
 
 The phases, all against the private load balancer:
   ramp   the popular mix (L13c's) in steps of 6 minutes from 100/s up by 100/s, each judged on its last 2 minutes by
@@ -343,8 +343,8 @@ class Test:
     def ramp(self):
         shape = (dict(WARMUP_SECONDS=30, STEP_SECONDS=90, JUDGE_SECONDS=40, SETTLE_SECONDS=20, FIRST_RATE=50,
                       STEP_BY=50, LAST_RATE=150) if self.quick else
-                 dict(WARMUP_SECONDS=120, STEP_SECONDS=360, JUDGE_SECONDS=120, SETTLE_SECONDS=60, FIRST_RATE=100,
-                      STEP_BY=100, LAST_RATE=1500))
+                 dict(WARMUP_SECONDS=120, STEP_SECONDS=360, JUDGE_SECONDS=120, SETTLE_SECONDS=60,
+                      FIRST_RATE=self.args.ramp_from, STEP_BY=self.args.ramp_by, LAST_RATE=1500))
         stairs, step_s, hold = (2, 30, 30) if self.quick else (5, 180, 300)
         per_stair = 100 if self.quick else 1000
         say(f"RAMP: the popular mix from {shape['FIRST_RATE']}/s by {shape['STEP_BY']}/s every "
@@ -568,6 +568,8 @@ def main():
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--soak-rate", type=int, help="skip the ramp and soak at this rate")
     parser.add_argument("--soak-max-minutes", type=int, default=120, help="the soak's longest run")
+    parser.add_argument("--ramp-from", type=int, default=100, help="the ramp's first rate (and its warm-up's)")
+    parser.add_argument("--ramp-by", type=int, default=100, help="how much each ramp step adds")
     args = parser.parse_args()
     test = Test(args)
     sampler = threading.Thread(target=test.background, daemon=True)

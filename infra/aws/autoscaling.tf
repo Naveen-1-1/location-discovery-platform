@@ -1,4 +1,5 @@
-# Target tracking: each scaled service keeps its average CPU near a target, and the api also its requests per copy.
+# Target tracking: each scaled service keeps its average CPU near a target, and the api and Valhalla also their
+# requests per copy.
 # AWS adds copies after about three minutes above a target and removes them after about fifteen well below it; a
 # service runs more copies while any of its policies asks for them.
 resource "aws_appautoscaling_target" "this" {
@@ -28,19 +29,20 @@ resource "aws_appautoscaling_policy" "cpu" {
   }
 }
 
-resource "aws_appautoscaling_policy" "api_requests" {
-  name               = "${var.name}-api-requests"
+resource "aws_appautoscaling_policy" "requests" {
+  for_each           = { for k, v in var.scaling : k => v if v.requests > 0 }
+  name               = "${var.name}-${each.key}-requests"
   policy_type        = "TargetTrackingScaling"
-  service_namespace  = aws_appautoscaling_target.this["api"].service_namespace
-  scalable_dimension = aws_appautoscaling_target.this["api"].scalable_dimension
-  resource_id        = aws_appautoscaling_target.this["api"].resource_id
+  service_namespace  = aws_appautoscaling_target.this[each.key].service_namespace
+  scalable_dimension = aws_appautoscaling_target.this[each.key].scalable_dimension
+  resource_id        = aws_appautoscaling_target.this[each.key].resource_id
 
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget" # requests a minute
-      resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.this["api"].arn_suffix}"
+      resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.this[each.key].arn_suffix}"
     }
-    target_value       = var.api_requests_per_copy * 60
+    target_value       = each.value.requests * 60
     scale_out_cooldown = 60
     scale_in_cooldown  = 120
   }
