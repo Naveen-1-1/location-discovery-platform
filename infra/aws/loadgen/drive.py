@@ -3,6 +3,7 @@
   python3 -I drive.py --bundle DIR --run ID --alb HOST --cluster NAME --bucket NAME --region REGION
                       --sse-image IMAGE --alb-suffix SUFFIX --target-groups JSON [--quick] [--soak-rate N]
                       [--soak-max-minutes N] [--ramp-from N] [--ramp-by N]
+                      [--mix popular|everyday] [--viewers N] [--ramp-only]
 
 The phases, all against the private load balancer:
   ramp   the popular mix (L13c's) in steps of 6 minutes from 100/s up by 100/s, each judged on its last 2 minutes by
@@ -17,7 +18,9 @@ balancer's latency and errors, the services' CPU and memory, a point a minute), 
 results and travel-time loads, live-hub's streams per copy, heaps), results.json and summary.md. The folder
 /opt/placemap/results/<run> is copied to s3://<bucket>/results/<run>/ every minute; DONE marks the end.
 
---quick shortens every phase, to check the setup rather than the numbers. Written for the machine's Python (3.9).
+--mix everyday ramps L11's everyday mix instead, the Mac's ceiling for a like-for-like comparison; --viewers sets the
+ramp's most viewers (0: none, as L11 on the Mac); --ramp-only stops after the ramp. --quick shortens every phase, to
+check the setup rather than the numbers. Written for the machine's Python (3.9).
 """
 
 import argparse
@@ -347,7 +350,8 @@ class Test:
                       FIRST_RATE=self.args.ramp_from, STEP_BY=self.args.ramp_by, LAST_RATE=1500))
         stairs, step_s, hold = (2, 30, 30) if self.quick else (5, 180, 300)
         per_stair = 100 if self.quick else 1000
-        say(f"RAMP: the popular mix from {shape['FIRST_RATE']}/s by {shape['STEP_BY']}/s every "
+        stairs = min(stairs, -(-self.args.viewers // per_stair))
+        say(f"RAMP: the {self.args.mix} mix from {shape['FIRST_RATE']}/s by {shape['STEP_BY']}/s every "
             f"{shape['STEP_SECONDS']} s (judged on the last {shape['JUDGE_SECONDS']} s); viewers {per_stair} more "
             f"every {step_s} s up to {stairs * per_stair}")
         watching = {}
@@ -359,7 +363,8 @@ class Test:
                 started + i * step_s, self.viewers, (f"ramp-viewers-{i + 1}", per_stair, total - i * step_s, watching)))
             t.start()
             threads.append(t)
-        code, s = self.k6("ramp", "L11-ceiling.js", {"MIX": "popular", "NAME": "ramp", **shape})
+        mix = {"MIX": "popular"} if self.args.mix == "popular" else {}  # without it, L11's everyday mix
+        code, s = self.k6("ramp", "L11-ceiling.js", {**mix, "NAME": "ramp", **shape})
         for t in threads:
             t.join(timeout=total + 300)
         time.sleep(12)  # metrics arrive every 5 s
@@ -404,7 +409,7 @@ class Test:
         (self.dir / "ramp.md").write_text("\n".join(table) + "\n", encoding="utf-8")
         held = sum(w.get("open_at_end", 0) for w in watching.values())
         self.results["phases"]["ramp"] = {
-            "start": iso(started), "end": iso(time.time()), "k6_exit": code, "shape": shape,
+            "start": iso(started), "end": iso(time.time()), "k6_exit": code, "mix": self.args.mix, "shape": shape,
             "sustained_rate": sustained, "first_missed_rate": missed, "steps": rows,
             "limited_429": metric(s, "limited_429").get("count", 0),
             "dropped_iterations": metric(s, "dropped_iterations").get("count", 0),
@@ -570,6 +575,9 @@ def main():
     parser.add_argument("--soak-max-minutes", type=int, default=120, help="the soak's longest run")
     parser.add_argument("--ramp-from", type=int, default=100, help="the ramp's first rate (and its warm-up's)")
     parser.add_argument("--ramp-by", type=int, default=100, help="how much each ramp step adds")
+    parser.add_argument("--mix", choices=["popular", "everyday"], default="popular", help="the ramp's searches")
+    parser.add_argument("--viewers", type=int, default=5000, help="the ramp's most live viewers (0: none)")
+    parser.add_argument("--ramp-only", action="store_true", help="stop after the ramp: no soak, no cool-down")
     args = parser.parse_args()
     test = Test(args)
     sampler = threading.Thread(target=test.background, daemon=True)
@@ -578,11 +586,14 @@ def main():
         test.setup()
         sampler.start()
         sustained = None if args.soak_rate else test.ramp()
-        if sustained or args.soak_rate or args.quick:
+        if args.ramp_only:
+            pass
+        elif sustained or args.soak_rate or args.quick:
             test.soak(sustained or 0)
         else:
             say("No ramp step met L1's line, so there is nothing to soak under.")
-        test.cool()
+        if not args.ramp_only:
+            test.cool()
         test.report(started, time.time())
         say("DONE")
     except Exception as e:
