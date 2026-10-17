@@ -436,7 +436,7 @@ class Test:
                                          daemon=True)
         viewer_thread.start()
         started = time.time() + 3
-        code, s = self.k6("soak", "L13-soak.js", {"RATE": rate, "MINUTES": minutes})
+        code, s = self.k6("L13", "L13-soak.js", {"RATE": rate, "MINUTES": minutes})  # the script names its summary
         ended = time.time()
         viewer_thread.join(timeout=300)
         time.sleep(12)
