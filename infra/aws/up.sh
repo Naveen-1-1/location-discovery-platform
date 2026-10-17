@@ -26,6 +26,10 @@ case "$step" in
       echo "$service starts at $min"
     done < <(aws application-autoscaling describe-scalable-targets --service-namespace ecs \
       --query 'ScalableTargets[].[ResourceId, MinCapacity]' --output text | sed 's#^service/[^/]*/##')
+    # The single copies a parked environment set to zero (Terraform leaves desired counts alone).
+    for service in postgis standins photon; do
+      aws ecs update-service --cluster "$cluster" --service "$service" --desired-count 1 > /dev/null
+    done
     echo "Waiting for every service to be steady (up to 10 minutes)..."
     aws ecs wait services-stable --cluster "$cluster" --services api live-hub valhalla postgis standins photon
     loadgen="$(out loadgen)"

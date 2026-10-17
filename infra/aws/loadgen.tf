@@ -75,7 +75,9 @@ resource "aws_instance" "loadgen" {
 
   tags = { Name = "${var.name}-loadgen" }
 
+  # A newer image during the test would replace the machine, and so would a parked (stopped) machine's missing public
+  # address, which it gets back when it starts.
   lifecycle {
-    ignore_changes = [ami] # a newer image during the test would replace the machine
+    ignore_changes = [ami, associate_public_ip_address]
   }
 }
