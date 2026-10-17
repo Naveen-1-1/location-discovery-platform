@@ -7,4 +7,4 @@ scaling = {
   valhalla   = { min = 4, max = 5, cpu = 50, requests = 5 }
   "live-hub" = { min = 1, max = 1, cpu = 40, requests = 0 }
 }
-valhalla_size = { cpu = 1024, memory = 2048, threads = 2 }
+valhalla_size = { cpu = 1024, memory = 2048, threads = 1 } # a thread per vCPU: two shared one and each matrix took twice as long
