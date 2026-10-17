@@ -57,7 +57,7 @@ public final class MbtaStream implements PolledFeed, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MbtaStream.class);
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String USER_AGENT = "place-discovery-map-live-hub (+https://github.com/Naveen-1-1/place-discovery-map)";
+    private static final String USER_AGENT = "location-discovery-platform-live-hub (+https://github.com/Naveen-1-1/location-discovery-platform)";
 
     private final EventSource source;
     private final Topic topic;

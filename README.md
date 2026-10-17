@@ -1,4 +1,4 @@
-# place-discovery-map
+# location-discovery-platform
 
 A map app for finding places in Boston, Cambridge, Somerville and Brookline. It covers food, groceries, pharmacies,
 gyms, parks, banks, transit, bike share, EV charging and more. Places can be filtered using official public data

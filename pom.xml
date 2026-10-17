@@ -17,8 +17,8 @@
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>placemap :: parent</name>
-  <description>Boston place-discovery map: shared build configuration.</description>
-  <url>https://github.com/Naveen-1-1/place-discovery-map</url>
+  <description>Boston location-discovery platform: shared build configuration.</description>
+  <url>https://github.com/Naveen-1-1/location-discovery-platform</url>
 
   <licenses>
     <license>

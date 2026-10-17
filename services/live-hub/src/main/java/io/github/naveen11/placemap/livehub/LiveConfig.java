@@ -51,7 +51,7 @@ import org.springframework.web.client.RestClient;
 public class LiveConfig {
 
     private static final Logger log = LoggerFactory.getLogger(LiveConfig.class);
-    private static final String USER_AGENT = "place-discovery-map-live-hub (+https://github.com/Naveen-1-1/place-discovery-map)";
+    private static final String USER_AGENT = "location-discovery-platform-live-hub (+https://github.com/Naveen-1-1/location-discovery-platform)";
     private static final Duration DRAIN_ON_SHUTDOWN = Duration.ofSeconds(5);
 
     /**
