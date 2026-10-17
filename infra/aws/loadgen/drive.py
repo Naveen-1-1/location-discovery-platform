@@ -2,13 +2,14 @@
 
   python3 -I drive.py --bundle DIR --run ID --alb HOST --cluster NAME --bucket NAME --region REGION
                       --sse-image IMAGE --alb-suffix SUFFIX --target-groups JSON [--quick] [--soak-rate N]
+                      [--soak-max-minutes N]
 
 The phases, all against the private load balancer:
   ramp   the popular mix (L13c's) in steps of 6 minutes from 100/s up by 100/s, each judged on its last 2 minutes by
          L1's line, until a step misses it; the services have the first 4 minutes of a step to add copies. Meanwhile
          live viewers arrive 1,000 every 3 minutes up to 5,000, held 5 minutes.
   soak   L13: the popular mix at 70% of the ramp's sustained rate until a million requests (30 minutes to 2 hours),
-         with 1,000 live viewers; --soak-rate skips the ramp.
+         with 1,000 live viewers; --soak-rate skips the ramp, and --soak-max-minutes moves the 2-hour cap.
   cool   25 minutes without load, to watch the services scale back in.
 Every 15 s each service's desired, running and pending copies go to tasks.csv, and this machine's CPU to loadgen.csv
 (a busy generator would cap the rate, not the services). At the end: CloudWatch's view (the load
@@ -422,11 +423,11 @@ class Test:
             rate, minutes, viewers = 100, 3, 200
         elif self.args.soak_rate:
             rate = self.args.soak_rate
-            minutes = min(120, max(30, -(-SOAK_REQUESTS // (rate * 60))))
+            minutes = min(self.args.soak_max_minutes, max(30, -(-SOAK_REQUESTS // (rate * 60))))
             viewers = 1000
         else:
             rate = max(50, int(0.7 * sustained) // 25 * 25)
-            minutes = min(120, max(30, -(-SOAK_REQUESTS // (rate * 60))))
+            minutes = min(self.args.soak_max_minutes, max(30, -(-SOAK_REQUESTS // (rate * 60))))
             viewers = 1000
         seconds = minutes * 60
         say(f"SOAK: {rate}/s for {minutes} min (about {rate * seconds:,} requests) with {viewers} live viewers")
@@ -566,6 +567,7 @@ def main():
         parser.add_argument(name, required=True)
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--soak-rate", type=int, help="skip the ramp and soak at this rate")
+    parser.add_argument("--soak-max-minutes", type=int, default=120, help="the soak's longest run")
     args = parser.parse_args()
     test = Test(args)
     sampler = threading.Thread(target=test.background, daemon=True)

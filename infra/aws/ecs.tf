@@ -68,8 +68,8 @@ locals {
       health  = null
     }
     postgis = {
-      cpu    = 2048
-      memory = 4096
+      cpu    = var.postgis_size.cpu
+      memory = var.postgis_size.memory
       port   = 5432
       env = {
         POSTGRES_PASSWORD = random_password.database.result
@@ -77,7 +77,8 @@ locals {
       }
       # Room for ten api copies' pools of ten. Fargate has no shm_size, so parallel queries share memory through files.
       command = [
-        "postgres", "-c", "shared_buffers=1GB", "-c", "effective_cache_size=3GB", "-c", "work_mem=16MB",
+        "postgres", "-c", "shared_buffers=${var.postgis_size.shared_buffers}",
+        "-c", "effective_cache_size=${var.postgis_size.effective_cache_size}", "-c", "work_mem=16MB",
         "-c", "max_connections=200", "-c", "jit=off", "-c", "random_page_cost=1.1",
         "-c", "dynamic_shared_memory_type=mmap",
       ]

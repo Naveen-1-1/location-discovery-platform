@@ -48,6 +48,12 @@ variable "api_requests_per_copy" {
   default     = 50
 }
 
+variable "postgis_size" {
+  description = "PostGIS's vCPUs (as Fargate units), memory in MiB, shared buffers and the planner's cache size."
+  type        = object({ cpu = number, memory = number, shared_buffers = string, effective_cache_size = string })
+  default     = { cpu = 2048, memory = 4096, shared_buffers = "1GB", effective_cache_size = "3GB" }
+}
+
 variable "valhalla_size" {
   description = "Each Valhalla copy's vCPUs (as Fargate units, 1024 a vCPU), memory in MiB, and worker threads."
   type        = object({ cpu = number, memory = number, threads = number })
