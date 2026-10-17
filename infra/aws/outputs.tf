@@ -23,6 +23,11 @@ output "loadgen" {
   value = aws_instance.loadgen.id
 }
 
+output "loadgen_platform" {
+  description = "The stream client's image platform for the load generator."
+  value       = var.loadgen_architecture == "arm64" ? "linux/arm64" : "linux/amd64"
+}
+
 output "bucket" {
   value = aws_s3_bucket.work.id
 }

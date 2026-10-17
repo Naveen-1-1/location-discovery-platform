@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds the test's images for Graviton (linux/arm64, the Mac's own architecture) and pushes them to the test's ECR
-# repositories (up.sh creates them first): the api, live-hub and the stream client from their jars; PostGIS with the
+# Builds the test's images and pushes them to the test's ECR repositories (up.sh creates them first): for the services,
+# Graviton (linux/arm64, the Mac's own architecture); for the stream client, the load generator's platform. The api,
+# live-hub and the stream client come from their jars; PostGIS with the
 # load seed; Valhalla with the Massachusetts tiles; the feeds' and Photon's stand-ins. Writes the tag into
 # images.auto.tfvars for Terraform. Needs Docker, Java 25, the seed (tools/dev.sh load seed) and the tiles
 # (tools/dev.sh valhalla). The first push sends about 2 GB.
@@ -15,6 +16,7 @@ if [[ -n "$(git -C "$ROOT" status --porcelain -- services libs load infra)" ]]; 
   tag="$tag-$(date -u +%Y%m%d%H%M%S)"  # uncommitted changes: never reuse a tag for different contents
 fi
 repositories="$(tf output -json repositories)"  # made by up.sh's first, partial apply
+loadgen_platform="$(tf output -raw loadgen_platform 2>/dev/null || echo linux/amd64)"
 repo() { python3 -I -c 'import json, sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$repositories" "$1"; }
 aws ecr get-login-password | docker login --username AWS --password-stdin "$(repo api | cut -d/ -f1)"
 
@@ -25,8 +27,10 @@ docker build -q --platform linux/arm64 -t placemap/postgis-test "$ROOT/infra/doc
 build() {
   local name=$1; shift
   local image="$(repo "$name"):$tag"
-  echo "Building and pushing $name..."
-  docker build -q --platform linux/arm64 -t "$image" "$@" > /dev/null
+  local platform=linux/arm64
+  [[ $name != sse-client ]] || platform="$loadgen_platform"  # only copies a jar onto a JRE: no emulation needed
+  echo "Building and pushing $name ($platform)..."
+  docker build -q --platform "$platform" -t "$image" "$@" > /dev/null
   docker push -q "$image" > /dev/null
 }
 java_service() { build "$1" -f "$ROOT/infra/docker/java-service/Dockerfile" --build-arg "JAR=$2" "$ROOT/$3"; }

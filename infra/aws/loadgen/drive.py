@@ -10,7 +10,8 @@ The phases, all against the private load balancer:
   soak   L13: the popular mix at 70% of the ramp's sustained rate until a million requests (30 minutes to 2 hours),
          with 1,000 live viewers; --soak-rate skips the ramp.
   cool   25 minutes without load, to watch the services scale back in.
-Every 15 s each service's desired, running and pending copies go to tasks.csv. At the end: CloudWatch's view (the load
+Every 15 s each service's desired, running and pending copies go to tasks.csv, and this machine's CPU to loadgen.csv
+(a busy generator would cap the rate, not the services). At the end: CloudWatch's view (the load
 balancer's latency and errors, the services' CPU and memory, a point a minute), Prometheus's (the api copies' shared
 results and travel-time loads, live-hub's streams per copy, heaps), results.json and summary.md. The folder
 /opt/placemap/results/<run> is copied to s3://<bucket>/results/<run>/ every minute; DONE marks the end.
@@ -66,6 +67,13 @@ def get_json(url, data=None, timeout=10):
         return json.loads(response.read())
 
 
+def cpu_ticks():
+    """(busy, total) CPU ticks of this machine so far, from /proc/stat."""
+    fields = [int(x) for x in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
+    idle = fields[3] + (fields[4] if len(fields) > 4 else 0)  # idle and iowait
+    return sum(fields) - idle, sum(fields)
+
+
 def iso(epoch):
     return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -98,6 +106,7 @@ class Test:
         self.live = f"http://{args.alb}:8081"
         self.results = {"run": args.run, "quick": self.quick, "started": iso(time.time()), "phases": {}}
         self.tasks = []  # (epoch, service, desired, running, pending)
+        self.cpu = []  # (epoch, this machine's busy CPU in percent since the sample before)
         self.stop = threading.Event()
 
     # --- Setup ----------------------------------------------------------------------------------------------------
@@ -159,11 +168,21 @@ class Test:
 
     def background(self):
         last_sync = 0.0
-        with open(self.dir / "tasks.csv", "w", newline="", encoding="utf-8") as f:
-            out = csv.writer(f)
+        ticks = cpu_ticks()
+        with open(self.dir / "tasks.csv", "w", newline="", encoding="utf-8") as f, \
+                open(self.dir / "loadgen.csv", "w", newline="", encoding="utf-8") as g:
+            out, gen = csv.writer(f), csv.writer(g)
             out.writerow(["time", "service", "desired", "running", "pending"])
+            gen.writerow(["time", "cpu_percent"])
             while not self.stop.is_set():
                 now = time.time()
+                busy, total = cpu_ticks()
+                if total > ticks[1]:
+                    percent = round(100 * (busy - ticks[0]) / (total - ticks[1]), 1)
+                    self.cpu.append((now, percent))
+                    gen.writerow([iso(now), percent])
+                    g.flush()
+                ticks = (busy, total)
                 try:
                     found = aws("ecs", "describe-services", "--cluster", self.args.cluster, "--services", *SERVICES,
                                 "--region", self.args.region)
@@ -183,6 +202,11 @@ class Test:
         (self.dir / "drive.log").write_text("\n".join(LOG) + "\n", encoding="utf-8")
         sh(["aws", "s3", "sync", str(self.dir), f"s3://{self.args.bucket}/results/{self.args.run}/",
             "--only-show-errors", "--region", self.args.region], check=False)
+
+    def busiest(self, start, end):
+        """This machine's highest CPU (percent over 15 s) between two times."""
+        found = [p for t, p in self.cpu if start <= t <= end]
+        return max(found) if found else None
 
     def copies(self, service, start, end):
         """The most copies of a service running between two times (None before the first sample)."""
@@ -354,7 +378,7 @@ class Test:
                 "rejected_503": metric(s, f"rejected_503{{step:{rate}}}").get("count", 0),
                 "cache_hit_rate": self.hit_rate(judged_from, to), "met": met,
                 "copies": {svc: self.copies(svc, judged_from, to) for svc in SCALED},
-                "judged": [iso(judged_from), iso(to)]})
+                "loadgen_cpu_max": self.busiest(judged_from, to), "judged": [iso(judged_from), iso(to)]})
             if not met:
                 missed = rate
                 break
@@ -366,14 +390,16 @@ class Test:
         per_copy = {r["metric"].get("instance", "?")[-12:]: float(r["value"][1]) for r in self.prom(
             'sum by (instance) (placemap_live_sessions{job="placemap/live-hub"})', at=top)}
         table = ["| Rate | Requests | p50 | p95 | p99 | Errors | Fallbacks | 503s | Cache hits | api | Valhalla | "
-                 "live-hub | Met |", "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
+                 "live-hub | Generator CPU | Met |",
+                 "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
         for r in rows:
             c, hits = r["copies"], r["cache_hit_rate"]
             table.append(
                 f"| {r['rate']}/s | {r['requests']:.0f} | {r['p50_ms']:.0f} ms | {r['p95_ms']:.0f} ms | "
                 f"{r['p99_ms']:.0f} ms | {r['error_rate'] or 0:.2%} | {r['fallback_rate'] or 0:.2%} | "
                 f"{r['rejected_503']:.0f} | {'n/a' if hits is None else f'{hits:.0%}'} | "
-                f"{c['api']} | {c['valhalla']} | {c['live-hub']} | {'yes' if r['met'] else 'no'} |")
+                f"{c['api']} | {c['valhalla']} | {c['live-hub']} | {r['loadgen_cpu_max']}% | "
+                f"{'yes' if r['met'] else 'no'} |")
         (self.dir / "ramp.md").write_text("\n".join(table) + "\n", encoding="utf-8")
         held = sum(w.get("open_at_end", 0) for w in watching.values())
         self.results["phases"]["ramp"] = {
@@ -426,7 +452,8 @@ class Test:
             windows.append({"window": w, "requests": dw.get("count"), "p50_ms": dw.get("med"),
                             "p95_ms": dw.get("p(95)"), "p99_ms": dw.get("p(99)"), "error_rate": ew.get("rate"),
                             "fallback_rate": fw.get("rate"), "cache_hit_rate": self.hit_rate(a, b),
-                            "copies": {svc: self.copies(svc, a, b) for svc in SCALED}, "met": met})
+                            "copies": {svc: self.copies(svc, a, b) for svc in SCALED},
+                            "loadgen_cpu_max": self.busiest(a, b), "met": met})
         span, settle = min(900, seconds / 3), min(300, seconds / 6)
         heap = {}
         for svc in ("api", "live-hub"):
@@ -443,14 +470,14 @@ class Test:
         passed = (code in (0, 99) and ok and limited == 0 and held and w.get("resyncs", -1) == 0 and flat
                   and bool(windows) and all(row["met"] for row in windows))
         table = ["| Minutes | Requests | p50 | p95 | p99 | Errors | Fallbacks | Cache hits | api | Valhalla | "
-                 "live-hub | Met |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
+                 "live-hub | Generator CPU | Met |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
         for row in windows:
             c, hits = row["copies"], row["cache_hit_rate"]
             table.append(f"| {10 * row['window']}–{10 * row['window'] + 10} | {row['requests']:.0f} | "
                          f"{row['p50_ms']:.0f} ms | {row['p95_ms']:.0f} ms | {row['p99_ms']:.0f} ms | "
                          f"{row['error_rate'] or 0:.2%} | {row['fallback_rate'] or 0:.2%} | "
                          f"{'n/a' if hits is None else f'{hits:.0%}'} | {c['api']} | {c['valhalla']} | "
-                         f"{c['live-hub']} | {'yes' if row['met'] else 'no'} |")
+                         f"{c['live-hub']} | {row['loadgen_cpu_max']}% | {'yes' if row['met'] else 'no'} |")
         (self.dir / "soak.md").write_text("\n".join(table) + "\n", encoding="utf-8")
         line = (f"{total:,.0f} requests at {rate}/s for {minutes} min: p50 {ms(d, 'med')}, p95 {ms(d, 'p(95)')}, "
                 f"p99 {ms(d, 'p(99)')}, errors {errors.get('passes', 0):.0f} ({errors.get('rate', 0):.3%}), "

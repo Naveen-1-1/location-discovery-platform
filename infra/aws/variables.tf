@@ -16,10 +16,18 @@ variable "image_tag" {
   default     = "none"
 }
 
+# The Free Plan allows only small EC2 types; the largest is this Intel one (2 vCPUs, 8 GB). The driver records its CPU,
+# so a run shows whether it, rather than the services, set a limit.
 variable "loadgen_instance_type" {
-  description = "The load generator: k6, the stream client and Prometheus on one machine (Graviton, as the tasks)."
+  description = "The load generator: k6, the stream client and Prometheus on one machine."
   type        = string
-  default     = "c7g.2xlarge"
+  default     = "m7i-flex.large"
+}
+
+variable "loadgen_architecture" {
+  description = "The load generator's architecture as Amazon Linux names it (x86_64 or arm64); images.sh builds the stream client to match."
+  type        = string
+  default     = "x86_64"
 }
 
 # How many copies each scaled service may run, and the average CPU it scales out above. The api also scales on

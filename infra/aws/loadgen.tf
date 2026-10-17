@@ -1,8 +1,8 @@
-# The load generator: one Graviton machine running k6, the stream client and a Prometheus that takes k6's results
+# The load generator: one machine running k6, the stream client and a Prometheus that takes k6's results
 # and the services' metrics. No SSH and no open ports: run.sh starts the test through Session Manager, and the
 # results go to the bucket. Its role can read the test's images, services, metrics and bucket, and nothing else.
 data "aws_ssm_parameter" "al2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-${var.loadgen_architecture}"
 }
 
 resource "aws_iam_role" "loadgen" {
