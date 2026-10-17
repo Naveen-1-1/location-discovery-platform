@@ -1,10 +1,11 @@
 // L11: the traffic ceiling. L1's everyday mix at rising rates: a minute's warm-up at 50/s, then steps of 2 minutes
 // from 50/s up by 25/s. A step meets L1's line when p95 < 300 ms, errors other than 429 < 0.5% and under 1% of
 // travel-time searches fall back to straight-line order. The run stops at the first step that misses it, once that
-// step has run a minute; the driver reports the last step before it as the sustained rate.
+// step has run a minute; the driver reports the last step before it as the sustained rate. With MIX=popular (L13c)
+// the searches follow the popular mix instead, and NAME names the summary.
 import exec from "k6/execution";
 import { Counter, Rate } from "k6/metrics";
-import { client, everydaySearch, get, summary, TREND_STATS } from "./lib.js";
+import { client, everydaySearch, get, popularSearch, summary, TREND_STATS } from "./lib.js";
 
 const errors = new Rate("errors_not_429");
 const fallbacks = new Rate("fallbacks");
@@ -18,6 +19,8 @@ const RAMP = 5; // seconds to move to the next step's rate; not counted in eithe
 const FIRST = Number(__ENV.FIRST_RATE || 50);
 const BY = Number(__ENV.STEP_BY || 25);
 const LAST = Number(__ENV.LAST_RATE || 500);
+const POPULAR_MIX = __ENV.MIX === "popular";
+const NEW_SHARE = Number(__ENV.NEW_SHARE || 0.05);
 
 const RATES = [];
 for (let rate = FIRST; rate <= LAST; rate += BY) RATES.push(rate);
@@ -43,7 +46,7 @@ export const options = {
   summaryTrendStats: TREND_STATS,
   scenarios: {
     ceiling: {
-      executor: "ramping-arrival-rate", startRate: FIRST, timeUnit: "1s", preAllocatedVUs: 100, maxVUs: 1500,
+      executor: "ramping-arrival-rate", startRate: FIRST, timeUnit: "1s", preAllocatedVUs: 200, maxVUs: 2000,
       stages,
     },
   },
@@ -61,7 +64,7 @@ function step(elapsedSeconds) {
 export default function () {
   const tags = { step: step((Date.now() - exec.scenario.startTime) / 1000) };
   // 3,000 clients, as L3: at 500/s each sends 0.17 a second, far under the per-client limit.
-  const search = everydaySearch();
+  const search = POPULAR_MIX ? popularSearch(exec.scenario.iterationInTest, NEW_SHARE) : everydaySearch();
   const res = get(search.url, client(exec.scenario.iterationInTest % 3000), Object.assign(tags, search.tags));
   errors.add(res.status !== 200 && res.status !== 429, tags);
   if (res.status === 200 && search.tags.mode !== "none") fallbacks.add(res.json("fallback") !== null, tags);
@@ -69,4 +72,4 @@ export default function () {
   if (res.status === 503) rejected.add(1, tags);
 }
 
-export const handleSummary = summary("L11");
+export const handleSummary = summary(__ENV.NAME || "L11");

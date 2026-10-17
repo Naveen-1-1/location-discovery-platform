@@ -54,10 +54,54 @@ function pick(weighted, r) {
 export const EVERYDAY_POOL = 300;
 
 export function everydaySearch() {
-  const origin = ORIGINS[1 + Math.floor(Math.random() * Math.min(EVERYDAY_POOL, ORIGINS.length - 1))];
+  return searchFrom(ORIGINS[1 + Math.floor(Math.random() * Math.min(EVERYDAY_POOL, ORIGINS.length - 1))]);
+}
+
+function searchFrom(origin) {
   const mode = pick(MODES, Math.random());
   const category = Math.random() < 0.5 ? null : CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
   return { url: nearbyUrl(origin, mode, category), tags: { mode: mode || "none" } };
+}
+
+// Where people search is uneven: the i-th most popular of the everyday origins is picked with weight 1/i (Zipf,
+// s = 1), so the top ten draw about a third of the searches.
+const POPULAR = (() => {
+  const pool = Math.min(EVERYDAY_POOL, ORIGINS.length - 1);
+  const cumulative = [];
+  let total = 0;
+  for (let i = 1; i <= pool; i++) {
+    total += 1 / i;
+    cumulative.push(total);
+  }
+  return cumulative.map((c) => c / total);
+})();
+const FIRST_NEW = 1 + EVERYDAY_POOL; // as L2: origins the everyday mix never uses
+const NEW_MODES = ["walk", "bike", "drive"];
+
+/**
+ * The popular mix (L13): most searches from popular areas, as people search, so many are answered from the shared
+ * results; a share `newShare` are searches nobody made recently (L2's origins, in turn), which always need the
+ * routing engine.
+ */
+export function popularSearch(iteration, newShare) {
+  if (Math.random() < newShare) {
+    const n = ORIGINS.length - FIRST_NEW;
+    const k = Math.floor(iteration * newShare);
+    const mode = NEW_MODES[k % NEW_MODES.length];
+    return { url: nearbyUrl(ORIGINS[FIRST_NEW + (Math.floor(k / NEW_MODES.length) % n)], mode, null),
+             tags: { mode, kind: "new" } };
+  }
+  const r = Math.random();
+  let lo = 0;
+  let hi = POPULAR.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (POPULAR[mid] < r) lo = mid + 1;
+    else hi = mid;
+  }
+  const search = searchFrom(ORIGINS[1 + lo]);
+  search.tags.kind = "popular";
+  return search;
 }
 
 export function get(url, headers, tags) {

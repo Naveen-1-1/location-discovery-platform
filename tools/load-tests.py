@@ -746,11 +746,23 @@ NEARBY_HITS = 'sum by (result) (increase(cache_gets_total{{job="placemap/api", c
 
 def scenario_l11(r):
     """The traffic ceiling: L1's mix at rising rates; the last step before the first miss is the sustained rate."""
-    shape = (dict(WARMUP_SECONDS=20, STEP_SECONDS=40, SETTLE_SECONDS=20, FIRST_RATE=50, STEP_BY=25, LAST_RATE=100)
-             if r.quick else dict(WARMUP_SECONDS=60, STEP_SECONDS=120, SETTLE_SECONDS=60, FIRST_RATE=50, STEP_BY=25,
-                                  LAST_RATE=500))
+    ceiling(r, "L11", {}, dict(WARMUP_SECONDS=20, STEP_SECONDS=40, SETTLE_SECONDS=20, FIRST_RATE=50, STEP_BY=25,
+                               LAST_RATE=100) if r.quick else
+            dict(WARMUP_SECONDS=60, STEP_SECONDS=120, SETTLE_SECONDS=60, FIRST_RATE=50, STEP_BY=25, LAST_RATE=500))
+
+
+def scenario_l13c(r):
+    """The popular mix's ceiling, in quicker and bigger steps, for the soak (L13) to run under."""
+    ceiling(r, "L13c", {"MIX": "popular", "NAME": "L13c"},
+            dict(WARMUP_SECONDS=20, STEP_SECONDS=30, SETTLE_SECONDS=15, FIRST_RATE=100, STEP_BY=100, LAST_RATE=300)
+            if r.quick else
+            dict(WARMUP_SECONDS=60, STEP_SECONDS=60, SETTLE_SECONDS=30, FIRST_RATE=100, STEP_BY=100, LAST_RATE=1500))
+
+
+def ceiling(r, name, env, shape):
+    """Rising steps until one misses L1's line; the last step before it is the sustained rate."""
     started = time.time() + 3  # k6 takes a moment to start
-    code, s = r.k6("L11", "L11-ceiling.js", shape)
+    code, s = r.k6(name, "L11-ceiling.js", {**env, **shape})
     time.sleep(12)  # metrics arrive every 5 s
     rows, sustained, missed, sustained_end = [], None, None, None
     for i, rate in enumerate(range(shape["FIRST_RATE"], shape["LAST_RATE"] + 1, shape["STEP_BY"])):
@@ -786,16 +798,113 @@ def scenario_l11(r):
         table.append(f"| {row['rate']}/s | {row['requests']:.0f} | {row['p95_ms']:.0f} ms | {row['p99_ms']:.0f} ms | "
                      f"{row['fallback_rate'] or 0:.2%} | {row['error_rate'] or 0:.2%} | {row['rejected_503']:.0f} | "
                      f"{row['cache_hit_rate']:.0%} | {'yes' if row['met'] else 'no'} |")
-    (r.dir / "L11.md").write_text("\n".join(table) + "\n", encoding="utf-8")
+    (r.dir / f"{name}.md").write_text("\n".join(table) + "\n", encoding="utf-8")
     passed = code in (0, 99) and sustained is not None and limited == 0 and dropped_by_ceiling == 0
-    r.record("L11", passed,
+    r.record(name, passed,
              f"sustained {f'{sustained}/s' if sustained else 'none'} (the last step meeting L1's line"
              + (f"; {missed}/s missed it" if missed else "; every step met it, up to the cap") + "), "
              f"{limited:.0f} answers 429, {dropped_by_ceiling:.0f} dropped iterations up to it ({dropped:.0f} in all); "
-             f"steps in L11.md",
+             f"steps in {name}.md",
              {"sustained_rate": sustained, "first_missed_rate": missed, "limited_429": limited,
               "dropped_iterations": dropped, "dropped_by_ceiling": dropped_by_ceiling, "steps": rows,
               "shape": shape})
+
+
+
+SOAK_REQUESTS = 1_000_000  # how many requests the soak aims for: as long as that takes, at most 2 hours
+
+
+def latest_value(r, name, key):
+    """A scenario's figure from this run, else from the newest run that has it (quick with quick)."""
+    if name in r.results:
+        return r.results[name].get(key), "this run"
+    for path in sorted(RESULTS.glob("*/results.json"), reverse=True):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        value = data.get("scenarios", {}).get(name, {}).get(key)
+        if value and bool(data.get("quick")) == r.quick:
+            return value, path.parent.name
+    return None, None
+
+
+def live_heap_mb(service, start, end):
+    """The service's largest live heap (after a collection) between two times, in MiB."""
+    window = max(10, int(end - start))
+    return prom_value(f'max(max_over_time(jvm_gc_live_data_size_bytes{{job="placemap/{service}"}}[{window}s]))',
+                      at=end) / 2**20
+
+
+def scenario_l13(r):
+    """A soak: the popular mix at 70% of its ceiling until about a million requests, with live viewers watching."""
+    found, where = latest_value(r, "L13c", "sustained_rate")
+    if r.quick:
+        rate, minutes, viewers = 100, 3, 200
+    elif not found:
+        sys.exit("L13 runs under its mix's ceiling: run L13c first")
+    else:
+        rate = max(50, int(0.7 * found) // 25 * 25)
+        minutes = min(120, max(30, -(-SOAK_REQUESTS // (rate * 60))))
+        viewers = 1000
+    seconds = minutes * 60
+    watching = {}
+    viewers_thread = threading.Thread(
+        target=lambda: watching.update(sse(r, "L13", viewers, seconds, topics=VEHICLES_TOPICS)), daemon=True)
+    with Sampler("api") as api_memory, Sampler("live-hub") as hub_memory:
+        viewers_thread.start()
+        started = time.time() + 3
+        code, s = r.k6("L13", "L13-soak.js", {"RATE": rate, "MINUTES": minutes})
+        ended = time.time()
+        viewers_thread.join(timeout=180)
+    time.sleep(12)  # metrics arrive every 5 s
+    total = metric(s, "http_reqs").get("count", 0)
+    d = metric(s, "http_req_duration")
+    errors, fallbacks = metric(s, "errors_not_429"), metric(s, "fallbacks")
+    limited = metric(s, "limited_429").get("count", 0)
+    rejected = metric(s, "rejected_503").get("count", 0)
+    windows = []
+    for w in range(-(-seconds // 600)):
+        dw, ew, fw = (metric(s, f"{m}{{w:{w}}}") for m in ("http_req_duration", "errors_not_429", "fallbacks"))
+        if dw.get("count"):
+            met = dw.get("p(99)", 1e9) < 600 and ew.get("rate", 1) < 0.005 and fw.get("rate", 0) < 0.01
+            windows.append({"window": w, "requests": dw.get("count"), "p50_ms": dw.get("med"),
+                            "p95_ms": dw.get("p(95)"), "p99_ms": dw.get("p(99)"), "error_rate": ew.get("rate"),
+                            "fallback_rate": fw.get("rate"), "met": met})
+    # Memory over the run, after the cache has filled: the largest live heap early on against the same near the end.
+    span = min(900, seconds / 3)
+    settle = min(300, seconds / 6)  # the shared results fill in the first minutes
+    heap = {svc: {"early_mb": round(live_heap_mb(svc, started + settle, started + settle + span)),
+                  "late_mb": round(live_heap_mb(svc, ended - span, ended))} for svc in ("api", "live-hub")}
+    flat = all(h["late_mb"] <= 1.15 * h["early_mb"] + 32 for h in heap.values())
+    vehicles = {row["phase"]: row for row in watching.get("lag_by_phase", {}).get("vehicles", [])}
+    held = bool(watching) and watching.get("peak_open", 0) >= viewers and watching.get("open_at_end", 0) >= viewers
+    ok, failed = thresholds_ok(s)
+    table = ["| Minutes | Requests | p50 | p95 | p99 | Errors | Fallbacks | Met |",
+             "|---|---:|---:|---:|---:|---:|---:|---|"]
+    for row in windows:
+        table.append(f"| {10 * row['window']}–{10 * row['window'] + 10} | {row['requests']:.0f} | "
+                     f"{row['p50_ms']:.0f} ms | {row['p95_ms']:.0f} ms | {row['p99_ms']:.0f} ms | "
+                     f"{row['error_rate'] or 0:.2%} | {row['fallback_rate'] or 0:.2%} | "
+                     f"{'yes' if row['met'] else 'no'} |")
+    (r.dir / "L13.md").write_text("\n".join(table) + "\n", encoding="utf-8")
+    passed = (code in (0, 99) and ok and limited == 0 and held and watching.get("resyncs", -1) == 0 and flat
+              and bool(windows) and all(row["met"] for row in windows))
+    r.record("L13", passed,
+             f"{total:,.0f} requests at {rate}/s for {minutes} min (70% of the popular mix's ceiling "
+             f"{found or '?'}/s, {where or 'quick'}): p50 {ms(d, 'med')}, p95 {ms(d, 'p(95)')}, p99 {ms(d, 'p(99)')}, "
+             f"errors {errors.get('passes', 0):.0f} ({errors.get('rate', 0):.3%}), "
+             f"fallbacks {fallbacks.get('rate', 0):.2%}, "
+             f"{limited:.0f} × 429, {rejected:.0f} × 503; {sum(row['met'] for row in windows)} of {len(windows)} "
+             f"10-minute windows met L1's line; {watching.get('open_at_end', 0)} of {viewers} live viewers held, "
+             f"{watching.get('resyncs', -1)} resyncs; live heap api {heap['api']['early_mb']} → "
+             f"{heap['api']['late_mb']} MB, "
+             f"live-hub {heap['live-hub']['early_mb']} → {heap['live-hub']['late_mb']} MB; windows in L13.md"
+             + (f"; failed: {', '.join(failed[:4])}" if failed else ""),
+             {"rate": rate, "minutes": minutes, "ceiling": found, "requests": total, "p50_ms": d.get("med"),
+              "p95_ms": d.get("p(95)"), "p99_ms": d.get("p(99)"), "errors": errors.get("passes", 0),
+              "error_rate": errors.get("rate"), "fallback_rate": fallbacks.get("rate"), "limited_429": limited,
+              "rejected_503": rejected, "windows": windows, "heap": heap, "viewers": viewers,
+              "vehicles_p99_ms": vehicles.get(0, {}).get("p99"),
+              "client": {k: v for k, v in watching.items() if k != "windows"},
+              "memory": {"api_peak_mb": round(api_memory.peak_mb()), "live_hub_peak_mb": round(hub_memory.peak_mb())}})
 
 
 STANDINS = "http://127.0.0.1:58089"
@@ -1066,14 +1175,16 @@ SCENARIOS = {"L1": scenario_l1, "L2": scenario_l2, "L3": scenario_l3, "L4": scen
              "L6": scenario_l6, "L7": scenario_l7, "L8": scenario_l8, "L9": scenario_l9, "L10": scenario_l10,
              "L11": scenario_l11, "L12": scenario_l12, "C3": scenario_c3, "C4": scenario_c4, "C5": scenario_c5,
              "C6": scenario_c6, "C7": scenario_c7}
+OPT_IN = {"L13c": scenario_l13c, "L13": scenario_l13}  # run only when named: the soak alone takes up to 2 hours
 
 
 def run_scenarios(args):
     preflight()
     names = list(SCENARIOS) if args.scenarios == ["all"] else args.scenarios
-    unknown = [n for n in names if n not in SCENARIOS]
+    known = {**SCENARIOS, **OPT_IN}
+    unknown = [n for n in names if n not in known]
     if unknown:
-        sys.exit(f"Unknown scenarios {unknown}; there are {', '.join(SCENARIOS)}")
+        sys.exit(f"Unknown scenarios {unknown}; there are {', '.join(known)}")
     try:
         get_json(f"{API}/actuator/health", timeout=3)
     except OSError:
@@ -1086,7 +1197,7 @@ def run_scenarios(args):
     for i, name in enumerate(names):
         if i:
             time.sleep(15)  # let queues, caches' loads and metrics settle between scenarios
-        SCENARIOS[name](r)
+        known[name](r)
     failed = [n for n, v in r.results.items() if not v["passed"]]
     verdict = (f"LOAD {'FAILED' if failed else 'PASSED'}: {len(names) - len(failed)} of {len(names)} scenarios"
                + (f" (failed: {', '.join(failed)})" if failed else ""))
@@ -1094,7 +1205,7 @@ def run_scenarios(args):
     if os.environ.get("GITHUB_STEP_SUMMARY"):  # the run's page on GitHub
         lines = [f"{n} {'PASSED' if v['passed'] else 'FAILED'}: {v['line']}" for n, v in r.results.items()]
         tables = [f"\n#### {path.stem}\n\n" + path.read_text(encoding="utf-8")
-                  for path in (r.dir / f"{n}.md" for n in SCENARIOS) if path.exists()]
+                  for path in (r.dir / f"{n}.md" for n in known) if path.exists()]
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as page:
             page.write("\n".join(["### Load and crash tests", "```", header, *lines, verdict, "```", ""])
                        + "".join(tables))
