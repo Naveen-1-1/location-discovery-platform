@@ -1,0 +1,6 @@
+# Terraform's working files and state stay on this machine (the lock file is kept).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+images.auto.tfvars

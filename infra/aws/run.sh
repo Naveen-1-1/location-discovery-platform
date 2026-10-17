@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Starts a test on the load generator through Session Manager (no SSH) and returns at once; watch.sh follows it.
+# "run.sh quick" checks the setup in about 10 minutes; "run.sh" runs the ramp, the soak to a million requests and
+# the cool-down (about 2 hours); "run.sh soak RATE" soaks at RATE without a ramp. Prints the run's id.
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+mode="${1:-full}"
+run="$(date -u +%Y%m%d-%H%M%S)"
+bucket="$(out bucket)"
+extra=()
+case "$mode" in
+  quick) extra=(--quick); run="$run-quick" ;;
+  soak) extra=(--soak-rate "${2:?usage: run.sh soak RATE}") ;;
+  full) ;;
+  *) echo "usage: run.sh [quick | soak RATE]"; exit 2 ;;
+esac
+bundle="$(mktemp -d)"
+cp -R "$ROOT/load/k6" "$bundle/k6"
+cp "$HERE/loadgen/drive.py" "$bundle/"
+cp "$MAIN/data/load/origins.json" "$bundle/"  # the seed's search origins, as the stack's driver writes them
+aws s3 sync "$bundle" "s3://$bucket/bundle/$run/" --only-show-errors
+rm -rf "$bundle"
+args=(--bundle "/opt/placemap/bundle/$run" --run "$run" --alb "$(out alb)" --cluster "$(out cluster)"
+  --bucket "$bucket" --region "$AWS_REGION" --sse-image "$(tf output -json repositories |
+  python3 -I -c 'import json,sys; print(json.load(sys.stdin)["sse-client"])'):$(sed -E 's/.*"(.*)"/\1/' \
+  "$HERE/images.auto.tfvars")" --alb-suffix "$(out alb_suffix)" --target-groups "$(tf output -json target_groups)"
+  "${extra[@]}")
+python3 -I - "$(out loadgen)" "$bucket" "$run" "${args[@]}" > "$TMPDIR/placemap-run.json" <<'PY'
+import json, shlex, sys
+loadgen, bucket, run, args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
+commands = [
+    f"mkdir -p /opt/placemap/bundle/{run}",
+    f"aws s3 sync s3://{bucket}/bundle/{run}/ /opt/placemap/bundle/{run}/ --only-show-errors",
+    f"nohup python3 -I /opt/placemap/bundle/{run}/drive.py {shlex.join(args)} "
+    f"> /opt/placemap/{run}.log 2>&1 < /dev/null &",
+    "echo started",
+]
+print(json.dumps({"InstanceIds": [loadgen], "DocumentName": "AWS-RunShellScript",
+                  "Comment": f"placemap load test {run}", "Parameters": {"commands": commands}}))
+PY
+aws ssm send-command --cli-input-json "file://$TMPDIR/placemap-run.json" --query Command.CommandId --output text > /dev/null
+echo "RUN STARTED: $run (follow it with: infra/aws/watch.sh $run)"

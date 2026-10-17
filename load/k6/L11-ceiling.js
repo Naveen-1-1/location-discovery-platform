@@ -2,7 +2,8 @@
 // from 50/s up by 25/s. A step meets L1's line when p95 < 300 ms, errors other than 429 < 0.5% and under 1% of
 // travel-time searches fall back to straight-line order. The run stops at the first step that misses it, once that
 // step has run a minute; the driver reports the last step before it as the sustained rate. With MIX=popular (L13c)
-// the searches follow the popular mix instead, and NAME names the summary.
+// the searches follow the popular mix instead, and NAME names the summary. With JUDGE_SECONDS a step is judged on its
+// last JUDGE_SECONDS only, so an autoscaled service has the start of each step to add copies (the AWS ramp).
 import exec from "k6/execution";
 import { Counter, Rate } from "k6/metrics";
 import { client, everydaySearch, get, popularSearch, summary, TREND_STATS } from "./lib.js";
@@ -16,6 +17,7 @@ const WARMUP = Number(__ENV.WARMUP_SECONDS || 60);
 const STEP = Number(__ENV.STEP_SECONDS || 120);
 const SETTLE = Number(__ENV.SETTLE_SECONDS || 60); // how long a step runs before a miss stops the test
 const RAMP = 5; // seconds to move to the next step's rate; not counted in either step
+const FROM = Math.max(RAMP, STEP - Number(__ENV.JUDGE_SECONDS || STEP)); // where a step's judged part starts
 const FIRST = Number(__ENV.FIRST_RATE || 50);
 const BY = Number(__ENV.STEP_BY || 25);
 const LAST = Number(__ENV.LAST_RATE || 500);
@@ -34,7 +36,7 @@ const thresholds = {
   limited_429: ["count==0"], // the per-client limit must not be what caps the rate
 };
 RATES.forEach((rate, i) => {
-  const after = `${WARMUP + i * STEP + SETTLE}s`;
+  const after = `${WARMUP + i * STEP + FROM - RAMP + SETTLE}s`;
   const stop = (threshold) => ({ threshold, abortOnFail: true, delayAbortEval: after });
   thresholds[`http_req_duration{step:${rate}}`] = [stop("p(95)<300")];
   thresholds[`errors_not_429{step:${rate}}`] = [stop("rate<0.005")];
@@ -57,7 +59,7 @@ function step(elapsedSeconds) {
   const t = elapsedSeconds - WARMUP;
   if (t < 0) return "none";
   const i = Math.floor(t / STEP);
-  if (i >= RATES.length || t - i * STEP < RAMP) return "none";
+  if (i >= RATES.length || t - i * STEP < FROM) return "none";
   return String(RATES[i]);
 }
 
