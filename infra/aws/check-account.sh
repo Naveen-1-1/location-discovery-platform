@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Read-only checks before the AWS test: who the CLI signs in as, the account's plan, MFA, the budget, and whether the
-# account may run what the test needs (Fargate's and EC2's vCPU limits, the load generator's machine type). Prints no
+# account may run what the test needs (Fargate's and EC2's vCPU limits, the load generator's machine type, the region). Prints no
 # keys or tokens and masks the account number; a copy goes to target/aws-check.txt.
 set -uo pipefail
 source "$(dirname "$0")/common.sh"
@@ -35,11 +35,19 @@ mkdir -p "$MAIN/target"
     --service-code fargate --quota-code L-3032A538 --query Quota.Value --output text 2>&1)"
   echo "EC2 standard vCPUs at once (the load generator needs 8): $(aws service-quotas get-service-quota \
     --service-code ec2 --quota-code L-1216C47A --query Quota.Value --output text 2>&1)"
-  echo "Quota requests so far: $(aws service-quotas list-requested-service-quota-change-history --service-code fargate \
-    --query 'RequestedQuotas[].[QuotaName, DesiredValue, Status]' --output text 2>&1 | tr '\t\n' ' ;')"
+  for service in fargate ec2; do
+    echo "Limit requests ($service): $(aws service-quotas list-requested-service-quota-change-history \
+      --service-code "$service" --query 'RequestedQuotas[].[QuotaName, DesiredValue, Status]' --output text 2>&1 |
+      tr '\t\n' ' ;')"
+  done
   ami=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64 \
     --query Parameter.Value --output text 2>&1)
   echo "May the account start a c7g.2xlarge (dry run): $(aws ec2 run-instances --dry-run --image-id "$ami" \
     --instance-type c7g.2xlarge 2>&1 | mask | tr '\n' ' ')"
+  # Accounts made with AWS's new sign-up (projects) work in one region only.
+  for region in us-east-1 us-east-2; do
+    echo "Region $region usable: $(aws ec2 describe-availability-zones --region "$region" \
+      --query 'length(AvailabilityZones)' --output text 2>&1 | mask | cut -c1-160)"
+  done
   echo "Terraform: $(terraform version 2>&1 | head -1)"
 } 2>&1 | tee "$MAIN/target/aws-check.txt"

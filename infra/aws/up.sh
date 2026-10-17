@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Creates the test environment. "up.sh plan" shows what would be made and changes nothing; "up.sh apply" makes the
-# registry and bucket, pushes the images (images.sh), then makes the rest and waits until every service is steady
-# and the load generator answers Session Manager. Costs start here (about $0.8 an hour at the minimum copies).
+# Creates the test environment, in steps:
+#   up.sh plan             show what would be made; changes nothing
+#   up.sh images           make the registry and bucket (cents a month) and push the images (images.sh)
+#   up.sh apply [ARGS...]  make the rest (costs start here) and wait until every service is steady and the load
+#                          generator answers Session Manager; ARGS go to terraform, e.g. -var-file=small.tfvars
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 tf init -input=false > /dev/null
-case "${1:-}" in
+step="${1:-}"
+shift || true
+case "$step" in
   plan)
-    tf plan -input=false -var image_tag=planned | tail -n 3 ;;
-  apply)
+    tf plan -input=false -var image_tag=planned "$@" | tail -n 3 ;;
+  images)
     tf apply -input=false -auto-approve -target=aws_ecr_repository.this -target=aws_s3_bucket.work
-    "$HERE/images.sh"
-    tf apply -input=false -auto-approve
+    "$HERE/images.sh" ;;
+  apply)
+    [[ -f "$HERE/images.auto.tfvars" ]] || { echo "No images yet: run up.sh images first"; exit 1; }
+    tf apply -input=false -auto-approve "$@"
     cluster="$(out cluster)"
     echo "Waiting for every service to be steady (up to 10 minutes)..."
     aws ecs wait services-stable --cluster "$cluster" --services api live-hub valhalla postgis standins photon
@@ -21,5 +27,5 @@ case "${1:-}" in
       --query 'InstanceInformationList[0].PingStatus' --output text)" == "Online" ]]; do sleep 10; done
     echo "ENVIRONMENT UP" ;;
   *)
-    echo "usage: up.sh plan|apply"; exit 2 ;;
+    echo "usage: up.sh plan|images|apply [terraform args]"; exit 2 ;;
 esac
