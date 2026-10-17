@@ -96,7 +96,7 @@ final class ReleaseDocs {
             Map<String, SourceTerms.Provider> providers, LocalDate date) {
         var out = new StringBuilder();
         out.append("# Attribution\n\n")
-                .append("Boston place-discovery map: places, release ").append(date).append(".\n\n")
+                .append("Boston location-discovery platform: places, release ").append(date).append(".\n\n")
                 .append("This database is made available under the Open Database License (ODbL) 1.0: the full text is ")
                 .append("in `LICENSE`, and at https://opendatacommons.org/licenses/odbl/1-0/. It is built from the ")
                 .append("sources below, whose credits follow. Every source's records were changed: matched and ")

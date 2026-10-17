@@ -23,7 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
 public final class PhotonGeocoder implements Geocoder {
 
     private static final String USER_AGENT =
-            "place-discovery-map-ingest (+https://github.com/Naveen-1-1/place-discovery-map)";
+            "location-discovery-platform-ingest (+https://github.com/Naveen-1-1/location-discovery-platform)";
     private static final JsonMapper JSON = new JsonMapper();
     private static final int CANDIDATES = 5;
 

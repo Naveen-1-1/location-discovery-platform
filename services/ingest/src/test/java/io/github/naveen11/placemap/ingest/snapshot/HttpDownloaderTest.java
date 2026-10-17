@@ -41,7 +41,7 @@ class HttpDownloaderTest {
 
         assertThat(body).isEqualTo("{\"rows\":3}");
         PUBLISHER.verify(getRequestedFor(urlPathEqualTo("/data.json"))
-                .withHeader("User-Agent", matching("place-discovery-map-ingest .*"))
+                .withHeader("User-Agent", matching("location-discovery-platform-ingest .*"))
                 .withHeader("X-App-Token", equalTo("secret")));
     }
 

@@ -29,7 +29,7 @@ class SearchConfig {
         RestClient http = builder.clone()
                 .baseUrl(properties.photonUrl().toString())
                 .requestFactory(factory)
-                .defaultHeader("User-Agent", "place-discovery-map (+https://github.com/Naveen-1-1/place-discovery-map)")
+                .defaultHeader("User-Agent", "location-discovery-platform (+https://github.com/Naveen-1-1/location-discovery-platform)")
                 .observationConvention(new PhotonClient.QueryFreeUrls())
                 .build();
         return new PhotonClient(http, properties.bbox());

@@ -20,7 +20,7 @@ import java.util.Map;
 public class HttpDownloader {
 
     private static final String USER_AGENT =
-            "place-discovery-map-ingest (+https://github.com/Naveen-1-1/place-discovery-map)";
+            "location-discovery-platform-ingest (+https://github.com/Naveen-1-1/location-discovery-platform)";
 
     private final HttpClient client;
 
