@@ -131,9 +131,18 @@ resource "aws_cloudwatch_log_group" "this" {
 
 resource "aws_iam_role" "execution" {
   name = "${var.name}-execution"
+  # Only ECS acting for this account in this region may take the role.
   assume_role_policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ecs-tasks.amazonaws.com" } }]
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Condition = {
+        StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        ArnLike      = { "aws:SourceArn" = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:*" }
+      }
+    }]
   })
 }
 
