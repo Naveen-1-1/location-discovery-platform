@@ -38,6 +38,13 @@ resource "aws_iam_role_policy" "loadgen" {
       },
       { Effect = "Allow", Action = "s3:ListBucket", Resource = aws_s3_bucket.work.arn },
       { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject"], Resource = "${aws_s3_bucket.work.arn}/*" },
+      # Parking after a run (park.sh): the test's services down to zero copies, and autoscaling held there.
+      {
+        Effect   = "Allow"
+        Action   = "ecs:UpdateService"
+        Resource = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${var.name}/*"
+      },
+      { Effect = "Allow", Action = "application-autoscaling:RegisterScalableTarget", Resource = "*" },
     ]
   })
 }

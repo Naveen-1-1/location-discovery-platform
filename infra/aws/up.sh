@@ -29,6 +29,7 @@ case "$step" in
     echo "Waiting for every service to be steady (up to 10 minutes)..."
     aws ecs wait services-stable --cluster "$cluster" --services api live-hub valhalla postgis standins photon
     loadgen="$(out loadgen)"
+    aws ec2 start-instances --instance-ids "$loadgen" > /dev/null  # a parked environment's generator is stopped
     echo "Waiting for the load generator to answer Session Manager..."
     until [[ "$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$loadgen" \
       --query 'InstanceInformationList[0].PingStatus' --output text)" == "Online" ]]; do sleep 10; done
