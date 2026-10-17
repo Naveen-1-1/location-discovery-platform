@@ -39,7 +39,7 @@ variable "scaling" {
   type        = map(object({ min = number, max = number, cpu = number, requests = number }))
   default = {
     api        = { min = 2, max = 10, cpu = 60, requests = 50 }
-    valhalla   = { min = 2, max = 6, cpu = 50, requests = 20 }
+    valhalla   = { min = 2, max = 6, cpu = 50, requests = 15 } # a 4-vCPU copy answers about 28 a second
     "live-hub" = { min = 1, max = 4, cpu = 40, requests = 0 }
   }
 }
