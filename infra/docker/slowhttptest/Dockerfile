@@ -1,5 +1,5 @@
 # slowhttptest for the slowloris test (L10), from Debian's package, for amd64 and arm64.
-FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-20261005-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 RUN set -eux; \
     apt-get update; \
