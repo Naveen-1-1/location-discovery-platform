@@ -38,7 +38,7 @@ services:
       retries: 60
 
   valhalla:
-    image: ghcr.io/valhalla/valhalla:3.9.0@sha256:511c095b8caf393dccceb8b519ec96b6f85a0166b2288ba014a8a748acc5a63c
+    image: ghcr.io/valhalla/valhalla:3.9.1@sha256:4fd114eb1d26b8fc2f43bcb3df234c1b63a0bf13c277405e5943d5361dc575de
     command: ["bash", "/serve.sh", "4"]   # 4 threads; settings for 1×200 matrices in 1 GB
     mem_limit: 1g
     cpuset: ${PLACEMAP_SUT_CPUS}
