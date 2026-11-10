@@ -51,7 +51,7 @@ services:
       retries: 60
 
   standins:
-    image: python:3.14.7-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+    image: python:3.15.0-slim@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58
     # Vehicles at MBTA's weekday rate: 818 at the morning peak, and at midday 79% of them (up to 88%) changed between
     # two 15 s polls, so each reports every 18 s here (83%).
     command: ["python3", "-I", "/standins/standins.py", "--stations", "/seed/stations.txt",
