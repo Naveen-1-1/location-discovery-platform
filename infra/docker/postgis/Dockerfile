@@ -2,7 +2,7 @@
 # The official postgis/postgis image is amd64-only. Used by integration tests now and
 # self-hosted deployments later. The base image already carries the PGDG apt repository.
 # Pinned by digest (the multi-arch index), so a rebuild gets the same base; Dependabot proposes updates.
-FROM postgres:18.6-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c
+FROM postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
 
 RUN set -eux; \
     apt-get update; \
